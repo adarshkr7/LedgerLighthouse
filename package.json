@@ -10,8 +10,9 @@
     "build": "pnpm -r --if-present run build",
     "test": "pnpm -r --if-present run test",
     "check:boundary": "node scripts/check-boundary.mjs",
-    "forge:build": "pnpm --filter @ntux402/contracts run build",
-    "forge:test": "pnpm --filter @ntux402/contracts run test"
+    "verify": "node scripts/verify.mjs",
+    "forge:build": "pnpm --filter @ntux402/contracts run compile",
+    "forge:test": "pnpm --filter @ntux402/contracts run forge:test"
   },
   "devDependencies": {
     "typescript": "^5.9.2"

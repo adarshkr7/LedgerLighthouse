@@ -25,6 +25,10 @@ jobs:
       # only their .sol sources via Foundry remappings. Without this, pnpm fails
       # with ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED.
       - run: pnpm install --frozen-lockfile --ignore-scripts
+      # packages/shared points `main` at ./dist, so consumers need it built
+      # before typecheck can resolve the import. Keep this in step with
+      # scripts/verify.mjs — that script is the local mirror of this job.
+      - run: pnpm build
       - run: pnpm typecheck
       - run: pnpm check:boundary
 

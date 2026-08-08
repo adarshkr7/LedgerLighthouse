@@ -1,0 +1,19 @@
+#!/bin/sh
+# Runs the full CI suite locally before anything leaves your machine.
+# Enable once per clone:  git config core.hooksPath .githooks
+# Bypass in a pinch:      git push --no-verify
+
+# Foundry installs to ~/.foundry/bin, which login shells pick up but git hooks may not.
+PATH="$HOME/.foundry/bin:$PATH"
+export PATH
+
+# `node` directly, not `pnpm verify` — pnpm has to parse every workspace
+# manifest just to look up a script, so a malformed package.json makes it die
+# with a stack trace before the friendly JSON check ever runs.
+echo "pre-push: running verify..."
+if ! node scripts/verify.mjs; then
+  echo ""
+  echo "Push aborted — the same failure would have hit CI."
+  echo "Fix it, or bypass with: git push --no-verify"
+  exit 1
+fi
