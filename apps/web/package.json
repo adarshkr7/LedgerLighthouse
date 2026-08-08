@@ -1,0 +1,6 @@
+{
+  "name": "@ntux402/web",
+  "private": true,
+  "version": "0.0.0",
+  "description": "MetaMask UI: open goal, fund, watch, verify. Scaffolded with Vite + React + TS + wagmi/viem starting M6 (or earlier if M2's end-to-end test needs a live wallet flow)."
+}

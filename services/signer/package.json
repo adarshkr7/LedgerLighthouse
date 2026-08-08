@@ -1,0 +1,14 @@
+{
+  "name": "@ntux402/signer",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Trusted [ASSUMPTION]. Holds the per-goal payer key. Reads chain only, accepts (goalId, seq) only.",
+  "main": "./src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.2"
+  }
+}

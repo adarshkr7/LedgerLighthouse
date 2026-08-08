@@ -9,16 +9,21 @@ contracts/cache/
 contracts/broadcast/*/31337/
 !contracts/broadcast/*/84532/
 
-# env
-!.env.example
-.env.*
+# env — .env.example IS committed deliberately (IMPLEMENTATION.md §9).
+# The negation must come last: in gitignore, later rules win.
 .env
+.env.*
+!.env.example
 
 # signer key material — never committed, ever
 services/signer/keys/
 *.key
 *.pem
-*.json
+# Keystore/wallet JSON, scoped by name. NOT a blanket *.json — that silently
+# swallows every package.json and tsconfig.json in the workspace and leaves CI
+# unable to find any project at all.
+*keystore*.json
+*.keystore
 
 # editor / OS
 .DS_Store

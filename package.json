@@ -1,0 +1,22 @@
+{
+  "name": "ntu-x402",
+  "private": true,
+  "packageManager": "pnpm@11.20.0+sha512.9a6f330a95b66446ea088faf1521405a8a01f07fde7124cc9958dfed52d4bb436737e65b08f85f37b46fcba375092558ac51262b816844b22f63406ed166bfee",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "typecheck": "pnpm -r --if-present run typecheck",
+    "build": "pnpm -r --if-present run build",
+    "test": "pnpm -r --if-present run test",
+    "check:boundary": "node scripts/check-boundary.mjs",
+    "forge:build": "pnpm --filter @ntux402/contracts run build",
+    "forge:test": "pnpm --filter @ntux402/contracts run test"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.2"
+  },
+  "dependencies": {
+    "@inco/lightning": "^1.0.2"
+  }
+}

@@ -17,7 +17,11 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      # --ignore-scripts: the git-hosted Solidity deps (forge-std, ds-test,
+      # safe-smart-account) declare JS build scripts we never use — we consume
+      # only their .sol sources via Foundry remappings. Without this, pnpm fails
+      # with ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED.
+      - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm typecheck
       - run: pnpm check:boundary
 
@@ -32,7 +36,11 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      # --ignore-scripts: the git-hosted Solidity deps (forge-std, ds-test,
+      # safe-smart-account) declare JS build scripts we never use — we consume
+      # only their .sol sources via Foundry remappings. Without this, pnpm fails
+      # with ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED.
+      - run: pnpm install --frozen-lockfile --ignore-scripts
       - uses: foundry-rs/foundry-toolchain@v1
       - run: forge build
         working-directory: contracts
