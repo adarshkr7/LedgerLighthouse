@@ -106,8 +106,31 @@ Resolved during Phase 0 against the published packages, so they no longer need r
 
 See IMPLEMENTATION.md §7 for the remaining `[OPEN — VERIFY WITH INCO DOCS]` register.
 
-## Protocol version
+## Protocol version — pinned to x402 **v1**
 
-`X402_VERSION` is **not yet pinned**. M1 decides v1 vs v2 — they differ in header names
-(`X-PAYMENT` vs `PAYMENT-REQUIRED`) and in whether `network` is CAIP-2. The choice gets recorded
-here and the mock API speaks only that version.
+Decided in M1 and binding on everything downstream:
+
+| | v1 (**ours**) | v2 (not used) |
+|---|---|---|
+| Request header | `X-PAYMENT` | `PAYMENT-SIGNATURE` |
+| Response header | `X-PAYMENT-RESPONSE` | `PAYMENT-RESPONSE` |
+| 402 header | — | `PAYMENT-REQUIRED` |
+| `network` | slug — `base-sepolia` | CAIP-2 — `eip155:84532` |
+
+The mock API speaks only v1, and the parser rejects a v2-shaped body rather than adapting to it.
+Constants live in [packages/shared/src/x402/protocol.ts](packages/shared/src/x402/protocol.ts).
+
+The amount field on the wire is **`maxAmountRequired`**, never `amount`. Our internal `Terms.amount`
+is derived from it, and the two names are kept distinct on purpose so a parser bug cannot silently
+substitute one for the other.
+
+`[OPEN]` — which version the facilitator we actually use expects. If it turns out to be v2, the
+change is contained: the protocol constants, the parser's version check, and the mock.
+
+## Hackathon v1 simplification
+
+This build narrows the plan deliberately. Only `remainingBudget` is encrypted (`euint256`);
+`perCallCap` and `callsRemaining` are public. Merkle anchoring, the standalone verifier, encrypted
+allowlists, refund logic and multi-goal concurrency are **out of scope**. Everything else —
+the chain-reading signer, `finalize` with handle-match verification, deterministic EIP-3009 retry
+semantics — is unchanged.

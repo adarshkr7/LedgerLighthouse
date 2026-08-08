@@ -6,9 +6,15 @@
   "description": "Untrusted. LLM + x402 client. Holds no keys, never imports @ntux402/signer.",
   "main": "./src/index.ts",
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@ntux402/shared": "workspace:*"
   },
   "devDependencies": {
-    "typescript": "^5.9.2"
+    "@types/node": "^26.2.0",
+    "typescript": "^5.9.2",
+    "vitest": "^4.1.10"
   }
 }

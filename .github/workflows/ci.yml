@@ -30,6 +30,7 @@ jobs:
       # scripts/verify.mjs — that script is the local mirror of this job.
       - run: pnpm build
       - run: pnpm typecheck
+      - run: pnpm test
       - run: pnpm check:boundary
 
   contracts:

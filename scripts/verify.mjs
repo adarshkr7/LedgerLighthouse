@@ -54,6 +54,7 @@ const steps = [
   { name: "install (frozen lockfile)", cmd: "pnpm install --frozen-lockfile --ignore-scripts" },
   { name: "build (TS packages)", cmd: "pnpm build" },
   { name: "typecheck", cmd: "pnpm typecheck" },
+  { name: "test (vitest)", cmd: "pnpm test" },
   { name: "boundary (orchestrator ↛ signer)", cmd: "pnpm check:boundary" },
   { name: "forge build", cmd: "forge build", cwd: "contracts", contracts: true },
   { name: "forge test", cmd: "forge test", cwd: "contracts", contracts: true },
