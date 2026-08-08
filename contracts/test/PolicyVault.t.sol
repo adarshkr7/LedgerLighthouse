@@ -101,6 +101,11 @@ contract PolicyVaultTest is IncoTest {
         return calls;
     }
 
+    function _isOpen() internal view returns (bool) {
+        (,,,,,,, bool open) = vault.goals(goalId);
+        return open;
+    }
+
     // ------------------------------------------- the seven required properties
 
     /// The retry test the brief calls "the one that matters".
@@ -310,10 +315,46 @@ contract PolicyVaultTest is IncoTest {
         vault.requestSpend(goalId, 50_000, VENDOR, RESOURCE);
     }
 
-    function testOnlyRelayMayRequestSpend() public {
-        vm.prank(address(0xBEEF));
+    /// Only the registered relay may drive the spend loop. Without this, any
+    /// address could burn the goal's budget to an allowlisted payee — the same
+    /// loss ceiling the design accepts for the orchestrator, but open to the
+    /// whole world rather than to one known component.
+    function testOnlyRelayCanRequestSpend() public {
+        // The relay (this contract, registered at openGoal) succeeds.
+        uint64 seq = vault.requestSpend(goalId, 50_000, VENDOR, RESOURCE);
+        assertEq(seq, 1, "the registered relay must be able to request a spend");
+
+        // Nobody else does.
+        address[3] memory strangers =
+            [address(0xBEEF), address(0xCAFE), VENDOR];
+        for (uint256 i = 0; i < strangers.length; i++) {
+            vm.prank(strangers[i]);
+            vm.expectRevert(PolicyVault.NotRelay.selector);
+            vault.requestSpend(goalId, 50_000, VENDOR, RESOURCE);
+        }
+    }
+
+    /// Separation of duties. The goal owner holds the strongest privilege in the
+    /// system — they opened the goal, funded the payer, and may close it — but
+    /// that authority deliberately does not extend to driving spends. Owning a
+    /// goal and relaying for it are distinct roles, and the check is on the
+    /// relay field specifically, not "some privileged address".
+    function testOwnerCannotRequestSpendIfNotRelay() public {
+        (address owner,,,,,,,) = vault.goals(goalId);
+        assertEq(owner, alice, "alice should own the goal");
+
+        (, , address relay,,,,,) = vault.goals(goalId);
+        assertTrue(relay != alice, "this test is meaningless if owner == relay");
+
+        vm.prank(alice);
         vm.expectRevert(PolicyVault.NotRelay.selector);
         vault.requestSpend(goalId, 50_000, VENDOR, RESOURCE);
+
+        // The owner's actual privilege still works, so the refusal above is
+        // about the relay role and not a broken goal.
+        vm.prank(alice);
+        vault.closeGoal(goalId);
+        assertFalse(_isOpen(), "owner should still be able to close the goal");
     }
 
     function testClosedGoalRejectsSpend() public {

@@ -127,6 +127,31 @@ substitute one for the other.
 `[OPEN]` — which version the facilitator we actually use expects. If it turns out to be v2, the
 change is contained: the protocol constants, the parser's version check, and the mock.
 
+## M2b — deploy and measure on Base Sepolia
+
+Needs two faucet trips (ETH for gas, and later USDC for M3) — they are separate.
+
+```sh
+cp .env.example .env          # fill BASE_SEPOLIA_RPC_URL + DEPLOYER_PRIVATE_KEY
+pnpm --filter @ntux402/e2e run preflight     # chain, keys, funding, artifact
+
+cd contracts
+forge script script/DeployPolicyVault.s.sol:DeployPolicyVault \
+  --rpc-url "$BASE_SEPOLIA_RPC_URL" --broadcast --verify
+
+# put the deployed address in .env as POLICY_VAULT_ADDRESS, then:
+pnpm --filter @ntux402/e2e run m2b
+```
+
+`m2b` runs one goal end to end and reports timings. The number it exists to
+produce is **attestedReveal latency** — how long after `requestSpend` confirms
+before the decision handle becomes retrievable. That is undocumented (register
+item 3), and the demo's pacing depends on it. Polling is bounded at 180s and a
+timeout is reported rather than slept through.
+
+Use a throwaway key. The script plays user, relay and finalizer at once, which
+is fine for a measurement and wrong for the demo — M6 splits them.
+
 ## Hackathon v1 simplification
 
 This build narrows the plan deliberately. Only `remainingBudget` is encrypted (`euint256`);

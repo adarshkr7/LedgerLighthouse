@@ -4,6 +4,7 @@ packages:
   - "services/*"
   - "apps/*"
   - "mock-api"
+  - "tools/*"
 
 # @inco/lightning depends on ds-test via git (Foundry's forge-std/ds-test are conventionally
 # consumed via git, not npm registry publishes). pnpm's default blockExoticSubdeps flags that as
