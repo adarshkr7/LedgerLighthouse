@@ -1,0 +1,21 @@
+packages:
+  - "contracts"
+  - "packages/*"
+  - "services/*"
+  - "apps/*"
+  - "mock-api"
+
+# @inco/lightning depends on ds-test via git (Foundry's forge-std/ds-test are conventionally
+# consumed via git, not npm registry publishes). pnpm's default blockExoticSubdeps flags that as
+# a supply-chain risk when it shows up as a *sub*dependency. Both forge-std and ds-test are
+# pinned to their canonical upstream orgs in contracts/package.json, so this is a known, narrow
+# exception rather than a blanket bypass.
+blockExoticSubdeps: false
+
+# Pin to the exact commits @inco/lightning@1.0.2 itself requests (same short SHAs, expanded to
+# full 40-char form — pnpm's git resolver cannot resolve a short SHA that isn't an advertised
+# ref/tag). This also dedupes our own contracts/package.json dependency against the same commit.
+overrides:
+  forge-std: "https://github.com/foundry-rs/forge-std#2f05b3001ed9d74b171d17eac80b3765ce186a76"
+  ds-test: "https://github.com/dapphub/ds-test#e282159d5170298eb2455a6c05280ab5a73a4ef0"
+  "@safe-global/safe-smart-account": "https://github.com/safe-global/safe-smart-account.git#dc437e8fba8b4805d76bcbd1c668c9fd3d1e83be"

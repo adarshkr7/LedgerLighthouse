@@ -1,0 +1,26 @@
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+
+# Foundry
+contracts/out/
+contracts/cache/
+contracts/broadcast/*/31337/
+!contracts/broadcast/*/84532/
+
+# env
+!.env.example
+.env.*
+.env
+
+# signer key material — never committed, ever
+services/signer/keys/
+*.key
+*.pem
+*.json
+
+# editor / OS
+.DS_Store
+.vscode/*
+!.vscode/extensions.json

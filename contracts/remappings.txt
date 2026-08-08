@@ -1,0 +1,6 @@
+@inco/lightning/=node_modules/@inco/lightning/
+@inco/=node_modules/@inco/
+forge-std/=node_modules/forge-std/src/
+ds-test/=node_modules/ds-test/src/
+@openzeppelin/=node_modules/@openzeppelin/
+safe-smart-account/=node_modules/@safe-global/safe-smart-account/contracts/
