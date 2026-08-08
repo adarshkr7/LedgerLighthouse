@@ -10,9 +10,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # No `version:` here on purpose. The action errors with "Multiple versions
+      # of pnpm specified" whenever `version` disagrees with the `packageManager`
+      # field in package.json — and it compares the full string, so even
+      # `version: 11.20.0` would clash with "pnpm@11.20.0+sha512...".
+      # packageManager is the single source of truth, matching corepack locally.
       - uses: pnpm/action-setup@v4
-        with:
-          version: 11
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -29,9 +32,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # No `version:` here on purpose. The action errors with "Multiple versions
+      # of pnpm specified" whenever `version` disagrees with the `packageManager`
+      # field in package.json — and it compares the full string, so even
+      # `version: 11.20.0` would clash with "pnpm@11.20.0+sha512...".
+      # packageManager is the single source of truth, matching corepack locally.
       - uses: pnpm/action-setup@v4
-        with:
-          version: 11
       - uses: actions/setup-node@v4
         with:
           node-version: 22
