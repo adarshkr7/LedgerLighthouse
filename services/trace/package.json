@@ -1,0 +1,14 @@
+{
+  "name": "@ntux402/trace",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Hash chain, Merkle accumulator, standalone verifier CLI.",
+  "main": "./src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.2"
+  }
+}

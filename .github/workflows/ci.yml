@@ -10,14 +10,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # No `version:` here on purpose. The action errors with "Multiple versions
+      # of pnpm specified" whenever `version` disagrees with the `packageManager`
+      # field in package.json — and it compares the full string, so even
+      # `version: 11.20.0` would clash with "pnpm@11.20.0+sha512...".
+      # packageManager is the single source of truth, matching corepack locally.
       - uses: pnpm/action-setup@v4
-        with:
-          version: 11
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      # --ignore-scripts: the git-hosted Solidity deps (forge-std, ds-test,
+      # safe-smart-account) declare JS build scripts we never use — we consume
+      # only their .sol sources via Foundry remappings. Without this, pnpm fails
+      # with ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED.
+      - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm typecheck
       - run: pnpm check:boundary
 
@@ -25,14 +32,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # No `version:` here on purpose. The action errors with "Multiple versions
+      # of pnpm specified" whenever `version` disagrees with the `packageManager`
+      # field in package.json — and it compares the full string, so even
+      # `version: 11.20.0` would clash with "pnpm@11.20.0+sha512...".
+      # packageManager is the single source of truth, matching corepack locally.
       - uses: pnpm/action-setup@v4
-        with:
-          version: 11
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      # --ignore-scripts: the git-hosted Solidity deps (forge-std, ds-test,
+      # safe-smart-account) declare JS build scripts we never use — we consume
+      # only their .sol sources via Foundry remappings. Without this, pnpm fails
+      # with ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED.
+      - run: pnpm install --frozen-lockfile --ignore-scripts
       - uses: foundry-rs/foundry-toolchain@v1
       - run: forge build
         working-directory: contracts

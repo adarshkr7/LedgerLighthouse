@@ -1,0 +1,14 @@
+{
+  "name": "@ntux402/mock-api",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "x402-priced endpoint with an honest and a malicious mode.",
+  "main": "./src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.2"
+  }
+}
