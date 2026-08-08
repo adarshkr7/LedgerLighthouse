@@ -42,13 +42,37 @@ cp .env.example .env      # then fill in
 `safe-smart-account`) declare JS build scripts we do not need — we consume only their `.sol`
 sources through Foundry remappings.
 
-## Verify the toolchain
+## Before you push
 
 ```sh
-pnpm typecheck        # all TS packages
-pnpm check:boundary   # orchestrator must not import the signer
-cd contracts && forge build && forge test
+pnpm verify                    # runs exactly what CI runs
+pnpm verify --skip-contracts   # TS only, if Foundry isn't installed
 ```
+
+If `pnpm verify` is green, CI is green — it mirrors `.github/workflows/ci.yml` step for step.
+Run it instead of learning about a broken build from a red check.
+
+Enable the pre-push hook once per clone so it runs automatically:
+
+```sh
+git config core.hooksPath .githooks
+```
+
+Bypass with `git push --no-verify` when you genuinely need to.
+
+Individual steps, if you want them separately:
+
+```sh
+pnpm build            # TS packages only — contracts are driven by forge
+pnpm typecheck
+pnpm check:boundary   # orchestrator must not import the signer
+pnpm forge:build
+pnpm forge:test
+```
+
+Note that `contracts/` deliberately names its scripts `compile` / `forge:test` rather than
+`build` / `test`: the root scripts run recursively across every workspace package, and the
+TS-only CI job has no Foundry installed.
 
 ## The key boundary
 
