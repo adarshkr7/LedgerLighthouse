@@ -3,12 +3,20 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "description": "x402-priced endpoint with an honest and a malicious mode.",
+  "description": "x402-priced endpoint with an honest and a malicious mode. Speaks x402 v1 only.",
   "main": "./src/index.ts",
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@ntux402/shared": "workspace:*"
   },
   "devDependencies": {
-    "typescript": "^5.9.2"
+    "@types/node": "^26.2.0",
+    "tsx": "^4.23.11",
+    "typescript": "^5.9.2",
+    "vitest": "^4.1.10"
   }
 }
