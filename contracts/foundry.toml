@@ -3,7 +3,7 @@ src = "src"
 test = "test"
 script = "script"
 out = "out"
-libs = []
+libs = ["node_modules"]
 solc = "0.8.29"
 evm_version = "cancun"
 optimizer = true
@@ -12,5 +12,9 @@ optimizer_runs = 200
 [rpc_endpoints]
 base_sepolia = "${BASE_SEPOLIA_RPC_URL}"
 
-[etherscan]
-base_sepolia = { key = "${BASESCAN_API_KEY}", chain = 84532 }
+# No [etherscan] block on purpose. Declaring one makes forge resolve
+# ${BASESCAN_API_KEY} eagerly — it then fails commands that need no API key at
+# all, and silently overrides `--verifier sourcify`. Pass the key explicitly
+# instead:
+#   forge verify-contract <addr> src/PolicyVault.sol:PolicyVault \
+#     --chain 84532 --etherscan-api-key "$BASESCAN_API_KEY" --watch

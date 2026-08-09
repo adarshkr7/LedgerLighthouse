@@ -15,8 +15,13 @@ contracts/broadcast/*/31337/
 .env.*
 !.env.example
 
-# signer key material — never committed, ever
+# signer key material — never committed, ever.
+# Both spellings: .env.example defaults SIGNER_KEY_STORE_PATH to `.keys/`, and an
+# earlier rule only covered `keys/`. A dot's difference was enough to leave real
+# payer private keys stageable, so match the leading-dot form anywhere too.
 services/signer/keys/
+services/signer/.keys/
+.keys/
 *.key
 *.pem
 # Keystore/wallet JSON, scoped by name. NOT a blanket *.json — that silently
@@ -29,3 +34,6 @@ services/signer/keys/
 .DS_Store
 .vscode/*
 !.vscode/extensions.json
+
+# vite dev-server cache
+apps/web/.vite/

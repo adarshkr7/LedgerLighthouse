@@ -58,6 +58,9 @@ const steps = [
   { name: "boundary (orchestrator ↛ signer)", cmd: "pnpm check:boundary" },
   { name: "forge build", cmd: "forge build", cwd: "contracts", contracts: true },
   { name: "forge test", cmd: "forge test", cwd: "contracts", contracts: true },
+  // After forge build, so there is an artifact to compare against. No-ops when
+  // Foundry hasn't run — the contracts CI job is where this actually bites.
+  { name: "ABI in sync with contract", cmd: "node scripts/sync-abi.mjs --check", contracts: true },
 ];
 
 console.log(`${BOLD}Verifying (mirrors .github/workflows/ci.yml)${OFF}\n`);

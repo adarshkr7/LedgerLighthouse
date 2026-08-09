@@ -6,10 +6,18 @@
   "description": "Trusted [ASSUMPTION]. Holds the per-goal payer key. Reads chain only, accepts (goalId, seq) only.",
   "main": "./src/index.ts",
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "start": "tsx src/main.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@ntux402/shared": "workspace:*",
+    "viem": "^2.55.11"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",
-    "typescript": "^5.9.2"
+    "tsx": "^4.23.11",
+    "typescript": "^5.9.2",
+    "vitest": "^4.1.10"
   }
 }

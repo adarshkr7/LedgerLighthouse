@@ -7,14 +7,21 @@
   "main": "./src/index.ts",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "start": "tsx src/main.ts",
+    "serve": "tsx src/serve.ts"
   },
   "dependencies": {
-    "@ntux402/shared": "workspace:*"
+    "@ntux402/shared": "workspace:*",
+    "viem": "^2.55.11",
+    "@inco/lightning-js": "^1.0.2",
+    "@anthropic-ai/sdk": "^0.116.0",
+    "@ntux402/trace": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",
     "typescript": "^5.9.2",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.10",
+    "tsx": "^4.23.11"
   }
 }

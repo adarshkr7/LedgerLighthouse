@@ -4,6 +4,24 @@ packages:
   - "services/*"
   - "apps/*"
   - "mock-api"
+  - "tools/*"
+
+# pnpm writes these keys with a "set this to true or false" placeholder the first
+# time it meets a dependency with a build script. Left unanswered, the string is
+# not a boolean and *every* plain `pnpm install` fails with ERR_PNPM_IGNORED_BUILDS
+# — which also breaks `pnpm dev`, since it auto-installs when the lockfile moves.
+#
+# All four are false because none of them is needed. `bufferutil` and
+# `utf-8-validate` are optional native speedups for `ws`, which falls back to pure
+# JS; `keccak` likewise has a JS fallback, and viem hashes with @noble/hashes
+# regardless; `protobufjs`'s postinstall only regenerates bundled artifacts. The
+# whole project has been built and tested with `--ignore-scripts` throughout,
+# which is the evidence that skipping them costs nothing.
+allowBuilds:
+  bufferutil: false
+  keccak: false
+  protobufjs: false
+  utf-8-validate: false
 
 # @inco/lightning depends on ds-test via git (Foundry's forge-std/ds-test are conventionally
 # consumed via git, not npm registry publishes). pnpm's default blockExoticSubdeps flags that as

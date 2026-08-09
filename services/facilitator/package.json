@@ -1,0 +1,23 @@
+{
+  "name": "@ntux402/facilitator",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Self-hosted x402 v1 facilitator for the exact scheme. Outside the trust boundary: relays a signed authorization, cannot alter terms.",
+  "main": "./src/index.ts",
+  "scripts": {
+    "start": "tsx src/main.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@ntux402/shared": "workspace:*",
+    "viem": "^2.55.11"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "tsx": "^4.23.11",
+    "typescript": "^5.9.2",
+    "vitest": "^4.1.10"
+  }
+}
