@@ -10,7 +10,7 @@
 // the mock API runs in stub mode and says so — which is the honest default when
 // there is no test USDC to move.
 
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -38,6 +38,25 @@ const config = env();
 const COLOURS = ["\x1b[36m", "\x1b[35m", "\x1b[33m", "\x1b[32m", "\x1b[34m"];
 const OFF = "\x1b[0m";
 const DIM = "\x1b[2m";
+const RED = "\x1b[31m";
+
+// Every service imports @ntux402/shared, which resolves through its `dist/`.
+// `dist/` is gitignored, so a fresh clone has none and a branch switch can leave
+// a stale one — either way the services die at import with a confusing
+// "does not provide an export named …". Build it first; it takes a second, and
+// it turns a baffling runtime error into a non-event.
+process.stdout.write(`${DIM}Building @ntux402/shared…${OFF} `);
+const build = spawnSync("pnpm --filter @ntux402/shared run build", {
+  cwd: repoRoot,
+  shell: true,
+  encoding: "utf8",
+});
+if (build.status !== 0) {
+  console.log(`${RED}failed${OFF}\n`);
+  console.log((build.stdout ?? "") + (build.stderr ?? ""));
+  process.exit(1);
+}
+console.log(`${DIM}ok${OFF}`);
 
 const services = [
   { name: "signer", filter: "@ntux402/signer", script: "start" },
