@@ -34,3 +34,6 @@ services/signer/.keys/
 .DS_Store
 .vscode/*
 !.vscode/extensions.json
+
+# vite dev-server cache
+apps/web/.vite/
