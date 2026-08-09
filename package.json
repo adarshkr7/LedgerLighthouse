@@ -8,11 +8,13 @@
   "scripts": {
     "typecheck": "pnpm -r --if-present run typecheck",
     "build": "pnpm -r --if-present run build",
-    "test": "pnpm -r --if-present run test",
+    "test": "pnpm -r --workspace-concurrency=1 --if-present run test",
     "check:boundary": "node scripts/check-boundary.mjs",
+    "sync:abi": "node scripts/sync-abi.mjs",
     "verify": "node scripts/verify.mjs",
     "forge:build": "pnpm --filter @ntux402/contracts run compile",
-    "forge:test": "pnpm --filter @ntux402/contracts run forge:test"
+    "forge:test": "pnpm --filter @ntux402/contracts run forge:test",
+    "dev": "node scripts/dev.mjs"
   },
   "devDependencies": {
     "typescript": "^5.9.2"

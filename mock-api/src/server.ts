@@ -12,16 +12,21 @@ export interface StartedServer {
 
 export function createMockApi(options: HandlerOptions = {}): Server {
   return createServer((req, res) => {
-    const headers: Record<string, string | undefined> = {};
-    for (const [key, value] of Object.entries(req.headers)) {
-      headers[key.toLowerCase()] = Array.isArray(value) ? value[0] : value;
-    }
+    void (async () => {
+      const headers: Record<string, string | undefined> = {};
+      for (const [key, value] of Object.entries(req.headers)) {
+        headers[key.toLowerCase()] = Array.isArray(value) ? value[0] : value;
+      }
 
-    const path = new URL(req.url ?? "/", "http://localhost").pathname;
-    const result = handleRequest({ method: req.method ?? "GET", path, headers }, options);
+      const path = new URL(req.url ?? "/", "http://localhost").pathname;
+      const result = await handleRequest({ method: req.method ?? "GET", path, headers }, options);
 
-    res.writeHead(result.status, result.headers);
-    res.end(JSON.stringify(result.body));
+      res.writeHead(result.status, result.headers);
+      res.end(JSON.stringify(result.body));
+    })().catch((e: unknown) => {
+      res.writeHead(500, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: e instanceof Error ? e.message : String(e) }));
+    });
   });
 }
 
@@ -37,9 +42,7 @@ export function startMockApi(port = 0, options: HandlerOptions = {}): Promise<St
         port: boundPort,
         url: `http://127.0.0.1:${boundPort}`,
         close: () =>
-          new Promise<void>((done, fail) =>
-            server.close((err) => (err ? fail(err) : done())),
-          ),
+          new Promise<void>((done, fail) => server.close((err) => (err ? fail(err) : done()))),
       });
     });
   });

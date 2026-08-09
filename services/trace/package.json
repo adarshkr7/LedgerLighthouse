@@ -6,10 +6,18 @@
   "description": "Hash chain, Merkle accumulator, standalone verifier CLI.",
   "main": "./src/index.ts",
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "verify": "tsx src/cli.ts",
+    "test": "vitest run"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",
-    "typescript": "^5.9.2"
+    "typescript": "^5.9.2",
+    "tsx": "^4.23.11",
+    "vitest": "^4.1.10"
+  },
+  "dependencies": {
+    "@ntux402/shared": "workspace:*",
+    "viem": "^2.55.11"
   }
 }

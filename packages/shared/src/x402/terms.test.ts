@@ -1,10 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  NETWORK_BASE_SEPOLIA,
-  USDC_BASE_SEPOLIA,
-  type Address,
-} from "./protocol.js";
+import { NETWORK_BASE_SEPOLIA, type Address } from "./protocol.js";
+import { USDC_BASE_SEPOLIA } from "../chain/usdc.js";
 import {
   parsePaymentRequired,
   selectTerms,

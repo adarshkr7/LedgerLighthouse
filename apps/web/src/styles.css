@@ -1,0 +1,391 @@
+/*
+ * A quiet, printed look: paper, ink, hairlines, and one accent per state.
+ *
+ * The restraint is a design decision with a reason behind it. This page's job
+ * is to make a security claim legible — an opaque handle, a decision, a
+ * bounce — and decoration competes with that. So: no gradients, no shadows
+ * doing work borders can do, no colour that is not carrying meaning. Green and
+ * oxblood appear only on an approval and a rejection, which makes them read
+ * instantly when they do.
+ */
+
+:root {
+  --paper: #f7f6f3;
+  --paper-raised: #fffefc;
+  --ink: #16150f;
+  --ink-soft: #3d3a33;
+  --muted: #77736a;
+  --rule: #e0ddd5;
+  --rule-strong: #c9c5ba;
+
+  --approve: #2f5c4a;
+  --approve-wash: #eaf0ec;
+  --reject: #7c382e;
+  --reject-wash: #f5eae7;
+  --pending: #7a6a3c;
+  --pending-wash: #f4f0e4;
+
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua",
+    "Hoefler Text", Charter, Georgia, serif;
+  --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Mono", Menlo,
+    Consolas, monospace;
+
+  --measure: 60rem;
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #14140f;
+    --paper-raised: #1c1c16;
+    --ink: #f0eee7;
+    --ink-soft: #cfcbc0;
+    --muted: #8f8a7e;
+    --rule: #2e2d25;
+    --rule-strong: #45433a;
+
+    --approve: #7fb79c;
+    --approve-wash: #1b271f;
+    --reject: #d09184;
+    --reject-wash: #2a1c18;
+    --pending: #c3ab6e;
+    --pending-wash: #262114;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--serif);
+  font-size: 17px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ------------------------------------------------------------------ layout */
+
+.page {
+  max-width: var(--measure);
+  margin: 0 auto;
+  padding: 4rem 2rem 8rem;
+}
+
+@media (max-width: 40rem) {
+  .page {
+    padding: 2.5rem 1.25rem 5rem;
+  }
+}
+
+.masthead {
+  border-bottom: 1px solid var(--rule-strong);
+  padding-bottom: 1.75rem;
+  margin-bottom: 2.5rem;
+}
+
+.masthead h1 {
+  font-size: 1.9rem;
+  font-weight: 400;
+  letter-spacing: -0.015em;
+  margin: 0 0 0.4rem;
+}
+
+.masthead p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.98rem;
+  max-width: 44rem;
+}
+
+.claim {
+  margin: 1.25rem 0 0;
+  padding-left: 1rem;
+  border-left: 2px solid var(--rule-strong);
+  font-style: italic;
+  color: var(--ink-soft);
+  font-size: 0.98rem;
+}
+
+/* ------------------------------------------------------------------- steps */
+
+.step {
+  border-top: 1px solid var(--rule);
+  padding: 2rem 0;
+  display: grid;
+  grid-template-columns: 2.5rem 1fr;
+  gap: 0 1.25rem;
+}
+
+@media (max-width: 40rem) {
+  .step {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+  .step-number {
+    display: none;
+  }
+}
+
+.step-number {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--muted);
+  padding-top: 0.4rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.step-body h2 {
+  font-size: 1.15rem;
+  font-weight: 400;
+  margin: 0 0 0.35rem;
+  letter-spacing: -0.01em;
+}
+
+.step-body > p {
+  margin: 0 0 1rem;
+  color: var(--muted);
+  font-size: 0.95rem;
+  max-width: 42rem;
+}
+
+.step[data-state="done"] .step-number::after {
+  content: " ✓";
+  color: var(--approve);
+}
+
+.step[data-state="blocked"] {
+  opacity: 0.45;
+}
+
+/* ------------------------------------------------------------------ inputs */
+
+button {
+  font-family: inherit;
+  font-size: 0.92rem;
+  padding: 0.5rem 1.1rem;
+  border: 1px solid var(--ink);
+  background: var(--ink);
+  color: var(--paper);
+  cursor: pointer;
+  border-radius: 2px;
+  transition: opacity 120ms ease;
+}
+
+button:hover:not(:disabled) {
+  opacity: 0.85;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.35;
+}
+
+button.secondary {
+  background: transparent;
+  color: var(--ink);
+  border-color: var(--rule-strong);
+}
+
+.row {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+/* -------------------------------------------------------------- data lists */
+
+dl.facts {
+  display: grid;
+  grid-template-columns: minmax(8rem, auto) 1fr;
+  gap: 0.35rem 1.25rem;
+  margin: 0 0 1rem;
+  font-size: 0.9rem;
+}
+
+dl.facts dt {
+  color: var(--muted);
+}
+
+dl.facts dd {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  word-break: break-all;
+}
+
+.hint {
+  font-size: 0.85rem;
+  color: var(--muted);
+  font-style: italic;
+  margin: 0.5rem 0 0;
+  max-width: 42rem;
+}
+
+/* ------------------------------------------------------------------ handle */
+
+.handle {
+  display: block;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.01em;
+  padding: 0.7rem 0.85rem;
+  background: var(--paper-raised);
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  word-break: break-all;
+  color: var(--ink-soft);
+}
+
+/* ------------------------------------------------------------------- badge */
+
+.badge {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  padding: 0.18rem 0.5rem;
+  border-radius: 2px;
+  border: 1px solid currentColor;
+}
+
+.badge[data-tone="approve"] {
+  color: var(--approve);
+  background: var(--approve-wash);
+}
+.badge[data-tone="reject"] {
+  color: var(--reject);
+  background: var(--reject-wash);
+}
+.badge[data-tone="pending"] {
+  color: var(--pending);
+  background: var(--pending-wash);
+}
+.badge[data-tone="neutral"] {
+  color: var(--muted);
+  background: transparent;
+}
+
+/* -------------------------------------------------------------------- log */
+
+.log {
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  background: var(--paper-raised);
+  max-height: 30rem;
+  overflow-y: auto;
+}
+
+.log-entry {
+  border-bottom: 1px solid var(--rule);
+  padding: 0.7rem 0.9rem;
+  font-size: 0.87rem;
+}
+
+.log-entry:last-child {
+  border-bottom: none;
+}
+
+.log-entry .label {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+  display: block;
+  margin-bottom: 0.3rem;
+}
+
+.log-entry pre {
+  font-family: var(--mono);
+  font-size: 0.76rem;
+  line-height: 1.55;
+  margin: 0.4rem 0 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--ink-soft);
+}
+
+.log-entry.reasoning {
+  background: var(--paper);
+}
+
+.vendor-text {
+  font-size: 0.86rem;
+  line-height: 1.55;
+  padding: 0.7rem 0.85rem;
+  margin: 0.45rem 0 0;
+  border-left: 2px solid var(--reject);
+  background: var(--reject-wash);
+  color: var(--ink-soft);
+}
+
+/* ------------------------------------------------------------------ tabs */
+
+.tabs {
+  display: inline-flex;
+  border: 1px solid var(--rule-strong);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.tabs button {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--ink-soft);
+  padding: 0.45rem 1rem;
+}
+
+.tabs button[aria-pressed="true"] {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+/* ---------------------------------------------------------------- notices */
+
+.notice {
+  font-size: 0.88rem;
+  padding: 0.7rem 0.9rem;
+  border-radius: 2px;
+  border: 1px solid var(--rule-strong);
+  background: var(--paper-raised);
+  margin: 0 0 1rem;
+}
+
+.notice[data-tone="warn"] {
+  border-color: var(--pending);
+  background: var(--pending-wash);
+  color: var(--ink-soft);
+}
+
+.notice[data-tone="error"] {
+  border-color: var(--reject);
+  background: var(--reject-wash);
+  color: var(--ink-soft);
+}
+
+a {
+  color: inherit;
+  text-decoration-color: var(--rule-strong);
+  text-underline-offset: 0.15em;
+}
+
+a:hover {
+  text-decoration-color: currentColor;
+}
+
+code {
+  font-family: var(--mono);
+  font-size: 0.85em;
+}

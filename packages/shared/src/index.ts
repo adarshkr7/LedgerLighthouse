@@ -1,3 +1,3 @@
-// Shared TS types across services: terms schema, termsHash, ABIs.
-// termsHash and ABIs land in M2 — M1 is the x402 v1 terms schema only.
+// Shared TS types across services: x402 terms schema, on-chain ABIs, USDC/EIP-3009 constants.
 export * from "./x402/index.js";
+export * from "./chain/index.js";

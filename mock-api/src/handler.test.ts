@@ -4,11 +4,15 @@ import {
   HEADER_PAYMENT,
   HEADER_PAYMENT_RESPONSE,
   NETWORK_BASE_SEPOLIA,
+  SCHEME_EXACT,
   USDC_BASE_SEPOLIA,
+  X402_VERSION,
+  encodePaymentHeader,
   parsePaymentRequired,
   selectTerms,
   toModelSafeSummary,
   type Address,
+  type PaymentPayload,
 } from "@ntux402/shared";
 
 import {
@@ -30,6 +34,32 @@ afterAll(async () => {
 });
 
 const expected = { network: NETWORK_BASE_SEPOLIA, asset: USDC_BASE_SEPOLIA as Address };
+
+/**
+ * A well-formed x402 v1 `exact` payload. The signature is nonsense, which is
+ * exactly right for stub mode: with no facilitator the server validates the
+ * *shape* of a payment and moves no money. Signature checking lives in the
+ * facilitator, and is tested there against a real key.
+ */
+function stubPayment(payTo: string, valueAtomic: string): string {
+  const payload: PaymentPayload = {
+    x402Version: X402_VERSION,
+    scheme: SCHEME_EXACT,
+    network: NETWORK_BASE_SEPOLIA,
+    payload: {
+      signature: `0x${"11".repeat(65)}`,
+      authorization: {
+        from: "0x5555555555555555555555555555555555555555",
+        to: payTo as Address,
+        value: valueAtomic,
+        validAfter: "0",
+        validBefore: "99999999999",
+        nonce: `0x${"22".repeat(32)}`,
+      },
+    },
+  };
+  return encodePaymentHeader(payload);
+}
 
 describe("GET /resource/honest", () => {
   it("returns 402 with payment requirements when unpaid", async () => {
@@ -58,7 +88,7 @@ describe("GET /resource/honest", () => {
 
   it("returns 200 with premium data on the paid retry", async () => {
     const res = await fetch(`${api.url}/resource/honest`, {
-      headers: { [HEADER_PAYMENT]: "stub-payment-payload" },
+      headers: { [HEADER_PAYMENT]: stubPayment(HONEST_PAY_TO, HONEST_PRICE_ATOMIC) },
     });
     expect(res.status).toBe(200);
 
@@ -69,7 +99,7 @@ describe("GET /resource/honest", () => {
 
   it("returns settlement details in X-PAYMENT-RESPONSE (v1 header name)", async () => {
     const res = await fetch(`${api.url}/resource/honest`, {
-      headers: { [HEADER_PAYMENT]: "stub-payment-payload" },
+      headers: { [HEADER_PAYMENT]: stubPayment(HONEST_PAY_TO, HONEST_PRICE_ATOMIC) },
     });
     const header = res.headers.get(HEADER_PAYMENT_RESPONSE);
     expect(header).toBeTruthy();
@@ -77,6 +107,9 @@ describe("GET /resource/honest", () => {
     const decoded = JSON.parse(Buffer.from(header!, "base64").toString("utf8"));
     expect(decoded.success).toBe(true);
     expect(decoded.network).toBe(NETWORK_BASE_SEPOLIA);
+    // Unmistakably a stub: no facilitator was configured, so no money moved.
+    expect(decoded.simulated).toBe(true);
+    expect(decoded.transaction).toBeUndefined();
   });
 
   it("treats an empty X-PAYMENT header as unpaid", async () => {
@@ -142,7 +175,7 @@ describe("GET /resource/malicious", () => {
 
   it("settles too — nothing server-side declines the money", async () => {
     const res = await fetch(`${api.url}/resource/malicious`, {
-      headers: { [HEADER_PAYMENT]: "stub-payment-payload" },
+      headers: { [HEADER_PAYMENT]: stubPayment(MALICIOUS_PAY_TO, MALICIOUS_PRICE_ATOMIC) },
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as { mode: string };
@@ -165,5 +198,53 @@ describe("routing", () => {
     const res = await fetch(`${api.url}/health`);
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ ok: true, x402Version: 1 });
+  });
+});
+
+describe("payment payload validation", () => {
+  it("rejects a header that is not base64 JSON", async () => {
+    const res = await fetch(`${api.url}/resource/honest`, {
+      headers: { [HEADER_PAYMENT]: "not-a-real-payload" },
+    });
+    expect(res.status).toBe(402);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toContain("payment rejected");
+  });
+
+  it("rejects a v2-shaped payload rather than adapting to it", async () => {
+    const v2 = Buffer.from(
+      JSON.stringify({ x402Version: 2, scheme: SCHEME_EXACT, network: "eip155:84532", payload: {} }),
+      "utf8",
+    ).toString("base64");
+    const res = await fetch(`${api.url}/resource/honest`, { headers: { [HEADER_PAYMENT]: v2 } });
+    expect(res.status).toBe(402);
+  });
+
+  it("rejects a payment directed at a different payee", async () => {
+    // The malicious server's payee, presented to the honest endpoint.
+    const res = await fetch(`${api.url}/resource/honest`, {
+      headers: { [HEADER_PAYMENT]: stubPayment(MALICIOUS_PAY_TO, HONEST_PRICE_ATOMIC) },
+    });
+    expect(res.status).toBe(402);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toContain("payee mismatch");
+  });
+
+  it("rejects a payment for less than the asking price", async () => {
+    const res = await fetch(`${api.url}/resource/honest`, {
+      headers: { [HEADER_PAYMENT]: stubPayment(HONEST_PAY_TO, "1") },
+    });
+    expect(res.status).toBe(402);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toContain("insufficient");
+  });
+
+  it("re-serves the full payment requirements on a rejected payment", async () => {
+    // A rejected payment must leave the client able to try again, so the 402
+    // body has to stay a valid 402 body rather than degrading to an error blob.
+    const res = await fetch(`${api.url}/resource/honest`, {
+      headers: { [HEADER_PAYMENT]: "garbage" },
+    });
+    expect(parsePaymentRequired(await res.json()).ok).toBe(true);
   });
 });

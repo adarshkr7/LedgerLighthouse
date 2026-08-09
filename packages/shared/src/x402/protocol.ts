@@ -18,7 +18,7 @@ export const NETWORK_BASE_SEPOLIA = "base-sepolia";
 /** The only x402 scheme this project implements. */
 export const SCHEME_EXACT = "exact";
 
-/** Base Sepolia USDC — 6 decimals, FiatTokenV2_2. Public, and checked in deliberately. */
-export const USDC_BASE_SEPOLIA = "0x036CbD53842c5426634e7929541eC2318f3dCF7e";
-
 export type Address = `0x${string}`;
+
+// `USDC_BASE_SEPOLIA` lives in ../chain/usdc.ts, next to the EIP-3009 surface and
+// the EIP-712 domain it belongs with. Still re-exported from the package root.
