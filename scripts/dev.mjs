@@ -114,12 +114,24 @@ for (const [i, service] of services.entries()) {
   });
 }
 
+// `shell: true` means each child is a shell wrapping pnpm wrapping node. On
+// Windows, killing the shell orphans the node grandchild, which keeps its port
+// and greets the next `pnpm dev` with EADDRINUSE. Kill the tree, not the shell.
+const kill = (child) => {
+  if (child.exitCode !== null || child.signalCode !== null) return;
+  if (process.platform === "win32") {
+    spawnSync("taskkill", ["/PID", String(child.pid), "/T", "/F"], { stdio: "ignore" });
+  } else {
+    child.kill();
+  }
+};
+
 let shuttingDown = false;
 const stopAll = () => {
   if (shuttingDown) return;
   shuttingDown = true;
   console.log(`\n${DIM}Stopping…${OFF}`);
-  for (const child of children) child.kill();
+  for (const child of children) kill(child);
   // Give them a moment to close listeners before the parent goes.
   setTimeout(() => process.exit(0), 500);
 };

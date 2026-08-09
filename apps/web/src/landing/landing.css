@@ -1,0 +1,746 @@
+/*
+ * Landing page styling. Pure black, white type, thin borders, large spacing.
+ *
+ * Scoped under `.landing` on purpose: the console keeps its own warm, papery
+ * theme, and these two surfaces are not trying to be the same product page.
+ * Nothing here leaks out, so the dashboard is untouched.
+ *
+ * Colour carries no meaning on this page — there is exactly one accent, white,
+ * and everything else is a step down the grey ramp. A security page that
+ * reaches for green and red before it has any state to report is decorating.
+ */
+
+/* Set by <Landing> while it is mounted, so overscroll and the area behind a
+   mobile URL bar stay black instead of flashing the console's paper colour. */
+body[data-surface="landing"] {
+  background: #000000;
+}
+
+.landing {
+  /* Not var(--paper)/var(--ink): those are the console's tokens and follow the
+     viewer's light/dark preference. This page is black in both. */
+  --lp-bg: #000000;
+  --lp-raised: #0a0a0a;
+  --lp-line: rgba(255, 255, 255, 0.09);
+  --lp-line-strong: rgba(255, 255, 255, 0.18);
+  --lp-fg: #f5f5f4;
+  --lp-fg-dim: #8b8b86;
+  --lp-fg-faint: #57574f;
+
+  --lp-sans: "Helvetica Neue", Helvetica, "Segoe UI Variable Display", "Segoe UI", Arial,
+    sans-serif;
+  --lp-mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+
+  --lp-measure: 68rem;
+  --lp-gap: clamp(4.5rem, 9vw, 8rem);
+
+  background: var(--lp-bg);
+  color: var(--lp-fg);
+  font-family: var(--lp-sans);
+  font-size: 16px;
+  line-height: 1.6;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+
+.landing *,
+.landing *::before,
+.landing *::after {
+  box-sizing: border-box;
+}
+
+/* ------------------------------------------------------------- typography */
+
+.lp-eyebrow {
+  font-family: var(--lp-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--lp-fg-dim);
+  margin: 0 0 1.25rem;
+}
+
+.lp-headline {
+  /* Sized so the longer of the two authored lines fits without re-wrapping.
+     `balance` is deliberately not used here — the line break is authored with
+     <br>, and balancing would fight it. */
+  /* Measured: at this column width the longer authored line needs ~600px and
+     has ~670px. The ~10% headroom is deliberate — sizing it to exactly fit
+     would re-wrap to three lines wherever the font falls back. */
+  font-size: clamp(2rem, 3.8vw, 2.85rem);
+  line-height: 1.1;
+  letter-spacing: -0.032em;
+  font-weight: 500;
+  margin: 0 0 1.5rem;
+}
+
+.lp-h2 {
+  font-size: clamp(1.4rem, 2.6vw, 1.95rem);
+  line-height: 1.2;
+  letter-spacing: -0.022em;
+  font-weight: 500;
+  margin: 0 0 2.75rem;
+  max-width: 34ch;
+  text-wrap: balance;
+}
+
+.lp-sub {
+  font-size: 1.02rem;
+  color: var(--lp-fg-dim);
+  margin: 0 0 2.25rem;
+  max-width: 46ch;
+}
+
+/* ----------------------------------------------------------------- layout */
+
+.lp-hero,
+.lp-section,
+.lp-trust,
+.lp-cta,
+.lp-footer {
+  max-width: var(--lp-measure);
+  margin: 0 auto;
+  padding-inline: clamp(1.25rem, 4vw, 2.5rem);
+}
+
+.lp-hero {
+  display: grid;
+  /* Copy gets the wider share: the headline is specified as two lines, and at
+     an even split "without giving the AI your wallet." breaks into three. */
+  grid-template-columns: minmax(0, 1.42fr) minmax(0, 0.58fr);
+  gap: clamp(2rem, 4.5vw, 3.75rem);
+  align-items: center;
+  padding-block: clamp(5rem, 12vh, 9rem) var(--lp-gap);
+}
+
+.lp-section {
+  padding-block: var(--lp-gap);
+  border-top: 1px solid var(--lp-line);
+}
+
+/* ---------------------------------------------------------------- buttons */
+
+.lp-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font: inherit;
+  font-size: 0.92rem;
+  font-weight: 500;
+  padding: 0.72rem 1.35rem;
+  border-radius: 6px;
+  border: 1px solid var(--lp-fg);
+  background: var(--lp-fg);
+  color: #000;
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: opacity 150ms ease, background-color 150ms ease, border-color 150ms ease;
+}
+
+.lp-btn:hover {
+  opacity: 0.88;
+}
+
+.lp-btn-ghost {
+  background: transparent;
+  color: var(--lp-fg);
+  border-color: var(--lp-line-strong);
+}
+
+.lp-btn-ghost:hover {
+  opacity: 1;
+  border-color: var(--lp-fg-dim);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.landing :focus-visible {
+  outline: 1px solid var(--lp-fg);
+  outline-offset: 2px;
+}
+
+.lp-actions {
+  display: flex;
+  gap: 0.7rem;
+  flex-wrap: wrap;
+}
+
+/* -------------------------------------------------------- workflow diagram */
+
+/* One row, never wrapped. Wrapping mid-chain leaves a connector pointing at
+   nothing at the end of each row, which reads as a broken diagram. Below the
+   breakpoint it stacks vertically instead, where the same connector is correct. */
+.flow {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+}
+
+.flow-step {
+  display: flex;
+  align-items: center;
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+/* Seven across only fits if the node stacks its icon above its text. */
+.flow-node {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.65rem;
+  padding: 1rem 0.85rem;
+  align-self: stretch;
+}
+
+.flow-label {
+  white-space: normal;
+}
+
+.flow-node {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.8rem 0.95rem;
+  border: 1px solid var(--lp-line);
+  border-radius: 8px;
+  background: var(--lp-raised);
+  min-width: 0;
+  flex: 1;
+  /* Under 200ms, as specified — the highlight should register, not animate. */
+  transition: border-color 160ms ease, color 160ms ease, background-color 160ms ease;
+}
+
+.flow-step[data-active] .flow-node {
+  border-color: var(--lp-line-strong);
+  background: #0f0f0f;
+}
+
+.flow-icon {
+  display: grid;
+  place-items: center;
+  color: var(--lp-fg-faint);
+  flex-shrink: 0;
+  transition: color 160ms ease;
+}
+
+.flow-step[data-active] .flow-icon {
+  color: var(--lp-fg);
+}
+
+.flow-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.flow-label {
+  font-family: var(--lp-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  color: var(--lp-fg-dim);
+  transition: color 160ms ease;
+}
+
+.flow-step[data-active] .flow-label {
+  color: var(--lp-fg);
+}
+
+.flow-note {
+  font-size: 0.78rem;
+  color: var(--lp-fg-faint);
+  margin-top: 0.15rem;
+}
+
+/* The connector. A hairline, nothing more. */
+.flow-link {
+  flex-shrink: 0;
+  background: var(--lp-line);
+}
+
+.flow-link {
+  height: 1px;
+  width: 0.9rem;
+}
+
+/* Stack vertically once seven columns stop being legible. Back to icon-beside-
+   label here, since a stacked column has all the width it needs. */
+@media (max-width: 64rem) {
+  .flow {
+    flex-direction: column;
+  }
+  .flow-step {
+    flex-direction: column;
+    align-items: stretch;
+    flex: 1 1 auto;
+  }
+  .flow-node {
+    flex-direction: row;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.85rem 0.95rem;
+  }
+  .flow-link {
+    width: 1px;
+    height: 0.85rem;
+    margin-inline-start: 1.55rem;
+  }
+}
+
+/* ------------------------------------------------------- hero block stream */
+
+.bs {
+  border: 1px solid var(--lp-line);
+  border-radius: 10px;
+  background: var(--lp-raised);
+  overflow: hidden;
+}
+
+.bs-head {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.7rem 0.95rem;
+  border-bottom: 1px solid var(--lp-line);
+  font-family: var(--lp-mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--lp-fg-faint);
+}
+
+/* A ring rather than a filled dot: filled reads as a status light, and this is
+   a label, not a health indicator. */
+.bs-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  border: 1px solid var(--lp-fg-dim);
+  flex-shrink: 0;
+}
+
+.bs-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.bs-block {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: baseline;
+  gap: 0.85rem;
+  padding: 0.72rem 0.95rem;
+  border-bottom: 1px solid var(--lp-line);
+  font-family: var(--lp-mono);
+  font-size: 0.72rem;
+  color: var(--lp-fg-faint);
+  /* One 180ms entrance per new block. Nothing else on this panel moves. */
+  animation: bs-enter 180ms ease-out both;
+}
+
+.bs-block:last-child {
+  border-bottom: none;
+}
+
+/* The newest block is the only one at full contrast, so the eye lands on the
+   row that just changed and the rest recede into history. */
+.bs-block[data-lead] .bs-height,
+.bs-block[data-lead] .bs-hash {
+  color: var(--lp-fg);
+}
+
+.bs-height {
+  color: var(--lp-fg-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.bs-hash {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bs-txs {
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes bs-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ------------------------------------------------------------ trust strip */
+
+.lp-trust {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.85rem 1.6rem;
+  padding-block: 1.6rem;
+  border-top: 1px solid var(--lp-line);
+  border-bottom: 1px solid var(--lp-line);
+}
+
+.lp-trust-item {
+  font-family: var(--lp-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  color: var(--lp-fg-faint);
+  position: relative;
+}
+
+.lp-trust-item + .lp-trust-item::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: -0.85rem;
+  top: 0.15em;
+  bottom: 0.15em;
+  width: 1px;
+  background: var(--lp-line);
+}
+
+/* ----------------------------------------------------------- feature grid */
+
+.lp-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  background: var(--lp-line);
+  border: 1px solid var(--lp-line);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.lp-card {
+  background: var(--lp-bg);
+  padding: 1.6rem 1.4rem;
+  transition: background-color 160ms ease;
+}
+
+.lp-card:hover {
+  background: var(--lp-raised);
+}
+
+.lp-card-icon {
+  display: block;
+  color: var(--lp-fg-dim);
+  margin-bottom: 0.9rem;
+}
+
+.lp-card-title {
+  font-size: 0.94rem;
+  font-weight: 500;
+  letter-spacing: -0.008em;
+  margin: 0 0 0.4rem;
+}
+
+.lp-card-body {
+  font-size: 0.86rem;
+  line-height: 1.55;
+  color: var(--lp-fg-dim);
+  margin: 0;
+}
+
+@media (max-width: 60rem) {
+  .lp-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 38rem) {
+  .lp-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ------------------------------------------------------------- comparison */
+
+.lp-compare {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.25rem;
+}
+
+.lp-col {
+  border: 1px solid var(--lp-line);
+  border-radius: 10px;
+  padding: 1.6rem 1.5rem;
+}
+
+/* The emphasis is one notch of border and background — enough to read as the
+   answer without turning the comparison into an advertisement. */
+.lp-col-emphasis {
+  border-color: var(--lp-line-strong);
+  background: var(--lp-raised);
+}
+
+.lp-col-title {
+  font-family: var(--lp-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--lp-fg-dim);
+  margin: 0 0 1.15rem;
+  font-weight: 400;
+}
+
+.lp-col-emphasis .lp-col-title {
+  color: var(--lp-fg);
+}
+
+.lp-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.lp-list-item {
+  display: flex;
+  align-items: baseline;
+  gap: 0.7rem;
+  font-size: 0.9rem;
+  color: var(--lp-fg-dim);
+}
+
+.lp-col-emphasis .lp-list-item {
+  color: var(--lp-fg);
+}
+
+.lp-mark {
+  flex-shrink: 0;
+  width: 6px;
+  height: 1px;
+  background: var(--lp-fg-faint);
+  transform: translateY(-0.35em);
+}
+
+.lp-mark-on {
+  background: var(--lp-fg);
+}
+
+@media (max-width: 46rem) {
+  .lp-compare {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* -------------------------------------------------------------- preview */
+
+.lp-preview {
+  border: 1px solid var(--lp-line);
+  border-radius: 10px;
+  background: var(--lp-raised);
+  padding: 1.75rem;
+  display: grid;
+  gap: 1.75rem;
+}
+
+.lp-preview-head {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.lp-status {
+  font-family: var(--lp-mono);
+  font-size: 0.64rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--lp-fg);
+  border: 1px solid var(--lp-line-strong);
+  border-radius: 3px;
+  padding: 0.16rem 0.45rem;
+  justify-self: start;
+  margin-bottom: 0.35rem;
+}
+
+.lp-preview-title {
+  font-size: 1.05rem;
+  font-weight: 500;
+}
+
+.lp-preview-sub {
+  font-size: 0.86rem;
+  color: var(--lp-fg-dim);
+}
+
+.lp-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  margin: 0;
+  background: var(--lp-line);
+  border: 1px solid var(--lp-line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.lp-metric {
+  background: var(--lp-bg);
+  padding: 0.9rem 1rem;
+}
+
+.lp-metric dt {
+  font-family: var(--lp-mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--lp-fg-faint);
+  margin-bottom: 0.3rem;
+}
+
+.lp-metric dd {
+  margin: 0;
+  font-size: 0.88rem;
+  color: var(--lp-fg);
+}
+
+@media (max-width: 46rem) {
+  .lp-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.lp-timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.85rem;
+}
+
+.lp-timeline-item {
+  position: relative;
+  padding-inline-start: 1.5rem;
+  font-size: 0.87rem;
+  color: var(--lp-fg-dim);
+}
+
+.lp-timeline-item::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: 0;
+  top: 0.55em;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  border: 1px solid var(--lp-fg-dim);
+}
+
+/* Runs the rail between dots, but not past the last one. */
+.lp-timeline-item:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  inset-inline-start: 2px;
+  top: calc(0.55em + 6px);
+  height: calc(100% + 0.85rem - 7px);
+  width: 1px;
+  background: var(--lp-line);
+}
+
+/* ----------------------------------------------------------------- prose */
+
+.lp-prose {
+  display: grid;
+  gap: 1.1rem;
+  max-width: 52ch;
+}
+
+.lp-prose p {
+  margin: 0;
+  font-size: 0.98rem;
+  color: var(--lp-fg-dim);
+}
+
+/* ------------------------------------------------------------------- CTA */
+
+.lp-cta {
+  text-align: center;
+  padding-block: clamp(5rem, 11vw, 8rem);
+  border-top: 1px solid var(--lp-line);
+}
+
+.lp-cta-title {
+  font-size: clamp(1.6rem, 3.6vw, 2.5rem);
+  line-height: 1.16;
+  letter-spacing: -0.026em;
+  font-weight: 500;
+  margin: 0 0 2rem;
+  text-wrap: balance;
+}
+
+.lp-cta-note {
+  font-size: 0.82rem;
+  color: var(--lp-fg-faint);
+  margin: 1.1rem 0 0;
+}
+
+/* ---------------------------------------------------------------- footer */
+
+.lp-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem 1.75rem;
+  align-items: center;
+  justify-content: space-between;
+  padding-block: 2.25rem;
+  border-top: 1px solid var(--lp-line);
+}
+
+.lp-footer-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+}
+
+.lp-footer-links a {
+  font-size: 0.84rem;
+  color: var(--lp-fg-dim);
+  text-decoration: none;
+  transition: color 150ms ease;
+}
+
+.lp-footer-links a:hover {
+  color: var(--lp-fg);
+}
+
+.lp-footer-note {
+  font-family: var(--lp-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  color: var(--lp-fg-faint);
+  margin: 0;
+}
+
+/* --------------------------------------------------------------- motion */
+
+@media (max-width: 52rem) {
+  .lp-hero {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  /* The diagram repeats in full a section later; on a narrow screen the hero
+     copy should get straight to the buttons instead. */
+  .lp-hero-visual {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing *,
+  .landing *::before,
+  .landing *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
