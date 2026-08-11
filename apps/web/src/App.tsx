@@ -13,11 +13,12 @@ import { useAccount, useChainId, useConnect, useDisconnect, useSwitchChain, useW
 import { createPublicClient, http, parseEventLogs, type Address, type Hex } from "viem";
 import { Lightning } from "@inco/lightning-js/lite";
 import { handleTypes } from "@inco/lightning-js";
-import { policyVaultAbi, usdcAbi } from "@ntux402/shared";
+import { DEMO_GOALS, DEMO_PAYEES, policyVaultAbi, usdcAbi, type DemoGoal } from "@ntux402/shared";
 
 import { Card, Copyable, Dot, Field, Ring, truncate } from "./dashboard/primitives.js";
 import { Timeline } from "./dashboard/Timeline.js";
 import { Comparison, EvidenceDrawer, Guarantees, Outcome } from "./dashboard/panels.js";
+import { GoalPicker } from "./dashboard/GoalPicker.js";
 import { TotemMark } from "./brand/Totem.js";
 import "./dashboard/dashboard.css";
 import {
@@ -36,10 +37,8 @@ const PER_CALL_CAP = 6_000_000n; // 6.00 USDC — public, above the 5.00 malicio
 const CALLS_REMAINING = 5;
 const PAYER_FUNDING = 300_000n; // 0.30 USDC — above the budget, on purpose
 
-const HONEST_PAY_TO: Address = "0x1111111111111111111111111111111111111111";
-const MALICIOUS_PAY_TO: Address = "0x2222222222222222222222222222222222222222";
-
-type Mode = "honest" | "malicious";
+/** Opened on first render so the console is never in a no-resource state. */
+const DEFAULT_GOAL = DEMO_GOALS[0] as DemoGoal;
 
 export default function App() {
   const { address, isConnected } = useAccount();
@@ -56,7 +55,7 @@ export default function App() {
   const [resumeId, setResumeId] = useState("");
   const [budgetHandle, setBudgetHandle] = useState<Hex>();
   const [funded, setFunded] = useState(false);
-  const [mode, setMode] = useState<Mode>("honest");
+  const [resource, setResource] = useState<DemoGoal>(DEFAULT_GOAL);
   const [events, setEvents] = useState<PaymentEvent[]>([]);
   const [result, setResult] = useState<RunResult>();
   const [busy, setBusy] = useState<string>();
@@ -163,9 +162,11 @@ export default function App() {
             relay: config.relayAddress,
             asset: config.usdcAddress,
             expiry: BigInt(Math.floor(Date.now() / 1000) + 7 * 24 * 3600),
-            // Both vendors allowlisted on purpose: the malicious one must fail
-            // the *confidential* check, not a public precondition.
-            allowlist: [HONEST_PAY_TO, MALICIOUS_PAY_TO],
+            // Every vendor in the catalog is allowlisted on purpose: the
+            // hostile ones must fail the *confidential* check, not a public
+            // precondition. An unallowlisted payee would revert in `require`,
+            // which proves nothing about Inco.
+            allowlist: [...DEMO_PAYEES],
           },
         ],
         chain: CHAIN,
@@ -202,16 +203,16 @@ export default function App() {
     });
 
   // --- step 5: hand off ------------------------------------------------------
-  // Takes the mode explicitly, defaulting to state. The dashboard has one
-  // button per mode, and `setMode(x); run()` would read the *previous* mode —
-  // state updates are not visible to the closure that scheduled them, so
-  // "Run malicious" would quietly run the honest request.
-  const run = (which: Mode = mode) =>
-    guard(`Running the ${which} request…`, async () => {
+  // Takes the resource explicitly, defaulting to state. Selecting from the
+  // picker and running in one gesture would otherwise read the *previous*
+  // selection — state updates are not visible to the closure that scheduled
+  // them, so "buy this one" would quietly buy the last one.
+  const run = (which: DemoGoal = resource) =>
+    guard(`Running ${which.label}…`, async () => {
       if (!goalId) throw new Error("no goal");
       setEvents([]);
       setResult(undefined);
-      for await (const event of streamRun(goalId, which)) {
+      for await (const event of streamRun(goalId, which.key)) {
         if (event.channel === "payment") setEvents((prior) => [...prior, event.data]);
         else if (event.channel === "result") setResult(event.data);
         else if (event.channel === "error") setError(event.data.message);
@@ -507,29 +508,27 @@ export default function App() {
 
           {/* 4 — CONTROLS */}
           <Card title="Execution">
-            <div className="d-controls">
+            <GoalPicker
+              selected={resource}
+              disabled={!!busy}
+              onSelect={(goal) => {
+                setResource(goal);
+                resetDemo();
+              }}
+            />
+
+            <p className="d-expectation" data-kind={resource.kind}>
+              {resource.expectation}
+            </p>
+
+            <div className="d-controls" style={{ marginTop: "0.6rem" }}>
               <button
                 type="button"
                 className="d-btn"
                 disabled={!goalId || !!busy}
-                onClick={() => {
-                  setMode("honest");
-                  run("honest");
-                }}
+                onClick={() => run(resource)}
               >
-                Run honest request
-              </button>
-              <button
-                type="button"
-                className="d-btn"
-                data-kind="outline"
-                disabled={!goalId || !!busy}
-                onClick={() => {
-                  setMode("malicious");
-                  run("malicious");
-                }}
-              >
-                Run malicious request
+                Buy {resource.label} · {formatUsdc(BigInt(resource.priceAtomic))} USDC
               </button>
               <button
                 type="button"

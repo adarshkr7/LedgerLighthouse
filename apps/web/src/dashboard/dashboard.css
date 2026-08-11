@@ -912,6 +912,204 @@
   align-items: center;
 }
 
+/* ------------------------------------------------------------- goal picker */
+
+/*
+ * Interaction adapted from the Beautiful UI prompt bar. The one detail carried
+ * over deliberately is `.gp-glide`: a single highlight that animates its `top`
+ * to the active row, rather than each row toggling its own background. The
+ * first reads as a cursor moving down a list; the second reads as blinking.
+ */
+
+.gp {
+  position: relative;
+}
+
+.gp-field {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--t-line-strong);
+  border-radius: var(--t-r-sm);
+  background: var(--t-inset);
+  box-shadow: var(--t-shadow-inset);
+  transition: border-color var(--t-t) var(--t-ease);
+}
+
+.gp-field[data-open],
+.gp-field:focus-within {
+  border-color: var(--t-fg-3);
+}
+
+.gp-icon {
+  color: var(--t-fg-4);
+  flex-shrink: 0;
+}
+
+.gp-input {
+  font: inherit;
+  font-size: 0.82rem;
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--t-fg);
+}
+
+.gp-input::placeholder {
+  color: var(--t-fg-3);
+}
+
+.gp-price {
+  font-family: var(--t-mono);
+  font-size: 0.68rem;
+  color: var(--t-fg-3);
+  white-space: nowrap;
+}
+
+.gp-chevron {
+  color: var(--t-fg-4);
+  flex-shrink: 0;
+  transition: transform var(--t-t) var(--t-ease);
+}
+
+.gp-chevron[data-open] {
+  transform: rotate(180deg);
+}
+
+.gp-menu {
+  position: absolute;
+  inset-inline: 0;
+  top: calc(100% + 0.4rem);
+  z-index: 15;
+  padding: 0.25rem;
+  border-radius: var(--t-r);
+  background: var(--t-raised-2);
+  box-shadow: var(--t-shadow-raised), 0 12px 32px rgba(0, 0, 0, 0.5);
+  animation: t-pop-in 170ms var(--t-ease) both;
+  transform-origin: top center;
+}
+
+/* The gliding highlight. Sits under the rows; only `top`/`height` animate. */
+.gp-glide {
+  position: absolute;
+  inset-inline: 0.25rem;
+  border-radius: var(--t-r-sm);
+  background: rgba(255, 255, 255, 0.06);
+  pointer-events: none;
+  transition:
+    top 200ms var(--t-ease),
+    height 200ms var(--t-ease),
+    opacity 140ms ease;
+}
+
+.gp-row {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  padding: 0.5rem 0.55rem;
+  border: none;
+  border-radius: var(--t-r-sm);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.gp-row-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--t-ok);
+}
+
+.gp-row[data-kind="malicious"] .gp-row-dot {
+  background: var(--t-no);
+}
+
+.gp-row-text {
+  display: grid;
+  gap: 0.05rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.gp-row-name {
+  font-size: 0.82rem;
+  color: var(--t-fg);
+}
+
+.gp-row-blurb {
+  font-size: 0.72rem;
+  color: var(--t-fg-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gp-row-price {
+  font-family: var(--t-mono);
+  font-size: 0.72rem;
+  color: var(--t-fg-2);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.gp-row-tag {
+  font-family: var(--t-mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--t-fg-4);
+  flex-shrink: 0;
+  min-width: 5.5rem;
+  text-align: right;
+}
+
+.gp-row[data-kind="malicious"] .gp-row-tag {
+  color: var(--t-no);
+}
+
+.gp-empty,
+.gp-foot {
+  margin: 0;
+  padding: 0.5rem 0.55rem;
+  font-size: 0.71rem;
+  color: var(--t-fg-4);
+}
+
+.gp-foot {
+  border-top: 1px solid var(--t-line);
+  margin-top: 0.25rem;
+}
+
+/* What the selected resource is expected to do, before it is run. */
+.d-expectation {
+  margin: 0.6rem 0 0;
+  padding: 0.6rem 0.7rem;
+  border-radius: var(--t-r-sm);
+  border-inline-start: 2px solid var(--t-line-strong);
+  background: var(--t-raised-2);
+  font-size: 0.78rem;
+  color: var(--t-fg-2);
+  animation: t-fade-up 220ms var(--t-ease) both;
+}
+
+.d-expectation[data-kind="malicious"] {
+  border-inline-start-color: var(--t-no);
+}
+
+.d-expectation[data-kind="honest"] {
+  border-inline-start-color: var(--t-ok);
+}
+
 /* An advanced escape hatch, visually demoted below the primary path. */
 .d-advanced {
   margin-top: 0.45rem;

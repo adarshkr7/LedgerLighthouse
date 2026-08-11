@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <a href="#the-60-second-version"><img alt="211 tests passing" src="https://img.shields.io/badge/tests-211%20passing-2f5c4a" /></a>
+  <a href="#the-60-second-version"><img alt="216 tests passing" src="https://img.shields.io/badge/tests-216%20passing-2f5c4a" /></a>
   <a href="https://sepolia.basescan.org/address/0x0C759D06a1c14F43852D7b078Db2f8C342F15921"><img alt="Live on Base Sepolia" src="https://img.shields.io/badge/live-Base%20Sepolia-0052ff" /></a>
   <img alt="x402 v1" src="https://img.shields.io/badge/x402-v1-16150f" />
   <img alt="Inco Lightning 1.0.2" src="https://img.shields.io/badge/Inco%20Lightning-1.0.2-7c382e" />
@@ -30,6 +30,29 @@ can be fully convinced. The money still does not move.
 
 **Status: M0–M6 complete.** Verified end to end on Base Sepolia — the agent is manipulated by a
 prompt injection, `requestSpend` lands on chain, Inco rejects it, and the signer is never asked.
+
+## The four resources
+
+The console opens with a searchable catalog. Two settle and two are refused, and the two refusals
+fail for **different reasons** — which is the point of having four rather than two.
+
+| Resource | Price | Outcome | What it shows |
+|---|---|---|---|
+| Market data snapshot | 0.01 | settles | The whole nine-stage path, cheaply |
+| Bulk history archive | 0.12 | settles | 12x dearer, still inside the budget — a visible cut from the payer |
+| Compliance audit bundle | 0.35 | **refused** | No injection, ordinary copy, far under the public 6.00 cap. **Only the encrypted budget can reject this.** |
+| Premium feed | 5.00 | **refused** | ~500x plus a prompt injection. The agent complies; it changes nothing. |
+
+The two honest calls sum to 0.13, inside the 0.20 encrypted budget, so you can run both and watch
+USDC leave the payer twice before anything bounces.
+
+`compliance-audit` is the one to demo to a sceptic. Its payee is allowlisted, its description is
+unremarkable prose, and its price clears every public precondition. Nothing public can refuse it —
+so when it bounces, the bounce came from Inco and nowhere else.
+
+Definitions live in [`packages/shared/src/demo/catalog.ts`](packages/shared/src/demo/catalog.ts),
+imported by the mock API, the orchestrator and the console alike so prices cannot drift between
+what is charged and what is displayed.
 
 ---
 
@@ -99,7 +122,7 @@ services/signer/        Trusted [ASSUMPTION]. Holds the per-goal payer key. Read
 services/facilitator/   Self-hosted x402 v1 facilitator. Outside the trust boundary.
 services/trace/         Hash chain, Merkle accumulator, standalone verifier CLI
 apps/web/               MetaMask UI: landing page + execution console
-mock-api/               x402-priced endpoint with an honest and a malicious mode
+mock-api/               x402-priced endpoints — one per catalog resource
 tools/e2e/              Operator scripts: keygen, fund, balances, state, demo
 ```
 
@@ -181,10 +204,18 @@ attestation for a different handle is otherwise substitutable.
    the goal record.
 3. Open the goal. Show the budget handle on Basescan: an opaque `bytes32`.
 4. Fund the payer with slightly **more** than the encrypted budget, so Inco binds first.
-5. **Run 1, honest 402** — request, price, approve, settle, data returns.
-6. **Run 2, malicious 402** — inflated price plus injection. Show the agent complying. Show the
-   commit transaction landing. Show the decision resolving false, counters unchanged, signer refusing.
-7. Run the verifier over the trace, including the bounce.
+5. **Market data snapshot, 0.01** — request, price, approve, settle, data returns.
+6. **Bulk history archive, 0.12** — the same path at 12x the price. Watch the payer balance take a
+   visible cut and the ring move.
+7. **Compliance audit bundle, 0.35** — no injection, ordinary description, far below the public cap,
+   payee allowlisted. Refused anyway. Ask the room what could possibly have rejected it.
+8. **Premium feed, 5.00** — inflated price plus injection. Show the agent complying. Show the commit
+   transaction landing. Show the decision resolving false, counters unchanged, signer refusing.
+9. Run the verifier over the trace, including the bounce.
+
+The per-call cap is set deliberately **above** every vendor's ask, and all four vendors are
+allowlisted, so a bounce comes from the encrypted budget rather than a public `require()`.
+Otherwise it would prove nothing about Inco.
 
 Have the answer ready for *"the computation is off-chain, so what did Inco actually prove?"*:
 Inco proves the decision; the chain proves the decision was committed before it was knowable; the

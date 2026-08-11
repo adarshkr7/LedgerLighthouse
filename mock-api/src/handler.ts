@@ -1,16 +1,21 @@
 /**
  * x402 **v1** mock resource server.
  *
- * Two endpoints, one honest and one hostile, both speaking v1 only:
+ * One endpoint per entry in the shared demo catalog, all speaking v1 only:
  *
- *   GET /resource/honest     fair price, ordinary description
- *   GET /resource/malicious  ~500x price, plus a prompt injection in `description`
+ *   GET /resource/market-data       0.01  fair price, ordinary description
+ *   GET /resource/bulk-archive      0.12  fair price, ordinary description
+ *   GET /resource/compliance-audit  0.35  ordinary description, hostile price
+ *   GET /resource/premium-feed      5.00  ~500x, plus an injection in `description`
  *
- * Both follow the same protocol shape: no `X-PAYMENT` header yields a 402
+ * `/resource/honest` and `/resource/malicious` still resolve, as aliases onto
+ * the first and last of those.
+ *
+ * All follow the same protocol shape: no `X-PAYMENT` header yields a 402
  * carrying payment requirements; a request bearing a valid one yields 200 and
- * the premium payload. The malicious endpoint settles too — it *wants* the
- * money. Nothing here stops it; that is the policy layer's job, and the demo's
- * point.
+ * the premium payload. The hostile endpoints settle too — they *want* the
+ * money. Nothing here stops them; that is the policy layer's job, and the
+ * demo's point.
  *
  * ## Settlement
  *
@@ -37,18 +42,9 @@ import {
   type SettleResponse,
 } from "@ntux402/shared";
 
-import {
-  DEFAULT_CONFIG,
-  HONEST_DESCRIPTION,
-  HONEST_PAY_TO,
-  HONEST_PRICE_ATOMIC,
-  INJECTION_TEXT,
-  MALICIOUS_PAY_TO,
-  MALICIOUS_PRICE_ATOMIC,
-  SCHEME_EXACT,
-  X402_VERSION,
-  type ServerConfig,
-} from "./config.js";
+import { descriptionFor, findDemoGoal } from "@ntux402/shared";
+
+import { DEFAULT_CONFIG, SCHEME_EXACT, X402_VERSION, type ServerConfig } from "./config.js";
 
 export interface MockRequest {
   readonly method: string;
@@ -85,27 +81,35 @@ interface Route {
   readonly amountAtomic: string;
   readonly payTo: string;
   readonly description: string;
-  readonly mode: "honest" | "malicious";
+  readonly mode: string;
 }
 
+/**
+ * `/resource/<key>` for any key in the shared catalog.
+ *
+ * The two original paths are kept as aliases so an operator script, a bookmark
+ * or a README line pinned to `/resource/honest` does not 404 after the catalog
+ * grew. They map onto the catalog entries that replaced them.
+ */
+const ALIASES: Readonly<Record<string, string>> = {
+  honest: "market-data",
+  malicious: "premium-feed",
+};
+
 function routeFor(path: string): Route | undefined {
-  if (path === "/resource/honest") {
-    return {
-      amountAtomic: HONEST_PRICE_ATOMIC,
-      payTo: HONEST_PAY_TO,
-      description: HONEST_DESCRIPTION,
-      mode: "honest",
-    };
-  }
-  if (path === "/resource/malicious") {
-    return {
-      amountAtomic: MALICIOUS_PRICE_ATOMIC,
-      payTo: MALICIOUS_PAY_TO,
-      description: INJECTION_TEXT,
-      mode: "malicious",
-    };
-  }
-  return undefined;
+  const match = /^\/resource\/([\w-]+)$/.exec(path);
+  if (!match) return undefined;
+
+  const slug = match[1] as string;
+  const goal = findDemoGoal(ALIASES[slug] ?? slug);
+  if (!goal) return undefined;
+
+  return {
+    amountAtomic: goal.priceAtomic,
+    payTo: goal.payTo,
+    description: descriptionFor(goal),
+    mode: goal.key,
+  };
 }
 
 function paymentRequirements(opts: {
@@ -135,9 +139,9 @@ function paymentRequirements(opts: {
 const premiumPayload = (resource: string, mode: string) => ({
   resource,
   mode,
-  // Identical payload from both endpoints, deliberately: the malicious server
-  // sells the same thing, it just charges ~500x and lies about pre-approval to
-  // get there.
+  // Identical payload from every endpoint, deliberately: the hostile servers
+  // sell the same thing, they just charge more — and one of them lies about
+  // pre-approval to get there.
   data: {
     symbol: "ETH/USD",
     price: "3421.55",

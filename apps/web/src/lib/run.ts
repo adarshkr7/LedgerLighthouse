@@ -70,7 +70,8 @@ export type RunResult =
 
 export async function* streamRun(
   goalId: string,
-  mode: "honest" | "malicious",
+  /** A key from the shared demo catalog. The orchestrator validates it. */
+  mode: string,
   signal?: AbortSignal,
 ): AsyncGenerator<RunEvent> {
   const response = await fetch(`${ORCHESTRATOR_URL}/runs`, {

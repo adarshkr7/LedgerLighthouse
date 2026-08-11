@@ -117,11 +117,11 @@ attested reveal) · **Contracts** Solidity, Foundry — `PolicyVault.sol`, `Trac
 **Payments** x402 v1, EIP-3009 `transferWithAuthorization`, USDC on Base Sepolia · **Agent** Claude
 Opus / Sonnet with a deterministic scripted fallback · **Services** TypeScript, Node, pnpm
 workspaces, viem · **Frontend** React, Vite, MetaMask · **Verification** Merkle accumulator +
-standalone CLI verifier · **Testing** 188 Vitest + 23 Foundry tests
+standalone CLI verifier · **Testing** 193 Vitest + 23 Foundry tests
 
 ### Current status
 
-**M0–M6 complete and verified end-to-end on Base Sepolia.** 211 tests passing (188 Vitest across
+**M0–M6 complete and verified end-to-end on Base Sepolia.** 216 tests passing (193 Vitest across
 six packages, 23 Foundry contract tests). A live five-step dashboard walks the whole flow. A CI
 boundary check mechanically enforces that the orchestrator can never import the signer — the
 load-bearing wall of the entire security argument.

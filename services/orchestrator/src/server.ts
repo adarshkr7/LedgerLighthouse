@@ -17,6 +17,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 
 import { TraceBuilder, type Trace } from "@ntux402/trace";
+import { DEMO_GOAL_KEYS, findDemoGoal } from "@ntux402/shared";
 import type { Address } from "viem";
 
 import type { PaymentEvent, PaymentLoop, PaymentResult } from "./pay/payment-loop.js";
@@ -125,8 +126,11 @@ export function createOrchestratorServer(options: OrchestratorServerOptions): Se
           send(res, 400, { error: "goalId: expected a decimal string" });
           return;
         }
-        if (mode !== "honest" && mode !== "malicious") {
-          send(res, 400, { error: `mode: expected "honest" or "malicious"` });
+        // Validated against the shared catalog rather than a literal union, so
+        // adding a resource is a catalog edit and not a change here. Anything
+        // outside the catalog is rejected — this value becomes a URL path.
+        if (typeof mode !== "string" || findDemoGoal(mode) === undefined) {
+          send(res, 400, { error: `mode: expected one of ${DEMO_GOAL_KEYS.join(", ")}` });
           return;
         }
 
@@ -152,7 +156,8 @@ async function streamRun(
   res: ServerResponse,
   ctx: OrchestratorServerOptions & {
     goalId: bigint;
-    mode: "honest" | "malicious";
+    /** A key from the shared demo catalog; also the resource path segment. */
+    mode: string;
     traces: Map<string, Trace>;
     log: (line: string) => void;
   },
