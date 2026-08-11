@@ -206,7 +206,27 @@ export function Timeline({
             <span className="d-tl-marker" aria-hidden="true" />
             <span className="d-tl-label">{stage.label}</span>
             {stage.detail ? <span className="d-tl-detail">{stage.detail}</span> : null}
-            <span className="d-tl-time">{elapsed ?? ""}</span>
+            <span className="d-tl-time">
+              {stage.status === "active" ? (
+                // No elapsed figure while a stage is in flight: the duration is
+                // genuinely unknown, and a ticking counter would imply we are
+                // measuring progress toward something. The grid says "working"
+                // and claims nothing else.
+                <span className="t-pixels" aria-label="in progress">
+                  <i />
+                  <i />
+                  <i />
+                  <i />
+                  <i />
+                  <i />
+                  <i />
+                  <i />
+                  <i />
+                </span>
+              ) : (
+                (elapsed ?? "")
+              )}
+            </span>
           </li>
         );
       })}

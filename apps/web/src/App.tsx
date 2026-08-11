@@ -559,8 +559,12 @@ export default function App() {
             title="Live execution"
             aside={
               running ? (
-                <span className="d-topbar-group">
-                  <TotemMark size={13} spinning />
+                <span className="d-running">
+                  <span className="t-eq" aria-hidden="true">
+                    <i />
+                    <i />
+                    <i />
+                  </span>
                   running
                 </span>
               ) : null
@@ -584,7 +588,7 @@ export default function App() {
             ) : null}
           </Card>
 
-          {started ? <Comparison events={events} /> : null}
+          {started ? <Comparison events={events} running={running} /> : null}
         </div>
 
         {/* ============================ COLUMN 3 — EVIDENCE & SECURITY */}

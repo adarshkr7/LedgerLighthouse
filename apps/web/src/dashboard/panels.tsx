@@ -17,6 +17,22 @@ function find<T extends PaymentEvent["type"]>(
   return events.find((e) => e.type === type) as Extract<PaymentEvent, { type: T }> | undefined;
 }
 
+/** Indeterminate work with a known end — a fetch, not a policy evaluation. */
+function Spinner() {
+  return (
+    <svg className="d-spin" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+      <circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" strokeOpacity="0.25" strokeWidth="2" />
+      <path
+        d="M8 1.5 A 6.5 6.5 0 0 1 14.5 8"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
 /**
  * The verdict, stated in full.
  *
@@ -38,12 +54,12 @@ export function Outcome({
   const settled = find(events, "settled");
   const refused = find(events, "signer-refused");
 
-  const view = ((): { tone: "real" | "false" | "flux"; head: string; body: string } => {
+  const view = ((): { tone: "ok" | "no" | "wait"; head: string; body: string } => {
     switch (result.kind) {
       case "paid": {
         const simulated = settled?.settlement.simulated === true;
         return {
-          tone: "real",
+          tone: "ok",
           head: "Approved · settled",
           body: simulated
             ? "The confidential policy approved this spend and the payment authorization validated. Settlement was stubbed, so no USDC moved — fund the payer with test USDC to settle for real."
@@ -52,7 +68,7 @@ export function Outcome({
       }
       case "policy-rejected":
         return {
-          tone: "false",
+          tone: "no",
           head: "Blocked by confidential policy",
           body:
             "The agent read the vendor's text and approved this payment. It made no difference. " +
@@ -61,18 +77,18 @@ export function Outcome({
         };
       case "decision-unavailable":
         return {
-          tone: "flux",
+          tone: "wait",
           head: "Decision unavailable",
           body: `The debit committed on chain but the reveal did not arrive within the polling bound (${result.attempts} attempts, ${(result.elapsedMs / 1000).toFixed(1)}s). This is a distinct state from "rejected" and is reported rather than swallowed.`,
         };
       case "free":
         return {
-          tone: "real",
+          tone: "ok",
           head: "No payment required",
           body: "The resource returned without a 402, so no spend was requested.",
         };
       case "failed":
-        return { tone: "false", head: "Run failed", body: result.reason };
+        return { tone: "no", head: "Run failed", body: result.reason };
     }
   })();
 
@@ -91,7 +107,13 @@ export function Outcome({
  * projection the policy check acts on, the right is the vendor's free text. The
  * attacker controls only the right, and the right reaches only the model.
  */
-export function Comparison({ events }: { events: readonly PaymentEvent[] }) {
+export function Comparison({
+  events,
+  running,
+}: {
+  events: readonly PaymentEvent[];
+  running: boolean;
+}) {
   const reasoning = find(events, "agent-reasoning");
   const required = find(events, "payment-required");
 
@@ -108,7 +130,12 @@ export function Comparison({ events }: { events: readonly PaymentEvent[] }) {
         </div>
         <div className="d-split-pane" data-tone="hostile">
           <span className="d-label">Attacker-controlled text</span>
-          <pre className="d-code">{required?.terms.description ?? "—"}</pre>
+          <pre className="d-code">
+            {required?.terms.description ?? "—"}
+            {/* Only while the run is live — a caret blinking on a finished
+                transcript claims input that is no longer arriving. */}
+            {running ? <span className="t-caret" /> : null}
+          </pre>
         </div>
       </div>
       <p className="d-caption">
@@ -250,7 +277,14 @@ function TraceDownload({ goalId }: { goalId: string | undefined }) {
         disabled={!goalId || state === "working"}
         onClick={() => void download()}
       >
-        {state === "working" ? "Fetching…" : "Download trace"}
+        {state === "working" ? (
+          <span className="d-btn-busy">
+            <Spinner />
+            Fetching…
+          </span>
+        ) : (
+          "Download trace"
+        )}
       </button>
       {state === "failed" ? (
         <p className="d-caption">No trace yet for this goal — run a request first.</p>

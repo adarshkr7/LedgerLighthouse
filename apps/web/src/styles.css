@@ -1,68 +1,79 @@
 /*
  * Totem — global design tokens.
  *
- * The theme is the product's argument made visual. A totem is the object that
- * tells you whether the world you are standing in is real, and this interface
- * is built around that one distinction:
+ * Chrome is neutral and colour is semantic. Surfaces are separated by hairline
+ * rings and small, tight shadows rather than by glow, blur or gradient — the
+ * layout should read as machined panels, not as lit glass. Nothing on either
+ * surface glows, and nothing has a backdrop-filter.
  *
- *   --t-real     aqua      verified, attested, confidential, approved
- *   --t-flux     amber     committed but not yet knowable — the moment of doubt
- *   --t-false    rose      attacker-controlled, refused, rejected
+ * Colour appears only where a state is being reported:
  *
- * Colour is spent only on those three states. Everything else is the void and
- * a grey ramp on top of it, so when aqua or rose appears it *means* something.
+ *   --t-ok      green    approved, attested, settled
+ *   --t-wait    amber    committed but not yet knowable
+ *   --t-no      red      attacker-controlled, refused, rejected
+ *   --t-cipher  violet   encrypted material — a substance, never a status
  *
- * Dark only, deliberately. This is a console watching a live chain; a light
- * variant would be a second design carrying none of the same weight, and
- * `color-scheme: dark` stops form controls rendering pale against it.
+ * The brand mark is brass, and brass is used for nothing else. It is a metal,
+ * not an accent, which is why it is a gradient on the mark rather than a token
+ * anything else can reach for.
  */
 
 :root {
-  /* ---- substrate */
-  --t-void: #05070c;
-  --t-void-2: #080b12;
-  --t-raised: #0c1018;
-  --t-raised-2: #111621;
+  /* ---- substrate. Warm neutral, not blue-black.
+     The page sits a real step below the panels: at a 4% lightness difference a
+     card and its background are indistinguishable once a screen is anything
+     but ideal, and this layout is read on a projector. */
+  --t-void: #0e0f11;
+  --t-raised: #1a1c1f;
+  --t-raised-2: #232629;
+  --t-inset: #08090a;
 
-  /* Borders live in alpha so they hold up over glow and glass alike. */
-  --t-line: rgba(148, 174, 205, 0.11);
-  --t-line-strong: rgba(148, 174, 205, 0.24);
-  --t-line-bright: rgba(190, 214, 240, 0.4);
+  --t-line: #303338;
+  --t-line-strong: #43474d;
 
-  /* ---- type ramp, contrast-checked against --t-void
-     fg 16.8:1 · fg-2 8.9:1 · fg-3 4.8:1. Nothing dimmer than fg-3 ever
-     carries characters a reader must make out. */
-  --t-fg: #eef3fa;
-  --t-fg-2: #a8b6cb;
-  --t-fg-3: #7c8ba3;
-  --t-fg-4: #4d5a6f;
+  /* ---- type ramp, contrast-checked against --t-raised
+     fg 14.6:1 · fg-2 6.4:1 · fg-3 4.6:1. Nothing below fg-3 ever carries
+     characters a reader has to make out. */
+  --t-fg: #f2f3f4;
+  --t-fg-2: #a5a8ad;
+  --t-fg-3: #82858b;
+  --t-fg-4: #5c6066;
 
-  /* ---- the three states */
-  --t-real: #4fe3c1;
-  --t-real-dim: #1d6f5f;
-  --t-real-wash: rgba(79, 227, 193, 0.09);
+  /* ---- semantic states. Product colours, deliberately not neon. */
+  --t-ok: #4bb26b;
+  --t-ok-tint: rgba(75, 178, 107, 0.13);
+  --t-ok-line: rgba(75, 178, 107, 0.35);
 
-  --t-flux: #f5c451;
-  --t-flux-dim: #7a6222;
-  --t-flux-wash: rgba(245, 196, 81, 0.09);
+  --t-wait: #d3a03f;
+  --t-wait-tint: rgba(211, 160, 63, 0.13);
+  --t-wait-line: rgba(211, 160, 63, 0.35);
 
-  --t-false: #ff7a8a;
-  --t-false-dim: #7d2f3a;
-  --t-false-wash: rgba(255, 122, 138, 0.09);
+  --t-no: #e0575c;
+  --t-no-tint: rgba(224, 87, 92, 0.13);
+  --t-no-line: rgba(224, 87, 92, 0.35);
 
-  /* Ciphertext / encrypted-value accent. Never a status — a material. */
-  --t-cipher: #a78bfa;
-  --t-cipher-wash: rgba(167, 139, 250, 0.1);
+  --t-cipher: #8b83d9;
+  --t-cipher-tint: rgba(139, 131, 217, 0.13);
+
+  --t-brass: #c9a24a;
 
   /* ---- type */
-  --t-sans: "Inter", "Geist", "SF Pro Display", -apple-system, "Segoe UI Variable Display",
-    "Segoe UI", Helvetica, Arial, sans-serif;
+  --t-sans: "Inter", "Inter Fallback", ui-sans-serif, system-ui, "Segoe UI",
+    Helvetica, Arial, sans-serif;
   --t-mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Mono", Menlo, Consolas, monospace;
 
+  /* ---- elevation. Hairline ring first, then a tight shadow. No glow. */
+  --t-ring: 0 0 0 1px var(--t-line);
+  --t-shadow-card: 0 0 0 1px var(--t-line), 0 1px 2px rgba(0, 0, 0, 0.3),
+    0 2px 6px rgba(0, 0, 0, 0.18);
+  --t-shadow-raised: 0 0 0 1px var(--t-line), 0 2px 10px rgba(0, 0, 0, 0.32);
+  --t-shadow-btn: 0 0 0 1px var(--t-line-strong), 0 1px 2px rgba(0, 0, 0, 0.35);
+  --t-shadow-inset: inset 0 1px 2px rgba(0, 0, 0, 0.4);
+
   /* ---- geometry & motion */
-  --t-r: 12px;
-  --t-r-sm: 7px;
-  --t-t: 160ms;
+  --t-r: 10px;
+  --t-r-sm: 6px;
+  --t-t: 150ms;
   --t-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
 
   color-scheme: dark;
@@ -82,45 +93,9 @@ body {
   background: var(--t-void);
   color: var(--t-fg);
   font-family: var(--t-sans);
-  font-size: 15px;
-  line-height: 1.6;
+  font-size: 14px;
+  line-height: 1.55;
   -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
-}
-
-/*
- * Ambient field: two slow aurora pools and a faint survey grid, fixed behind
- * everything. Purely atmospheric — it never sits above content and is marked
- * aria-hidden by virtue of being a pseudo-element.
- *
- * The grid is radially masked so it reads as depth near the top of the page and
- * dissolves before it can start competing with data lower down.
- */
-body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: -2;
-  background:
-    radial-gradient(58rem 40rem at 12% -8%, rgba(79, 227, 193, 0.11), transparent 70%),
-    radial-gradient(50rem 38rem at 92% 4%, rgba(167, 139, 250, 0.1), transparent 68%),
-    radial-gradient(40rem 34rem at 60% 108%, rgba(34, 120, 180, 0.09), transparent 70%);
-  pointer-events: none;
-}
-
-body::after {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  background-image:
-    linear-gradient(var(--t-line) 1px, transparent 1px),
-    linear-gradient(90deg, var(--t-line) 1px, transparent 1px);
-  background-size: 68px 68px;
-  opacity: 0.5;
-  -webkit-mask-image: radial-gradient(70rem 46rem at 50% 0%, #000 0%, transparent 78%);
-  mask-image: radial-gradient(70rem 46rem at 50% 0%, #000 0%, transparent 78%);
-  pointer-events: none;
 }
 
 a {
@@ -134,20 +109,18 @@ code {
 }
 
 ::selection {
-  background: rgba(79, 227, 193, 0.24);
+  background: rgba(201, 162, 74, 0.3);
   color: #fff;
 }
 
-/* A hairline scrollbar, so a scrolling panel does not stamp a grey slab
-   across the middle of the layout. */
 * {
   scrollbar-width: thin;
   scrollbar-color: var(--t-line-strong) transparent;
 }
 
 *::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 9px;
+  height: 9px;
 }
 
 *::-webkit-scrollbar-thumb {
@@ -158,6 +131,191 @@ code {
 *::-webkit-scrollbar-track {
   background: transparent;
 }
+
+/* ==========================================================================
+ * Motion primitives.
+ *
+ * Adapted from the Beautiful UI primitive set (beautiful-ui-five.vercel.app),
+ * which this interface's motion is modelled on. Nine keyframes, each with one
+ * job — entrances are short and small, indeterminate states loop, and nothing
+ * springs, bounces or scales past 1.
+ * ========================================================================== */
+
+@keyframes t-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes t-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes t-pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Text arriving as if streamed: focus pulls in as opacity rises. */
+@keyframes t-stream-in {
+  from {
+    opacity: 0;
+    filter: blur(4px);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0);
+  }
+}
+
+/* A light sweeping across a label, for work whose duration is unknown. */
+@keyframes t-shimmer {
+  from {
+    background-position: 150% center;
+  }
+  to {
+    background-position: -50% center;
+  }
+}
+
+@keyframes t-caret {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+
+@keyframes t-spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+/* Equalizer bars — running, with no claim about progress. */
+@keyframes t-eq {
+  0%,
+  100% {
+    transform: scaleY(0.35);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+
+/* Pixel-grid loader. Each cell runs the same cycle at a different delay. */
+@keyframes t-pixel {
+  0%,
+  100% {
+    opacity: 0.14;
+  }
+  18%,
+  42% {
+    opacity: 1;
+  }
+  62% {
+    opacity: 0.14;
+  }
+}
+
+/* ---- shared motion utilities ------------------------------------------- */
+
+.t-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--t-fg-4) 0%,
+    var(--t-fg-4) 35%,
+    var(--t-fg) 50%,
+    var(--t-fg-4) 65%,
+    var(--t-fg-4) 100%
+  );
+  background-size: 220% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: t-shimmer 2.4s linear infinite;
+}
+
+.t-caret {
+  display: inline-block;
+  width: 2px;
+  height: 1.05em;
+  margin-left: 2px;
+  translate: 0 -0.5px;
+  vertical-align: text-bottom;
+  border-radius: 1px;
+  background: currentColor;
+  animation: t-caret 1s step-end infinite;
+}
+
+/* Equalizer: three bars, staggered. */
+.t-eq {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 10px;
+}
+
+.t-eq i {
+  display: block;
+  width: 2px;
+  height: 100%;
+  border-radius: 1px;
+  background: currentColor;
+  transform-origin: bottom;
+  animation: t-eq 900ms var(--t-ease) infinite;
+}
+
+.t-eq i:nth-child(2) {
+  animation-delay: 150ms;
+}
+.t-eq i:nth-child(3) {
+  animation-delay: 300ms;
+}
+
+/* Pixel loader: a 3x3 grid lighting in a fixed sweep. */
+.t-pixels {
+  display: grid;
+  grid-template-columns: repeat(3, 3px);
+  gap: 2px;
+}
+
+.t-pixels i {
+  display: block;
+  width: 3px;
+  height: 3px;
+  border-radius: 0.5px;
+  background: currentColor;
+  animation: t-pixel 1.5s var(--t-ease) infinite;
+}
+
+.t-pixels i:nth-child(1) { animation-delay: 0ms; }
+.t-pixels i:nth-child(2) { animation-delay: 90ms; }
+.t-pixels i:nth-child(3) { animation-delay: 180ms; }
+.t-pixels i:nth-child(4) { animation-delay: 630ms; }
+.t-pixels i:nth-child(5) { animation-delay: 270ms; }
+.t-pixels i:nth-child(6) { animation-delay: 360ms; }
+.t-pixels i:nth-child(7) { animation-delay: 540ms; }
+.t-pixels i:nth-child(8) { animation-delay: 450ms; }
+.t-pixels i:nth-child(9) { animation-delay: 405ms; }
 
 @media (prefers-reduced-motion: reduce) {
   *,

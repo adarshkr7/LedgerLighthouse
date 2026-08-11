@@ -11,6 +11,8 @@
  * outward action is asking the shell to connect a wallet.
  */
 
+import { useEffect, useRef } from "react";
+
 import { BlockStream } from "./BlockStream.js";
 import { Flow } from "./Flow.js";
 import { TotemHero, TotemMark } from "../brand/Totem.js";
@@ -89,22 +91,61 @@ const METRICS = [
 const TIMELINE = ["requestSpend committed", "Confidential evaluation", "Payment settled"];
 
 export function Landing({ onConnect }: { onConnect: () => void }) {
+  const root = useRef<HTMLDivElement>(null);
+
+  /*
+   * Scroll reveal.
+   *
+   * The `js-reveal` class is added *by this effect*, so the hidden initial
+   * state only ever exists when there is something running that can undo it.
+   * Setting it in the stylesheet instead would leave the whole page blank if
+   * the script failed to load.
+   *
+   * Sections are unobserved once seen — this is an entrance, not a scrubber,
+   * and re-animating on scroll-back is the thing that makes reveals annoying.
+   */
+  useEffect(() => {
+    const el = root.current;
+    if (!el) return;
+
+    const targets = el.querySelectorAll<HTMLElement>(".lp-reveal");
+    if (!("IntersectionObserver" in window)) return;
+
+    el.classList.add("js-reveal");
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          entry.target.setAttribute("data-seen", "");
+          observer.unobserve(entry.target);
+        }
+      },
+      { rootMargin: "0px 0px -12% 0px", threshold: 0.06 },
+    );
+
+    for (const target of targets) observer.observe(target);
+    return () => observer.disconnect();
+  }, []);
+
   return (
-    <div className="landing">
+    <div className="landing" ref={root}>
       {/* 0 — NAV */}
       <nav className="lp-nav">
-        <span className="lp-nav-brand">
-          <TotemMark size={19} />
-          <span className="lp-nav-name">Totem</span>
-        </span>
-        <span className="lp-nav-links">
-          <a href="#flow">Flow</a>
-          <a href="#guarantees">Guarantees</a>
-          <a href="#security">Security</a>
-        </span>
-        <button type="button" className="lp-btn lp-btn-ghost" onClick={onConnect}>
-          Launch console
-        </button>
+        <div className="lp-nav-inner">
+          <span className="lp-nav-brand">
+            <TotemMark size={19} />
+            <span className="lp-nav-name">Totem</span>
+          </span>
+          <span className="lp-nav-links">
+            <a href="#flow">Flow</a>
+            <a href="#guarantees">Guarantees</a>
+            <a href="#security">Security</a>
+          </span>
+          <button type="button" className="lp-btn lp-btn-ghost" onClick={onConnect}>
+            Launch console
+          </button>
+        </div>
       </nav>
 
       {/* 1 — HERO */}
@@ -136,14 +177,14 @@ export function Landing({ onConnect }: { onConnect: () => void }) {
       </header>
 
       {/* 2 — WORKFLOW */}
-      <section className="lp-section" id="flow">
+      <section className="lp-section lp-reveal" id="flow">
         <p className="lp-eyebrow">The path of a single payment</p>
         <h2 className="lp-h2">Seven steps, one of which can be compromised safely.</h2>
         <Flow />
       </section>
 
       {/* 3 — TRUST STRIP */}
-      <section className="lp-trust" aria-label="Built on">
+      <section className="lp-trust lp-reveal" aria-label="Built on">
         {TRUST.map((item) => (
           <span key={item} className="lp-trust-item">
             {item}
@@ -152,7 +193,7 @@ export function Landing({ onConnect }: { onConnect: () => void }) {
       </section>
 
       {/* 4 — FEATURES */}
-      <section className="lp-section" id="guarantees">
+      <section className="lp-section lp-reveal" id="guarantees">
         <p className="lp-eyebrow">What the system guarantees</p>
         <h2 className="lp-h2">Bounds, not promises.</h2>
         <div className="lp-grid">
@@ -169,7 +210,7 @@ export function Landing({ onConnect }: { onConnect: () => void }) {
       </section>
 
       {/* 5 — COMPARISON */}
-      <section className="lp-section">
+      <section className="lp-section lp-reveal">
         <p className="lp-eyebrow">Why this is different</p>
         <h2 className="lp-h2">The authority never reaches the model.</h2>
         <div className="lp-compare">
@@ -199,7 +240,7 @@ export function Landing({ onConnect }: { onConnect: () => void }) {
       </section>
 
       {/* 6 — EXECUTION PREVIEW */}
-      <section className="lp-section">
+      <section className="lp-section lp-reveal">
         <p className="lp-eyebrow">Live execution</p>
         <h2 className="lp-h2">What the console shows while it runs.</h2>
         {/* Static illustration of the console. Not interactive, and labelled as
@@ -229,7 +270,7 @@ export function Landing({ onConnect }: { onConnect: () => void }) {
       </section>
 
       {/* 7 — SECURITY */}
-      <section className="lp-section" id="security">
+      <section className="lp-section lp-reveal" id="security">
         <p className="lp-eyebrow">Security model</p>
         <h2 className="lp-h2">Bounded autonomous execution</h2>
         <div className="lp-prose">
@@ -240,7 +281,7 @@ export function Landing({ onConnect }: { onConnect: () => void }) {
       </section>
 
       {/* 8 — FINAL CTA */}
-      <section className="lp-cta">
+      <section className="lp-cta lp-reveal">
         <h2 className="lp-cta-title">
           Let agents pay APIs.
           <br />
