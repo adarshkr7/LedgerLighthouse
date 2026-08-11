@@ -53,7 +53,7 @@ export class SignerClient {
   /**
    * Mints the per-goal ephemeral payer key. Returns an address; the key never
    * leaves the signer. **Must happen before `openGoal`**, because the payer
-   * address is a field of the goal record (plan §5.4).
+   * address is a field of the goal record (ARCHITECTURE.md §5.3).
    */
   async mintPayer(): Promise<`0x${string}`> {
     const response = await this.#fetch(`${this.#url}/payer`, { method: "POST" });

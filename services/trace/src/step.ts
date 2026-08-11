@@ -1,5 +1,5 @@
 /**
- * The trace step and its hash chain (plan §8.1):
+ * The trace step and its hash chain (ARCHITECTURE.md §8.1):
  *
  *     step_hash = H(prior_hash || step_type || H(inputs) || H(outputs) || timestamp)
  *
@@ -30,7 +30,7 @@ export type StepType =
 
 /**
  * The three fields that make a payment step independently verifiable by someone
- * holding nothing but the trace and a public RPC (plan §8.1).
+ * holding nothing but the trace and a public RPC (ARCHITECTURE.md §8.1).
  */
 export interface StepAttestation {
   /** The `ok` handle for this spend. */

@@ -5,7 +5,7 @@
  * `finalizeDecision` are submitted with the **relay key**, which stays on the
  * server — and, more to the point, a payment loop that needed the browser would
  * need the user present, which is the thing the ephemeral payer exists to avoid
- * (plan §11.1). The UI opens the goal and funds the payer; everything after
+ * (ARCHITECTURE.md §5.5). The UI opens the goal and funds the payer; everything after
  * that happens here, unattended.
  *
  *   GET  /health
@@ -17,6 +17,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 
 import { TraceBuilder, type Trace } from "@ntux402/trace";
+import { DEMO_GOAL_KEYS, findDemoGoal } from "@ntux402/shared";
 import type { Address } from "viem";
 
 import type { PaymentEvent, PaymentLoop, PaymentResult } from "./pay/payment-loop.js";
@@ -120,13 +121,28 @@ export function createOrchestratorServer(options: OrchestratorServerOptions): Se
           return;
         }
 
-        const { goalId, mode } = (body ?? {}) as { goalId?: unknown; mode?: unknown };
+        const { goalId, mode, priceAtomic } = (body ?? {}) as {
+          goalId?: unknown;
+          mode?: unknown;
+          priceAtomic?: unknown;
+        };
         if (typeof goalId !== "string" || !/^[0-9]+$/.test(goalId)) {
           send(res, 400, { error: "goalId: expected a decimal string" });
           return;
         }
-        if (mode !== "honest" && mode !== "malicious") {
-          send(res, 400, { error: `mode: expected "honest" or "malicious"` });
+        // Validated against the shared catalog rather than a literal union, so
+        // adding a resource is a catalog edit and not a change here. Anything
+        // outside the catalog is rejected — this value becomes a URL path.
+        if (typeof mode !== "string" || findDemoGoal(mode) === undefined) {
+          send(res, 400, { error: `mode: expected one of ${DEMO_GOAL_KEYS.join(", ")}` });
+          return;
+        }
+
+        // A demo control, forwarded verbatim to the mock vendor and used by
+        // nothing else. It never reaches the policy: the amount the vault sees
+        // comes from the 402 the vendor returns, parsed and re-derived there.
+        if (priceAtomic !== undefined && !/^[0-9]{1,18}$/.test(String(priceAtomic))) {
+          send(res, 400, { error: "priceAtomic: expected a decimal string" });
           return;
         }
 
@@ -134,6 +150,7 @@ export function createOrchestratorServer(options: OrchestratorServerOptions): Se
           ...options,
           goalId: BigInt(goalId),
           mode,
+          ...(priceAtomic === undefined ? {} : { priceAtomic: String(priceAtomic) }),
           traces,
           log,
         });
@@ -152,7 +169,10 @@ async function streamRun(
   res: ServerResponse,
   ctx: OrchestratorServerOptions & {
     goalId: bigint;
-    mode: "honest" | "malicious";
+    /** A key from the shared demo catalog; also the resource path segment. */
+    mode: string;
+    /** Demo-only price override, forwarded to the mock vendor. */
+    priceAtomic?: string;
     traces: Map<string, Trace>;
     log: (line: string) => void;
   },
@@ -185,8 +205,9 @@ async function streamRun(
     emit("payment", event);
   };
 
-  const url = `${ctx.mockApiUrl}/resource/${ctx.mode}`;
-  ctx.log(`POST /runs goal=${ctx.goalId} mode=${ctx.mode}`);
+  const query = ctx.priceAtomic ? `?price=${ctx.priceAtomic}` : "";
+  const url = `${ctx.mockApiUrl}/resource/${ctx.mode}${query}`;
+  ctx.log(`POST /runs goal=${ctx.goalId} mode=${ctx.mode}${query}`);
 
   const unsubscribe = ctx.loop.subscribe(forward);
   let result: PaymentResult;

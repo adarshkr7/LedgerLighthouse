@@ -1,5 +1,5 @@
 /**
- * The standalone verifier (plan §8.5).
+ * The standalone verifier (ARCHITECTURE.md §8.4).
  *
  * Its defining constraint: **no dependency on our services beyond a public
  * RPC.** An auditor holding the trace file and any Base Sepolia endpoint can
@@ -16,7 +16,7 @@
  *    happen: a swapped attestation, an invented approval, a settled payment
  *    that never settled.
  *
- * The claim this supports is the narrow one from plan §8.3 — every payment
+ * The claim this supports is the narrow one from ARCHITECTURE.md §8.3 — every payment
  * corresponds to a confidential policy evaluation attested by Inco and verified
  * on chain against the expected handle. Not "the agent behaved correctly."
  */
@@ -158,7 +158,7 @@ export async function verifyTrace(
     const seq = BigInt(attestation.seq);
     const vaultRead = { address: trace.vault, abi: policyVaultAbi, args: [goalId, seq] } as const;
 
-    // **The mandatory check** (plan §2.6, §7.5): the attested handle must equal
+    // **The mandatory check** (PRIMER.md §7.6, §7.5): the attested handle must equal
     // the handle the vault stored. A genuine attestation for a *different*
     // handle is otherwise substitutable, and signature validity alone would not
     // notice.

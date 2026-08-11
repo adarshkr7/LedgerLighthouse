@@ -2,7 +2,7 @@
  * Wallet and service wiring for the demo UI.
  *
  * Chain is pinned to Base Sepolia and re-asserted before every write. MetaMask
- * caches a stale `chainId` after a manual network change (brief §5.5), so
+ * caches a stale `chainId` after a manual network change (IMPLEMENTATION.md §5.2), so
  * trusting connection-time state is how you write to the wrong chain.
  */
 
@@ -45,10 +45,18 @@ export async function fetchOrchestratorConfig(): Promise<OrchestratorConfig> {
 }
 
 /** 6-decimal USDC, for display only. */
+/**
+ * Atomic USDC as a decimal string, always with at least two places.
+ *
+ * Trailing zeros beyond the second are dropped, so 0.125 keeps its precision
+ * while 0.30 does not collapse to "0.3". Trimming all of them made a column of
+ * amounts ragged — "0.3" next to "4.00" next to "0.01" — and read as sloppy
+ * rather than as money.
+ */
 export function formatUsdc(atomic: bigint): string {
   const whole = atomic / 1_000_000n;
-  const fraction = (atomic % 1_000_000n).toString().padStart(6, "0").replace(/0+$/, "");
-  return fraction ? `${whole}.${fraction}` : `${whole}.00`;
+  const trimmed = (atomic % 1_000_000n).toString().padStart(6, "0").replace(/0+$/, "");
+  return `${whole}.${trimmed.padEnd(2, "0")}`;
 }
 
 export function truncate(hex: string, lead = 10, tail = 8): string {

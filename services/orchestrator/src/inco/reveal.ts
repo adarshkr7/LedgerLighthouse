@@ -1,20 +1,19 @@
 /**
- * Retrieving the confidential decision — register item 3, the one the brief
- * warns will cost a day.
+ * Retrieving the confidential decision.
  *
  * The API is settled: `zap.attestedReveal([handle])` returns the plaintext plus
  * covalidator signatures, and needs **no wallet signature**, because `e.reveal`
  * already made the handle public. That is what lets the payment loop run
- * unattended (plan §10.5).
+ * unattended (PRIMER.md §7.6).
  *
  * What is open is the *timing*. The commit transaction emits events; Inco's
  * compute server processes them afterwards. So this is a **bounded poll whose
  * timeout is a reported outcome, not an exception to swallow** — the guardrail
- * in brief §8 against replacing the wait with a hardcoded sleep.
+ * in IMPLEMENTATION.md §8 against replacing the wait with a hardcoded sleep.
  *
  * Nothing here touches a budget handle. The orchestrator asks for an attestation
  * over the *decision* handle, which is public and which it cannot forge — that
- * is expected and harmless (IMPLEMENTATION.md §6, M3).
+ * is expected and harmless (IMPLEMENTATION.md §1, invariant 1).
  */
 
 import { bytesToHex, type Hex } from "viem";
@@ -63,7 +62,7 @@ export const DEFAULT_REVEAL_INTERVAL_MS = 1_000;
  * state of the system and the caller must handle it: the debit has already
  * committed, so "decision unobtainable" is a distinct condition from "rejected"
  * and confusing the two would silently retry a spend the budget already paid
- * for (plan §7.8, the [INCO] liveness row).
+ * for (ARCHITECTURE.md §7.7, the [INCO] liveness row).
  */
 export async function pollForDecision(
   reader: DecisionReader,

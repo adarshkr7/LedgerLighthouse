@@ -61,7 +61,7 @@ export interface SettleResponse {
   /**
    * True when the authorization had already been consumed on chain. The
    * settlement is still a success — that is the whole point of a deterministic
-   * nonce and a frozen window (plan §7.6) — but the caller deserves to know it
+   * nonce and a frozen window (ARCHITECTURE.md §7.4) — but the caller deserves to know it
    * did not move money a second time.
    */
   readonly alreadySettled?: boolean;

@@ -4,7 +4,7 @@
  * MetaMask signs exactly three things: `openGoal`, the USDC funding transfer,
  * and (optionally) goal closure. It signs **nothing inside the payment loop** —
  * that is what the ephemeral payer key is for, and what `e.reveal` makes
- * possible (plan §11.1). If a wallet prompt ever appears while a run is in
+ * possible (ARCHITECTURE.md §5.5). If a wallet prompt ever appears while a run is in
  * flight, the design has drifted.
  */
 
@@ -13,10 +13,15 @@ import { useAccount, useChainId, useConnect, useDisconnect, useSwitchChain, useW
 import { createPublicClient, http, parseEventLogs, type Address, type Hex } from "viem";
 import { Lightning } from "@inco/lightning-js/lite";
 import { handleTypes } from "@inco/lightning-js";
-import { policyVaultAbi, usdcAbi } from "@ntux402/shared";
+import { DEMO_GOALS, DEMO_PAYEES, policyVaultAbi, usdcAbi, type DemoGoal } from "@ntux402/shared";
 
-import { Badge, Hash, Step, type StepState } from "./components/Step.js";
-import { RunLog } from "./components/RunLog.js";
+import { Card, Copyable, Dot, Field, Ring, truncate } from "./dashboard/primitives.js";
+import { Timeline } from "./dashboard/Timeline.js";
+import { EvidenceDrawer, Guarantees, Outcome } from "./dashboard/panels.js";
+import { ModelInput } from "./dashboard/ModelInput.js";
+import { GoalPicker } from "./dashboard/GoalPicker.js";
+import { TotemMark } from "./brand/Totem.js";
+import "./dashboard/dashboard.css";
 import {
   CHAIN,
   CHAIN_ID,
@@ -27,16 +32,65 @@ import {
 } from "./lib/config.js";
 import { streamRun, type PaymentEvent, type RunResult } from "./lib/run.js";
 
-/** The encrypted budget, and a cap set deliberately above the malicious price. */
-const BUDGET = 200_000n; // 0.20 USDC — confidential
-const PER_CALL_CAP = 6_000_000n; // 6.00 USDC — public, above the 5.00 malicious ask
+/**
+ * Budget bounds, and why they are these numbers.
+ *
+ * The floor is the smallest budget that still lets both honest calls settle
+ * (0.01 + 0.12) with headroom left over, so a viewer always gets to watch two
+ * real debits before anything is refused.
+ *
+ * The ceiling exists so `premium-feed` stays hostile. Its 5.00 ask is fixed, so
+ * a budget above that would make the injection call *affordable* — the agent
+ * would be deceived, comply, and the payment would go through. Capping the
+ * budget below 5.00 keeps that case a refusal no matter what is chosen.
+ */
+const MIN_BUDGET = 300_000n; // 0.30 USDC
+const MAX_BUDGET = 4_000_000n; // 4.00 USDC — below the 5.00 injection ask
+const DEFAULT_BUDGET = MIN_BUDGET;
+
+/** Funded above the budget on purpose, so Inco binds before the balance does. */
+const FUNDING_HEADROOM = 100_000n; // 0.10 USDC
+
+/**
+ * Public, and deliberately above every price in the catalog — including the
+ * 5.00 injection ask and the largest possible overcharge (MAX_BUDGET + 0.05).
+ * A hostile call must fail the *confidential* check, never this one.
+ */
+const PER_CALL_CAP = 6_000_000n; // 6.00 USDC
 const CALLS_REMAINING = 5;
-const PAYER_FUNDING = 300_000n; // 0.30 USDC — above the budget, on purpose
 
-const HONEST_PAY_TO: Address = "0x1111111111111111111111111111111111111111";
-const MALICIOUS_PAY_TO: Address = "0x2222222222222222222222222222222222222222";
+/** How far over the chosen budget the overcharge vendor asks. */
+const OVERCHARGE_MARGIN = 50_000n; // 0.05 USDC
 
-type Mode = "honest" | "malicious";
+/**
+ * What a vendor asks for this run.
+ *
+ * Fixed for three of the four. The overcharge vendor is the exception: its
+ * entire purpose is to sit *just* above the confidential budget while staying
+ * far below the public cap, and the budget is now chosen by the viewer — so a
+ * hardcoded 0.35 would simply be affordable at any budget above it, and the
+ * case it exists to demonstrate would silently stop demonstrating anything.
+ *
+ * Returns undefined when the catalog price already stands, so the request
+ * carries no override and the vendor's own number is used.
+ */
+function priceFor(goal: DemoGoal, budget: bigint): string | undefined {
+  if (goal.tactic !== "overcharge") return undefined;
+  return (budget + OVERCHARGE_MARGIN).toString();
+}
+
+/** Decimal USDC to atomic units. Undefined for anything unparseable. */
+function parseUsdc(text: string): bigint | undefined {
+  if (!/^\d*\.?\d*$/.test(text) || text === "" || text === ".") return undefined;
+  const [whole = "0", frac = ""] = text.split(".");
+  return BigInt(whole) * 1_000_000n + BigInt(frac.padEnd(6, "0").slice(0, 6));
+}
+
+const clampBudget = (value: bigint) =>
+  value < MIN_BUDGET ? MIN_BUDGET : value > MAX_BUDGET ? MAX_BUDGET : value;
+
+/** Opened on first render so the console is never in a no-resource state. */
+const DEFAULT_GOAL = DEMO_GOALS[0] as DemoGoal;
 
 export default function App() {
   const { address, isConnected } = useAccount();
@@ -52,8 +106,22 @@ export default function App() {
   const [goalId, setGoalId] = useState<string>();
   const [resumeId, setResumeId] = useState("");
   const [budgetHandle, setBudgetHandle] = useState<Hex>();
+  /** False for a goal resumed by id: its budget was chosen in another session. */
+  const [openedHere, setOpenedHere] = useState(false);
   const [funded, setFunded] = useState(false);
-  const [mode, setMode] = useState<Mode>("honest");
+  const [resource, setResource] = useState<DemoGoal>(DEFAULT_GOAL);
+  /** Chosen before the goal is opened; immutable afterwards, like the goal. */
+  const [budget, setBudget] = useState<bigint>(DEFAULT_BUDGET);
+  const [budgetDraft, setBudgetDraft] = useState("0.30");
+  /**
+   * Cumulative across every run in this session, not per run.
+   *
+   * `events` is cleared at the start of each run, so deriving spend from it
+   * showed only the latest call and the ring sprang back to full after a second
+   * purchase — reporting money as unspent that had genuinely left the payer.
+   */
+  const [sessionSpent, setSessionSpent] = useState(0n);
+  const [approvedCalls, setApprovedCalls] = useState(0);
   const [events, setEvents] = useState<PaymentEvent[]>([]);
   const [result, setResult] = useState<RunResult>();
   const [busy, setBusy] = useState<string>();
@@ -96,7 +164,8 @@ export default function App() {
   }, [config, address, funded]);
 
   const wrongChain = isConnected && chainId !== CHAIN_ID;
-  const underfunded = usdcBalance !== undefined && usdcBalance < PAYER_FUNDING;
+  const funding = budget + FUNDING_HEADROOM;
+  const underfunded = usdcBalance !== undefined && usdcBalance < funding;
   const guard = useCallback(
     async (label: string, fn: () => Promise<void>) => {
       setError(undefined);
@@ -129,7 +198,7 @@ export default function App() {
       if (!config || !wallet || !address || !payer) throw new Error("not ready");
 
       // Re-read the chain rather than trusting connection-time state: MetaMask
-      // caches a stale chainId after a manual network change (brief §5.5).
+      // caches a stale chainId after a manual network change (IMPLEMENTATION.md §5.2).
       const live = await wallet.getChainId();
       if (live !== CHAIN_ID) throw new Error(`Wallet is on chain ${live}, expected ${CHAIN_ID}`);
 
@@ -137,7 +206,7 @@ export default function App() {
       // Bound to (this address, this vault). A ciphertext prepared for anyone
       // else yields a handle openGoal cannot use — which is why the user, not
       // the orchestrator, has to send this transaction.
-      const budgetCiphertext = (await zap.encrypt(BUDGET, {
+      const budgetCiphertext = (await zap.encrypt(budget, {
         accountAddress: address,
         dappAddress: config.vaultAddress,
         handleType: handleTypes.euint256,
@@ -160,9 +229,11 @@ export default function App() {
             relay: config.relayAddress,
             asset: config.usdcAddress,
             expiry: BigInt(Math.floor(Date.now() / 1000) + 7 * 24 * 3600),
-            // Both vendors allowlisted on purpose: the malicious one must fail
-            // the *confidential* check, not a public precondition.
-            allowlist: [HONEST_PAY_TO, MALICIOUS_PAY_TO],
+            // Every vendor in the catalog is allowlisted on purpose: the
+            // hostile ones must fail the *confidential* check, not a public
+            // precondition. An unallowlisted payee would revert in `require`,
+            // which proves nothing about Inco.
+            allowlist: [...DEMO_PAYEES],
           },
         ],
         chain: CHAIN,
@@ -180,6 +251,7 @@ export default function App() {
       const args = opened.args as unknown as { goalId: bigint; budgetHandle: Hex };
       setGoalId(args.goalId.toString());
       setBudgetHandle(args.budgetHandle);
+      setOpenedHere(true);
     });
 
   // --- step 4: fund the payer ----------------------------------------------
@@ -190,7 +262,7 @@ export default function App() {
         address: config.usdcAddress,
         abi: usdcAbi,
         functionName: "transfer",
-        args: [payer, PAYER_FUNDING],
+        args: [payer, funding],
         chain: CHAIN,
         account: address,
       });
@@ -199,318 +271,466 @@ export default function App() {
     });
 
   // --- step 5: hand off ------------------------------------------------------
-  const run = () =>
-    guard(`Running the ${mode} request…`, async () => {
+  // Takes the resource explicitly, defaulting to state. Selecting from the
+  // picker and running in one gesture would otherwise read the *previous*
+  // selection — state updates are not visible to the closure that scheduled
+  // them, so "buy this one" would quietly buy the last one.
+  const run = (which: DemoGoal = resource) =>
+    guard(`Running ${which.label}…`, async () => {
       if (!goalId) throw new Error("no goal");
       setEvents([]);
       setResult(undefined);
-      for await (const event of streamRun(goalId, mode)) {
-        if (event.channel === "payment") setEvents((prior) => [...prior, event.data]);
-        else if (event.channel === "result") setResult(event.data);
+
+      // Also collected locally: `events` is state, so it is not readable at its
+      // final value inside this closure, and the accounting below needs the
+      // whole run rather than whatever React has committed so far.
+      const collected: PaymentEvent[] = [];
+
+      for await (const event of streamRun(goalId, which.key, priceFor(which, budget))) {
+        if (event.channel === "payment") {
+          collected.push(event.data);
+          setEvents((prior) => [...prior, event.data]);
+        } else if (event.channel === "result") setResult(event.data);
         else if (event.channel === "error") setError(event.data.message);
+      }
+
+      // Accumulate once, at the end. Only a real settlement counts — a stubbed
+      // one validated a payload and moved nothing.
+      const settled = collected.find((e) => e.type === "settled");
+      const signed = collected.find((e) => e.type === "signed");
+      if (
+        settled?.type === "settled" &&
+        !settled.settlement.simulated &&
+        signed?.type === "signed"
+      ) {
+        setSessionSpent((total) => total + BigInt(signed.value));
+      }
+      if (collected.some((e) => e.type === "decision-finalized" && e.approved)) {
+        setApprovedCalls((n) => n + 1);
       }
     });
 
-  const stepState = useMemo(
-    () => ({
-      connect: (isConnected && !wrongChain ? "done" : "ready") as StepState,
-      payer: (payer ? "done" : isConnected && !wrongChain ? "ready" : "blocked") as StepState,
-      goal: (goalId ? "done" : payer ? "ready" : "blocked") as StepState,
-      fund: (funded ? "done" : goalId ? "ready" : "blocked") as StepState,
-      run: (goalId ? "ready" : "blocked") as StepState,
-    }),
-    [isConnected, wrongChain, payer, goalId, funded],
+  // --- presentational derivations -------------------------------------------
+  // Read-only projections of the event stream. No chain reads, no new state
+  // beyond what the run already produces.
+
+  const running = busy !== undefined && busy.startsWith("Running");
+  const started = events.length > 0;
+
+  /**
+   * The five acts, and where the viewer is in them.
+   *
+   * Rendered as the rail under the status bar. Keeping it as one derivation
+   * means the rail and the per-control hints below can never disagree about
+   * what is blocked — they read the same source.
+   */
+  const steps = useMemo(
+    () =>
+      [
+        { key: "connect", label: "Connect", state: isConnected && !wrongChain ? "done" : "ready" },
+        {
+          key: "payer",
+          label: "Mint payer",
+          state: payer ? "done" : isConnected && !wrongChain ? "ready" : "blocked",
+        },
+        { key: "goal", label: "Open goal", state: goalId ? "done" : payer ? "ready" : "blocked" },
+        { key: "fund", label: "Fund", state: funded ? "done" : goalId ? "ready" : "blocked" },
+        { key: "run", label: "Run", state: started ? "done" : goalId ? "ready" : "blocked" },
+      ] as const,
+    [isConnected, wrongChain, payer, goalId, funded, started],
   );
+
+  /** Public, and the honest basis for the ring: what actually left the payer. */
+  const spent = sessionSpent;
+
+  /*
+   * Clears the run view only.
+   *
+   * `sessionSpent` and `approvedCalls` survive deliberately: they describe money
+   * that actually moved and calls the vault actually counted. Zeroing them on a
+   * button labelled "reset" would make the console disagree with the chain.
+   */
+  const resetDemo = () => {
+    setEvents([]);
+    setResult(undefined);
+    setError(undefined);
+  };
 
   return (
-    <main className="page">
-      <header className="masthead">
-        <h1>Inco-Bound Agent Payment Flow</h1>
-        <p>
-          An autonomous agent that pays for API resources over x402, where the spending policy is
-          enforced by confidential computation on Inco rather than by the agent itself.
-        </p>
-        <p className="claim">
-          Compromise of the AI orchestrator must not confer arbitrary spending authority.
-        </p>
-      </header>
+    <div className="dash">
+      {/* 1 — STATUS BAR */}
+      <header className="d-topbar">
+        <span className="d-brand">
+          <TotemMark size={16} spinning={running} />
+          <span className="d-brand-name">Totem</span>
+        </span>
 
-      {configError ? (
-        <div className="notice" data-tone="error">
-          Cannot reach the orchestrator: {configError}. Start it with{" "}
-          <code>pnpm --filter @ntux402/orchestrator run serve</code>.
-        </div>
-      ) : null}
+        <span className="d-topbar-group">
+          <Dot tone={isConnected && !wrongChain ? "live" : "idle"} />
+          <strong>{isConnected && !wrongChain ? "LIVE" : "IDLE"}</strong>
+        </span>
 
-      {config?.settlement === "stub" ? (
-        <div className="notice" data-tone="warn">
-          <strong>Stub settlement.</strong> No facilitator is configured, so payments are validated
-          but no USDC moves. Everything else — the encrypted policy, the decision, the bounce — is
-          real and on chain.
-        </div>
-      ) : null}
+        <span className="d-topbar-group">
+          Wallet <strong>{address ? truncate(address, 6, 4) : "not connected"}</strong>
+        </span>
 
-      {error ? (
-        <div className="notice" data-tone="error">
-          {error}
-        </div>
-      ) : null}
+        <span className="d-topbar-group">
+          Network <strong>{wrongChain ? `chain ${chainId}` : "Base Sepolia"}</strong>
+        </span>
 
-      <Step
-        n={1}
-        title="Connect a wallet"
-        blurb="Base Sepolia. The wallet signs the goal and the funding transfer, and nothing else."
-        state={stepState.connect}
-      >
-        {!isConnected ? (
-          <div className="row">
-            {connectors.map((connector) => (
-              <button key={connector.uid} onClick={() => connect({ connector })}>
-                Connect {connector.name}
-              </button>
-            ))}
-          </div>
-        ) : wrongChain ? (
-          <div className="row">
-            <span>
-              Connected to chain {chainId}. This demo writes only to Base Sepolia ({CHAIN_ID}).
-            </span>
-            <button onClick={() => switchChain({ chainId: CHAIN_ID })}>Switch network</button>
-          </div>
-        ) : (
-          <div className="row">
-            <code className="handle" style={{ flex: 1, minWidth: "18rem" }}>
-              {address}
-            </code>
-            <button className="secondary" onClick={() => disconnect()}>
-              Disconnect
-            </button>
-          </div>
-        )}
-      </Step>
-
-      <Step
-        n={2}
-        title="Mint the ephemeral payer key"
-        blurb="The Authorization Signer generates a per-goal key and returns only its address. This must happen before the goal is opened, because the payer address is a field of the goal record — a mutable payer field would let whoever can write it redirect every future signature."
-        state={stepState.payer}
-      >
-        {payer ? (
-          <>
-            <Hash value={payer} />
-            <p className="hint">
-              The private key never left the signer. Nothing else in the system can produce a
-              signature for this address.
-            </p>
-          </>
-        ) : (
-          <button disabled={!isConnected || wrongChain || !!busy} onClick={mintPayer}>
-            Mint payer address
-          </button>
-        )}
-      </Step>
-
-      <Step
-        n={3}
-        title="Open the goal"
-        blurb="The budget is encrypted in your browser, bound to your address, and converted to a handle on chain. Your wallet sends this — the orchestrator structurally cannot."
-        state={stepState.goal}
-      >
-        <dl className="facts">
-          <dt>remaining budget</dt>
-          <dd>{formatUsdc(BUDGET)} USDC — encrypted</dd>
-          <dt>per-call cap</dt>
-          <dd>{formatUsdc(PER_CALL_CAP)} USDC — public</dd>
-          <dt>calls</dt>
-          <dd>{CALLS_REMAINING}</dd>
-        </dl>
-        <p className="hint">
-          The cap sits deliberately <em>above</em> the malicious vendor’s 5.00 USDC ask, and both
-          vendors are allowlisted. The bounce has to come from the encrypted budget, not from a
-          public <code>require()</code> — otherwise it proves nothing about Inco.
-        </p>
-        {goalId ? (
-          <>
-            <dl className="facts" style={{ marginTop: "1rem" }}>
-              <dt>goal</dt>
-              <dd>#{goalId}</dd>
-            </dl>
-            {budgetHandle ? <Hash value={budgetHandle} /> : null}
-            <p className="hint">
-              That is the entire on-chain representation of the budget: an opaque{" "}
-              <code>bytes32</code>.{" "}
-              {config ? (
-                <a href={explorer.address(config.vaultAddress)} target="_blank" rel="noreferrer">
-                  Check it on Basescan
-                </a>
-              ) : null}
-              .
-            </p>
-          </>
-        ) : (
-          <>
-            <button disabled={!payer || !!busy} onClick={openGoal}>
-              Encrypt budget and open goal
-            </button>
-            {/*
-              Opening a goal costs a transaction and a wallet prompt, so a page
-              reload mid-demo should not force another one. Resuming also lets
-              the run steps be exercised without a wallet at all.
-            */}
-            <div className="row" style={{ marginTop: "1rem" }}>
-              <label className="hint" style={{ margin: 0 }} htmlFor="resume">
-                Already opened one?
-              </label>
-              <input
-                id="resume"
-                inputMode="numeric"
-                placeholder="goal id"
-                value={resumeId}
-                onChange={(e) => setResumeId(e.target.value.replace(/[^0-9]/g, ""))}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && resumeId) setGoalId(resumeId);
-                }}
-                style={{
-                  font: "inherit",
-                  fontSize: "0.9rem",
-                  padding: "0.45rem 0.6rem",
-                  width: "7rem",
-                  background: "var(--paper-raised)",
-                  color: "var(--ink)",
-                  border: "1px solid var(--rule-strong)",
-                  borderRadius: "2px",
-                }}
-              />
-              <button
-                className="secondary"
-                disabled={resumeId === ""}
-                onClick={() => setGoalId(resumeId)}
-              >
-                Resume
-              </button>
-            </div>
-          </>
-        )}
-      </Step>
-
-      <Step
-        n={4}
-        title="Fund the payer"
-        blurb="A second, independent spending bound. The ephemeral account holds only what you send it, so even if the Inco policy were bypassed entirely, the loss ceiling is this number."
-        state={stepState.fund}
-      >
-        {funded ? (
-          <p>
-            <Badge tone="approve">funded</Badge> {formatUsdc(PAYER_FUNDING)} USDC sent to the payer.
-          </p>
-        ) : (
-          <>
-            {underfunded ? (
-              <div className="notice" data-tone="warn">
-                <strong>No test USDC.</strong> This account holds{" "}
-                {formatUsdc(usdcBalance ?? 0n)} USDC and needs {formatUsdc(PAYER_FUNDING)}. Get some
-                from the{" "}
-                <a href="https://faucet.circle.com" target="_blank" rel="noreferrer">
-                  Circle faucet
-                </a>{" "}
-                — pick <em>USDC</em> and <em>Base Sepolia</em>, then reload.
-                <br />
-                <br />
-                You can skip this and run the <strong>malicious</strong> request now: it bounces off
-                the confidential policy long before any money would move. Only the honest run needs
-                funding.
-              </div>
-            ) : null}
-            <button disabled={!goalId || !!busy || underfunded} onClick={fundPayer}>
-              Send {formatUsdc(PAYER_FUNDING)} USDC
-            </button>
-            <p className="hint">
-              Deliberately more than the {formatUsdc(BUDGET)} USDC encrypted budget, so the Inco
-              policy binds first. If the two numbers were equal, nobody could tell which control
-              stopped the payment.
-            </p>
-          </>
-        )}
-      </Step>
-
-      <Step
-        n={5}
-        title="Hand off to the agent"
-        blurb="From here the orchestrator runs unattended. No further wallet prompts — if one appears, something is wrong."
-        state={stepState.run}
-      >
-        <div className="row" style={{ marginBottom: "1rem" }}>
-          <div className="tabs">
-            <button aria-pressed={mode === "honest"} onClick={() => setMode("honest")}>
-              Honest 402
-            </button>
-            <button aria-pressed={mode === "malicious"} onClick={() => setMode("malicious")}>
-              Malicious 402
-            </button>
-          </div>
-          <button disabled={!goalId || !!busy} onClick={run}>
-            {busy ?? `Run ${mode} request`}
-          </button>
-          {config ? (
-            <Badge tone="neutral">
-              agent: {config.agent === "llm" ? "live model" : "scripted"}
-            </Badge>
-          ) : null}
-        </div>
-
-        {mode === "malicious" ? (
-          <p className="hint">
-            This vendor charges ~500× and embeds a prompt injection claiming the spend is
-            pre-approved. Expect the agent to be convinced. Watch the money anyway.
-          </p>
+        {config ? (
+          <span className="d-topbar-group">
+            Vault{" "}
+            <Copyable
+              value={config.vaultAddress}
+              display={truncate(config.vaultAddress, 6, 4)}
+              href={explorer.address(config.vaultAddress)}
+            />
+          </span>
         ) : null}
 
-        <RunLog events={events} />
+        <span className="d-topbar-group d-spacer">
+          Settlement <strong>{config?.settlement ?? "…"}</strong>
+        </span>
 
-        {result ? <Verdict result={result} /> : null}
-      </Step>
-    </main>
+        {isConnected ? (
+          <button type="button" className="d-btn" data-kind="ghost" onClick={() => disconnect()}>
+            Disconnect
+          </button>
+        ) : null}
+      </header>
+
+      {/* 2 — PROGRESS RAIL. The whole sequence, visible before it is walked. */}
+      <ol className="d-rail" aria-label="Demo progress">
+        {steps.map((step, i) => (
+          <li key={step.key} className="d-rail-step" data-state={step.state}>
+            {i > 0 ? <span className="d-rail-link" aria-hidden="true" /> : null}
+            <span className="d-rail-num" aria-hidden="true">
+              {step.state === "done" ? "✓" : i + 1}
+            </span>
+            <span className="d-rail-label">{step.label}</span>
+            <span className="d-sr">{step.state}</span>
+          </li>
+        ))}
+      </ol>
+
+      {configError ? (
+        <div className="d-notice" data-tone="error" style={{ margin: "0 1rem 1rem" }}>
+          Cannot reach the orchestrator: {configError}
+        </div>
+      ) : null}
+
+      <main className="d-main">
+        {/* ============================ COLUMN 1 — GOAL & AUTHORITY */}
+        <div className="d-col">
+          <Card title="Goal &amp; authority">
+            {/* TODO(needs backend): the vault exposes no goal title, and the live
+                `callsRemaining` / `expiry` would each need a `goals()` read that
+                does not exist in this component. Shown values are the ones this
+                session actually set. */}
+            {goalId ? (
+              <>
+                <Ring
+                  spent={spent}
+                  funded={funding}
+                  caption="Share of the funded payer balance already spent"
+                />
+                <p className="d-caption" style={{ textAlign: "center", marginTop: 0 }}>
+                  Of the funded payer balance. The encrypted budget itself is not readable —
+                  by anyone, including this page.
+                </p>
+
+                <Field label="Goal">#{goalId}</Field>
+                <Field label="Remaining budget">
+                  <span className="d-cipher">encrypted · </span>
+                  {budgetHandle ? (
+                    <Copyable value={budgetHandle} display={truncate(budgetHandle, 10, 6)} />
+                  ) : (
+                    <span className="d-muted">handle unavailable on a resumed goal</span>
+                  )}
+                </Field>
+                <Field label="Opened with">
+                  {openedHere ? (
+                    `${formatUsdc(budget)} USDC`
+                  ) : (
+                    // A resumed goal was opened elsewhere; this session never
+                    // saw its budget and must not imply otherwise.
+                    <span className="d-muted">set in another session</span>
+                  )}
+                </Field>
+                <Field label="Per-call cap">{formatUsdc(PER_CALL_CAP)} USDC · public</Field>
+                <Field label="Calls remaining">
+                  {Math.max(0, CALLS_REMAINING - approvedCalls)} of {CALLS_REMAINING}
+                </Field>
+                <Field label="Expiry">7 days from opening</Field>
+              </>
+            ) : (
+              <div className="d-setup">
+                {!isConnected ? (
+                  connectors.map((connector) => (
+                    <button
+                      key={connector.uid}
+                      type="button"
+                      className="d-btn"
+                      onClick={() => connect({ connector })}
+                    >
+                      Connect {connector.name}
+                    </button>
+                  ))
+                ) : wrongChain ? (
+                  <>
+                    <p className="d-notice">This demo writes only to Base Sepolia.</p>
+                    <button
+                      type="button"
+                      className="d-btn"
+                      onClick={() => switchChain({ chainId: CHAIN_ID })}
+                    >
+                      Switch network
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      className="d-btn"
+                      data-kind={payer ? "outline" : undefined}
+                      disabled={!!payer || !!busy}
+                      onClick={mintPayer}
+                    >
+                      {payer ? "Payer minted" : "Mint ephemeral payer"}
+                    </button>
+
+                    {/*
+                      Chosen here, encrypted in the next step, and immutable
+                      afterwards. Shown before `openGoal` because that is the
+                      only moment it can be set — the whole point is that
+                      nothing downstream, including this page, can change it.
+                    */}
+                    <div className="d-budget">
+                      <label className="d-label" htmlFor="budget">
+                        Confidential budget
+                      </label>
+                      <div className="d-inline" style={{ marginTop: "0.35rem" }}>
+                        <input
+                          id="budget"
+                          className="d-input"
+                          inputMode="decimal"
+                          value={budgetDraft}
+                          disabled={!!busy}
+                          onChange={(e) => {
+                            const text = e.target.value.replace(/[^0-9.]/g, "");
+                            setBudgetDraft(text);
+                            const parsed = parseUsdc(text);
+                            if (parsed !== undefined) setBudget(clampBudget(parsed));
+                          }}
+                          onBlur={() => {
+                            // Normalise on blur rather than per keystroke, so
+                            // clearing the field to retype does not fight back.
+                            const parsed = parseUsdc(budgetDraft);
+                            const next = clampBudget(parsed ?? DEFAULT_BUDGET);
+                            setBudget(next);
+                            setBudgetDraft(formatUsdc(next));
+                          }}
+                        />
+                        <span className="d-budget-unit">USDC</span>
+                      </div>
+                      <p className="d-caption">
+                        Minimum {formatUsdc(MIN_BUDGET)}, maximum {formatUsdc(MAX_BUDGET)}. You will
+                        fund the payer with {formatUsdc(funding)} — a little above the budget, so the
+                        confidential check binds before the balance does.
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      className="d-btn"
+                      disabled={!payer || !!busy}
+                      onClick={openGoal}
+                    >
+                      Encrypt {formatUsdc(budget)} USDC and open goal
+                    </button>
+                    {!payer ? (
+                      <p className="d-hint">
+                        Mint the payer first — its address is a field of the goal record.
+                      </p>
+                    ) : null}
+                  </>
+                )}
+
+                {/*
+                  Outside the connection branch on purpose. Opening a goal costs
+                  a transaction and a wallet prompt, so a reload mid-demo should
+                  not force another — and the run itself is driven server-side,
+                  so an already-open goal can be exercised with no wallet at all.
+                */}
+                <div className="d-advanced">
+                  <span className="d-label">Already have a goal?</span>
+                  <div className="d-inline" style={{ marginTop: "0.4rem" }}>
+                    <input
+                      className="d-input"
+                      id="resume"
+                      inputMode="numeric"
+                      placeholder="goal id"
+                      value={resumeId}
+                      onChange={(e) => setResumeId(e.target.value.replace(/[^0-9]/g, ""))}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && resumeId) setGoalId(resumeId);
+                      }}
+                    />
+                    <button
+                      type="button"
+                      className="d-btn"
+                      data-kind="ghost"
+                      disabled={resumeId === ""}
+                      onClick={() => setGoalId(resumeId)}
+                    >
+                      Resume
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </Card>
+
+          {/* 3 — EPHEMERAL PAYER */}
+          <Card title="Ephemeral payer">
+            <Field label="Address">
+              {payer ? (
+                <Copyable
+                  value={payer}
+                  display={truncate(payer, 10, 6)}
+                  href={explorer.address(payer)}
+                />
+              ) : (
+                <span className="d-muted">not minted</span>
+              )}
+            </Field>
+            {/* TODO(needs backend): a live payer balance needs a `balanceOf`
+                read for the payer address; this component only reads the
+                connected wallet's. Funded amount and session spend are exact. */}
+            <Field label="Last funded">
+              {funded ? `${formatUsdc(funding)} USDC` : <span className="d-muted">—</span>}
+            </Field>
+            <Field label="Spent this session">{formatUsdc(spent)} USDC</Field>
+            <p className="d-caption">This balance is the maximum autonomous spend.</p>
+
+            {!funded && goalId ? (
+              underfunded ? (
+                <div className="d-notice" style={{ marginTop: "0.75rem" }}>
+                  No test USDC — this account holds {formatUsdc(usdcBalance ?? 0n)}. Get some from
+                  the{" "}
+                  <a href="https://faucet.circle.com" target="_blank" rel="noreferrer">
+                    Circle faucet
+                  </a>
+                  . The malicious run works without it.
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  className="d-btn"
+                  data-kind="outline"
+                  style={{ marginTop: "0.75rem", width: "100%" }}
+                  disabled={!!busy}
+                  onClick={fundPayer}
+                >
+                  Fund {formatUsdc(funding)} USDC
+                </button>
+              )
+            ) : null}
+          </Card>
+
+          {/* 4 — CONTROLS */}
+          <Card title="Execution">
+            <GoalPicker
+              selected={resource}
+              disabled={!!busy}
+              onSelect={(goal) => {
+                setResource(goal);
+                resetDemo();
+              }}
+            />
+
+            <p className="d-expectation" data-kind={resource.kind}>
+              {resource.expectation}
+            </p>
+
+            <div className="d-controls" style={{ marginTop: "0.6rem" }}>
+              <button
+                type="button"
+                className="d-btn"
+                disabled={!goalId || !!busy}
+                onClick={() => run(resource)}
+              >
+                Buy {resource.label} · {formatUsdc(BigInt(resource.priceAtomic))} USDC
+              </button>
+              <button
+                type="button"
+                className="d-btn"
+                data-kind="ghost"
+                disabled={!started || !!busy}
+                onClick={resetDemo}
+              >
+                Reset demo
+              </button>
+            </div>
+            {!goalId ? (
+              <p className="d-hint">Open a goal first — a run spends against its encrypted budget.</p>
+            ) : null}
+            {busy ? <p className="d-caption">{busy}</p> : null}
+            {error ? (
+              <p className="d-notice" data-tone="error" style={{ marginTop: "0.75rem" }}>
+                {error}
+              </p>
+            ) : null}
+          </Card>
+        </div>
+
+        {/* ============================ COLUMN 2 — LIVE EXECUTION */}
+        <div className="d-col">
+          <Card
+            title="Live execution"
+            aside={
+              running ? (
+                <span className="d-running">
+                  <span className="t-eq" aria-hidden="true">
+                    <i />
+                    <i />
+                    <i />
+                  </span>
+                  running
+                </span>
+              ) : null
+            }
+          >
+            <Outcome result={result} events={events} />
+
+            {/*
+              Rendered from the first paint, not on the first event. The nine
+              stages are a fixed list precisely so the shape of the flow is
+              legible before anything has happened — an empty state in this slot
+              threw that away and told the viewer nothing about what to expect.
+            */}
+            <Timeline events={events} running={running} />
+
+            {!started ? (
+              <p className="d-tl-legend">
+                Nine stages, fixed. Run a request and watch them resolve — or run the malicious one
+                and watch it stop at the confidential evaluation.
+              </p>
+            ) : null}
+          </Card>
+
+          {started ? <ModelInput events={events} running={running} /> : null}
+        </div>
+
+        {/* ============================ COLUMN 3 — EVIDENCE & SECURITY */}
+        <div className="d-col">
+          <Guarantees />
+          <EvidenceDrawer events={events} goalId={goalId} />
+        </div>
+      </main>
+    </div>
   );
-}
-
-function Verdict({ result }: { result: RunResult }) {
-  switch (result.kind) {
-    case "paid":
-      return (
-        <div className="notice" style={{ marginTop: "1.25rem" }}>
-          <Badge tone="approve">paid</Badge> The policy approved, the signer signed against the
-          finalized record, and the resource returned its data.
-        </div>
-      );
-    case "policy-rejected":
-      return (
-        <div className="notice" data-tone="warn" style={{ marginTop: "1.25rem" }}>
-          <Badge tone="reject">bounced</Badge> The confidential policy rejected this spend.
-          Counters unchanged, no authorization exists to sign against, and the signer was never
-          asked. The agent was manipulated and the money still did not move.
-        </div>
-      );
-    case "decision-unavailable":
-      return (
-        <div className="notice" data-tone="warn" style={{ marginTop: "1.25rem" }}>
-          <Badge tone="pending">decision unavailable</Badge> The debit committed at{" "}
-          <code>requestSpend</code>, but the reveal never resolved after {result.attempts}{" "}
-          attempts. This is the Inco liveness case, not a rejection.
-        </div>
-      );
-    case "free":
-      return (
-        <div className="notice" style={{ marginTop: "1.25rem" }}>
-          The resource returned 200 without demanding payment.
-        </div>
-      );
-    case "failed":
-      return (
-        <div className="notice" data-tone="error" style={{ marginTop: "1.25rem" }}>
-          {result.reason}
-        </div>
-      );
-  }
 }
 
 // --- small chain helpers, kept out of the component body --------------------
@@ -542,3 +762,4 @@ function readIncoFee(): Promise<bigint> {
 function waitForReceipt(hash: Hex) {
   return reader.waitForTransactionReceipt({ hash });
 }
+

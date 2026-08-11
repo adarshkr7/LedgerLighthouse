@@ -1,0 +1,42 @@
+# Oasis ROFL manifest for the Authorization Signer.
+#
+# `oasis rofl create --network testnet` fills in the app id and the deployment
+# block; the fields below are the ones worth choosing deliberately.
+#
+# Deployed to Sapphire Testnet while the money stays on Base Sepolia. That split
+# is intentional: Sapphire attests the enclave that holds the payer key, Base
+# holds the USDC and the Inco-enforced budget, and no bridge sits between them —
+# the enclave simply signs an EIP-3009 authorization that Base already approved.
+
+name: totem-authorization-signer
+version: 0.1.0
+repository: https://github.com/adarshkr7/NTU_x402
+license: MIT
+tee: tdx
+kind: containers
+
+resources:
+  # A node:22-alpine process holding one HTTP server and a viem client. 512 MB
+  # is generous; trim it if the machine offer prices on memory.
+  memory: 512
+  cpus: 1
+  storage:
+    # Persistent, so the address -> key_id index survives a restart and
+    # previously minted payers stay signable. Contains no key material.
+    kind: disk-persistent
+    size: 512
+
+artifacts:
+  container:
+    compose: compose.yaml
+
+deployments:
+  default:
+    network: testnet
+    paratime: sapphire
+    policy:
+      quotes: {}
+      enclaves: []
+      endorsements:
+        - any: {}
+      fees: endorsing_node

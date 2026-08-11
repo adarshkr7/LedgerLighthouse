@@ -6,7 +6,7 @@ import { createRoot } from "react-dom/client";
 import { WagmiProvider } from "wagmi";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
-import App from "./App.js";
+import Root from "./Root.js";
 import { wagmiConfig } from "./lib/config.js";
 import "./styles.css";
 
@@ -19,7 +19,7 @@ createRoot(root).render(
   <StrictMode>
     <WagmiProvider config={wagmiConfig}>
       <QueryClientProvider client={queryClient}>
-        <App />
+        <Root />
       </QueryClientProvider>
     </WagmiProvider>
   </StrictMode>,

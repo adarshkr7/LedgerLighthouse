@@ -200,7 +200,7 @@ describe("Facilitator.verify", () => {
     expect(result.invalidReason).toContain("payee mismatch");
   });
 
-  // The property plan §3 rests on: the facilitator is trusted to relay, not to
+  // The property ARCHITECTURE.md §2 rests on: the facilitator is trusted to relay, not to
   // preserve terms — the signature is what preserves them.
   it("rejects terms tampered with after signing", async () => {
     const payment = await signPayment();
@@ -247,7 +247,7 @@ describe("Facilitator.verify", () => {
     expect(result.invalidReason).toContain("already been used");
   });
 
-  // The second, independent spending bound from plan §11.1.
+  // The second, independent spending bound from ARCHITECTURE.md §5.5.
   it("rejects when the ephemeral payer is underfunded", async () => {
     chain.balances.set(payer.address.toLowerCase(), 5_000n);
     const result = await facilitator.verify(await signPayment(), requirements);

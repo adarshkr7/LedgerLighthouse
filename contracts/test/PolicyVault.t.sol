@@ -7,7 +7,7 @@ import {ebool, euint256, e, inco} from "@inco/lightning/src/Lib.sol";
 
 import {PolicyVault} from "../src/PolicyVault.sol";
 
-/// Tests for the M2a on-chain policy vault.
+/// Tests for the on-chain policy vault.
 ///
 /// Written before the contract, because the properties they pin down are the
 /// ones that are expensive to retrofit: a frozen authorization tuple, a
@@ -44,7 +44,7 @@ contract PolicyVaultTest is IncoTest {
         allowlist[0] = VENDOR;
 
         // The ciphertext is bound to the address that produced it, so the goal
-        // must be opened by the user's own transaction (plan §5.2).
+        // must be opened by the user's own transaction (ARCHITECTURE.md §5.2).
         bytes memory ciphertext = fakePrepareEuint256Ciphertext(budget, alice, address(vault));
 
         // Hoist the fee: `vm.prank` applies to the very next call, and an
@@ -108,7 +108,7 @@ contract PolicyVaultTest is IncoTest {
 
     // ------------------------------------------- the seven required properties
 
-    /// The retry test the brief calls "the one that matters".
+    /// The retry test IMPLEMENTATION.md §7 calls "the one that matters most".
     ///
     /// EIP-3009 marks the whole *authorization* used, not just the nonce. If the
     /// signer regenerates `validAfter`/`validBefore` from the clock on retry, the
@@ -171,7 +171,7 @@ contract PolicyVaultTest is IncoTest {
         assertEq(third, 3);
 
         // A rejected attempt still burns a sequence number, so it stays visible
-        // in the trace (plan §7.3). A policy that never fires is
+        // in the trace (ARCHITECTURE.md §7.2). A policy that never fires is
         // indistinguishable from a policy that does not work.
         (uint64 fourth, bool approved) = _spendAndFinalize(PER_CALL_CAP + 1);
         assertFalse(approved, "over-cap spend should not approve");
@@ -258,7 +258,7 @@ contract PolicyVaultTest is IncoTest {
         assertFalse(vault.isApproved(goalId, seq));
     }
 
-    // ------------------------------- handle-match verification (plan §7.5.2)
+    // ------------------------------- handle-match verification (ARCHITECTURE.md §7.5)
 
     /// Verifying the signature alone is not enough. A genuine attestation for a
     /// *different* handle must be rejected, or it could simply be substituted.

@@ -15,13 +15,19 @@ import {
   type PaymentPayload,
 } from "@ntux402/shared";
 
-import {
-  HONEST_PAY_TO,
-  HONEST_PRICE_ATOMIC,
-  MALICIOUS_PAY_TO,
-  MALICIOUS_PRICE_ATOMIC,
-} from "./config.js";
+import { DEMO_GOALS, findDemoGoal } from "./config.js";
 import { startMockApi, type StartedServer } from "./server.js";
+
+// The legacy `/resource/honest` and `/resource/malicious` paths are aliases onto
+// these two catalog entries, so the assertions below still describe exactly what
+// those paths serve.
+const HONEST = findDemoGoal("market-data")!;
+const MALICIOUS = findDemoGoal("premium-feed")!;
+
+const HONEST_PAY_TO = HONEST.payTo;
+const HONEST_PRICE_ATOMIC = HONEST.priceAtomic;
+const MALICIOUS_PAY_TO = MALICIOUS.payTo;
+const MALICIOUS_PRICE_ATOMIC = MALICIOUS.priceAtomic;
 
 let api: StartedServer;
 
@@ -92,8 +98,9 @@ describe("GET /resource/honest", () => {
     });
     expect(res.status).toBe(200);
 
+    // `mode` echoes the catalog key the alias resolved to, not the alias.
     const body = (await res.json()) as { mode: string; data: { premium: boolean } };
-    expect(body.mode).toBe("honest");
+    expect(body.mode).toBe(HONEST.key);
     expect(body.data.premium).toBe(true);
   });
 
@@ -179,7 +186,7 @@ describe("GET /resource/malicious", () => {
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as { mode: string };
-    expect(body.mode).toBe("malicious");
+    expect(body.mode).toBe(MALICIOUS.key);
   });
 });
 
@@ -246,5 +253,144 @@ describe("payment payload validation", () => {
       headers: { [HEADER_PAYMENT]: "garbage" },
     });
     expect(parsePaymentRequired(await res.json()).ok).toBe(true);
+  });
+});
+
+describe("the catalog's own paths", () => {
+  it("serves every catalog entry at /resource/<key>", async () => {
+    for (const goal of DEMO_GOALS) {
+      const res = await fetch(`${api.url}/resource/${goal.key}`);
+      expect(res.status, goal.key).toBe(402);
+
+      const parsed = parsePaymentRequired(await res.json());
+      expect(parsed.ok, goal.key).toBe(true);
+      if (!parsed.ok) continue;
+
+      const selected = selectTerms(parsed.value, expected);
+      expect(selected.ok, goal.key).toBe(true);
+      if (!selected.ok) continue;
+
+      // The price on the wire is the catalog price, not a copy that drifted.
+      expect(selected.value.amount, goal.key).toBe(BigInt(goal.priceAtomic));
+      expect(selected.value.payTo.toLowerCase(), goal.key).toBe(goal.payTo.toLowerCase());
+    }
+  });
+
+  it("keeps the legacy paths working as aliases", async () => {
+    const pairs: ReadonlyArray<readonly [string, string]> = [
+      ["honest", "market-data"],
+      ["malicious", "premium-feed"],
+    ];
+
+    for (const [alias, key] of pairs) {
+      const goal = findDemoGoal(key)!;
+      const res = await fetch(`${api.url}/resource/${alias}`);
+      const parsed = parsePaymentRequired(await res.json());
+      expect(parsed.ok, alias).toBe(true);
+      if (!parsed.ok) continue;
+
+      const selected = selectTerms(parsed.value, expected);
+      expect(selected.ok, alias).toBe(true);
+      if (!selected.ok) continue;
+      expect(selected.value.amount, alias).toBe(BigInt(goal.priceAtomic));
+    }
+  });
+
+  /*
+   * The load-bearing property of the overcharge entry.
+   *
+   * Its whole job is to be refused by the *encrypted* budget, which only means
+   * anything if nothing public could have refused it first. So: no injection in
+   * the description, and a price comfortably under the public per-call cap.
+   */
+  it("keeps the overcharge entry free of anything a public check could catch", async () => {
+    const goal = findDemoGoal("compliance-audit")!;
+    const res = await fetch(`${api.url}/resource/compliance-audit`);
+    const parsed = parsePaymentRequired(await res.json());
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+
+    const selected = selectTerms(parsed.value, expected);
+    expect(selected.ok).toBe(true);
+    if (!selected.ok) return;
+
+    // Well under the 6.00 USDC public per-call cap the demo opens goals with.
+    expect(selected.value.amount).toBeLessThan(6_000_000n);
+    // Above the 0.20 USDC encrypted budget — so the only thing left to stop it
+    // is the confidential check.
+    expect(selected.value.amount).toBeGreaterThan(200_000n);
+    expect(goal.tactic).toBe("overcharge");
+    expect(selected.value.description).not.toContain("SYSTEM NOTICE");
+  });
+
+  it("keeps the two honest calls affordable together", async () => {
+    // A viewer should be able to run both and watch USDC leave twice before
+    // anything is refused; that only holds if they sum to under the budget.
+    const total = DEMO_GOALS.filter((g) => g.kind === "honest").reduce(
+      (sum, g) => sum + BigInt(g.priceAtomic),
+      0n,
+    );
+    expect(total).toBeLessThan(200_000n);
+  });
+
+  it("404s an unknown resource key", async () => {
+    const res = await fetch(`${api.url}/resource/not-a-real-key`);
+    expect(res.status).toBe(404);
+  });
+});
+
+describe("?price= override", () => {
+  const priceOf = async (path: string): Promise<bigint | undefined> => {
+    const parsed = parsePaymentRequired(await (await fetch(`${api.url}${path}`)).json());
+    if (!parsed.ok) return undefined;
+    const selected = selectTerms(parsed.value, expected);
+    return selected.ok ? selected.value.amount : undefined;
+  };
+
+  it("retunes the overcharge vendor, so it tracks a budget chosen at run time", async () => {
+    expect(await priceOf("/resource/compliance-audit?price=1050000")).toBe(1_050_000n);
+    expect(await priceOf("/resource/compliance-audit?price=4050000")).toBe(4_050_000n);
+  });
+
+  it("leaves the overcharge vendor at its catalog price when unset", async () => {
+    const goal = findDemoGoal("compliance-audit")!;
+    expect(await priceOf("/resource/compliance-audit")).toBe(BigInt(goal.priceAtomic));
+  });
+
+  /*
+   * The other three must not be retunable. The honest pair has to stay cheap
+   * enough to settle and the injection vendor's ~500x ask is the whole point of
+   * that entry; honouring the override there would let a caller decide what the
+   * catalog means.
+   */
+  it("ignores the override on every other resource", async () => {
+    for (const goal of DEMO_GOALS.filter((g) => g.tactic !== "overcharge")) {
+      const amount = await priceOf(`/resource/${goal.key}?price=999`);
+      expect(amount, goal.key).toBe(BigInt(goal.priceAtomic));
+    }
+  });
+
+  it("ignores a malformed, zero or absurd override", async () => {
+    const goal = findDemoGoal("compliance-audit")!;
+    for (const raw of ["abc", "", "0", "-5", "1e6", "999999999999"]) {
+      const amount = await priceOf(`/resource/compliance-audit?price=${encodeURIComponent(raw)}`);
+      expect(amount, raw).toBe(BigInt(goal.priceAtomic));
+    }
+  });
+
+  it("keeps the query string out of the advertised resource identifier", async () => {
+    // `resource` is what the terms hash commits to, so it must not vary with a
+    // demo control that has no bearing on what is being bought.
+    const parsed = parsePaymentRequired(
+      await (await fetch(`${api.url}/resource/compliance-audit?price=1050000`)).json(),
+    );
+    if (!parsed.ok) throw new Error(parsed.error);
+    expect(parsed.value.accepts[0]!.resource).not.toContain("price=");
+    expect(parsed.value.accepts[0]!.resource).toContain("/resource/compliance-audit");
+  });
+
+  it("still serves /health when a query string is present", async () => {
+    const res = await fetch(`${api.url}/health?whatever=1`);
+    expect(res.status).toBe(200);
   });
 });

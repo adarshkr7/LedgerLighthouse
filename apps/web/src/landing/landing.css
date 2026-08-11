@@ -1,0 +1,845 @@
+/*
+ * Landing page.
+ *
+ * Scoped under `.landing`, reading global tokens from styles.css. Same
+ * vocabulary as the console — green approved, red hostile — so a viewer
+ * arriving at the console already knows what the colours mean.
+ *
+ * Neutral chrome, hairline rings, tight shadows. Sections reveal on scroll
+ * with a short fade-up; nothing parallaxes and nothing glows.
+ */
+
+.landing {
+  --lp-measure: 72rem;
+  --lp-gap: clamp(4rem, 8vw, 7rem);
+
+  position: relative;
+  color: var(--t-fg);
+  font-family: var(--t-sans);
+  font-size: 15px;
+  line-height: 1.6;
+  min-height: 100vh;
+}
+
+.landing *,
+.landing *::before,
+.landing *::after {
+  box-sizing: border-box;
+}
+
+.landing :focus-visible {
+  outline: 2px solid var(--t-fg-2);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+/*
+ * Scroll reveal. Sections start displaced and are released by an
+ * IntersectionObserver in Landing.tsx, which adds `data-seen`.
+ *
+ * The initial state is only applied when JS can remove it — `.js-reveal` is set
+ * on the root by the same effect. Without that guard, a failed script would
+ * leave the entire page invisible.
+ */
+.landing.js-reveal .lp-reveal {
+  opacity: 0;
+  transform: translateY(14px);
+}
+
+.landing.js-reveal .lp-reveal[data-seen] {
+  opacity: 1;
+  transform: none;
+  transition: opacity 520ms var(--t-ease), transform 520ms var(--t-ease);
+}
+
+/* --------------------------------------------------------------------- nav */
+
+.lp-nav {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  padding: 0.8rem clamp(1.25rem, 4vw, 2.5rem);
+  background: rgba(20, 21, 23, 0.88);
+  border-bottom: 1px solid var(--t-line);
+}
+
+.lp-nav-inner {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  width: 100%;
+  max-width: var(--lp-measure);
+  margin: 0 auto;
+}
+
+.lp-nav-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin-inline-end: auto;
+}
+
+.lp-nav-name {
+  font-size: 0.88rem;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--t-fg);
+}
+
+.lp-nav-links {
+  display: flex;
+  gap: 1.4rem;
+}
+
+.lp-nav-links a {
+  font-family: var(--t-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--t-fg-3);
+  text-decoration: none;
+  transition: color var(--t-t) var(--t-ease);
+}
+
+.lp-nav-links a:hover {
+  color: var(--t-fg);
+}
+
+@media (max-width: 46rem) {
+  .lp-nav-links {
+    display: none;
+  }
+}
+
+/* -------------------------------------------------------------- typography */
+
+.lp-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: var(--t-mono);
+  font-size: 0.67rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--t-fg-3);
+  margin: 0 0 1.15rem;
+}
+
+.lp-eyebrow::before {
+  content: "";
+  width: 1.5rem;
+  height: 1px;
+  background: var(--t-line-strong);
+}
+
+.lp-headline {
+  /* The line break is authored with <br>; `balance` would fight it. */
+  font-size: clamp(2.1rem, 4.1vw, 3.15rem);
+  line-height: 1.08;
+  letter-spacing: -0.033em;
+  font-weight: 600;
+  margin: 0 0 1.4rem;
+  color: var(--t-fg);
+}
+
+.lp-h2 {
+  font-size: clamp(1.45rem, 2.7vw, 2.05rem);
+  line-height: 1.18;
+  letter-spacing: -0.025em;
+  font-weight: 600;
+  margin: 0 0 2.5rem;
+  max-width: 34ch;
+  text-wrap: balance;
+}
+
+.lp-sub {
+  font-size: 1.02rem;
+  color: var(--t-fg-2);
+  margin: 0 0 2.1rem;
+  max-width: 48ch;
+}
+
+/* ------------------------------------------------------------------ layout */
+
+.lp-hero,
+.lp-section,
+.lp-trust,
+.lp-cta,
+.lp-footer {
+  max-width: var(--lp-measure);
+  margin: 0 auto;
+  padding-inline: clamp(1.25rem, 4vw, 2.5rem);
+}
+
+.lp-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.28fr) minmax(0, 0.72fr);
+  gap: clamp(2rem, 4.5vw, 3.5rem);
+  align-items: center;
+  padding-block: clamp(2.5rem, 6vh, 4rem) clamp(3rem, 6vw, 5rem);
+}
+
+.lp-hero-visual {
+  display: grid;
+  gap: 1rem;
+}
+
+.lp-section {
+  padding-block: var(--lp-gap);
+  border-top: 1px solid var(--t-line);
+}
+
+/* -------------------------------------------------------------- totem hero */
+
+.totem-hero {
+  position: relative;
+  display: grid;
+  place-items: center;
+}
+
+.totem-hero-svg {
+  width: 100%;
+  max-width: 19rem;
+}
+
+/* The top leans, as a spinning top does. Slow enough to read as physics
+   rather than as a loading spinner. */
+.totem-hero-body {
+  transform-origin: 160px 240px;
+  animation: th-lean 5.5s var(--t-ease) infinite;
+}
+
+.totem-hero-arcs {
+  animation: th-shimmer 3.4s ease-in-out infinite;
+}
+
+@keyframes th-lean {
+  0%,
+  100% {
+    transform: rotate(-2.8deg);
+  }
+  50% {
+    transform: rotate(2.8deg);
+  }
+}
+
+@keyframes th-shimmer {
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* ----------------------------------------------------------------- buttons */
+
+.lp-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  padding: 0.72rem 1.4rem;
+  border-radius: var(--t-r-sm);
+  border: none;
+  background: var(--t-fg);
+  color: #17181a;
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+  box-shadow: var(--t-shadow-btn);
+  transition: background-color var(--t-t) var(--t-ease);
+}
+
+.lp-btn:hover {
+  background: #fff;
+}
+
+.lp-btn-ghost {
+  background: var(--t-raised-2);
+  color: var(--t-fg);
+}
+
+.lp-btn-ghost:hover {
+  background: #2b2e33;
+}
+
+.lp-actions {
+  display: flex;
+  gap: 0.7rem;
+  flex-wrap: wrap;
+}
+
+/* -------------------------------------------------------- workflow diagram */
+
+/* One row, never wrapped. Wrapping mid-chain leaves a connector pointing at
+   nothing at the end of each row, which reads as a broken diagram. Below the
+   breakpoint it stacks vertically instead, where the same connector is correct. */
+.flow {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+}
+
+.flow-step {
+  display: flex;
+  align-items: center;
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.flow-node {
+  display: flex;
+  /* Seven across only fits if the node stacks its icon above its text. */
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.6rem;
+  padding: 0.95rem 0.8rem;
+  align-self: stretch;
+  border-radius: 9px;
+  background: var(--t-raised);
+  box-shadow: var(--t-ring);
+  min-width: 0;
+  flex: 1;
+  transition: all 180ms var(--t-ease);
+}
+
+.flow-step[data-active] .flow-node {
+  background: var(--t-raised-2);
+  box-shadow: 0 0 0 1px var(--t-line-strong), 0 2px 10px rgba(0, 0, 0, 0.3);
+}
+
+.flow-icon {
+  display: grid;
+  place-items: center;
+  color: var(--t-fg-4);
+  flex-shrink: 0;
+  transition: color 180ms var(--t-ease);
+}
+
+.flow-step[data-active] .flow-icon {
+  color: var(--t-fg);
+}
+
+.flow-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.flow-label {
+  font-family: var(--t-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.03em;
+  color: var(--t-fg-2);
+  white-space: normal;
+  transition: color 180ms var(--t-ease);
+}
+
+.flow-step[data-active] .flow-label {
+  color: var(--t-fg);
+}
+
+.flow-note {
+  font-size: 0.76rem;
+  color: var(--t-fg-4);
+  margin-top: 0.15rem;
+}
+
+/* The connector. A hairline, nothing more. */
+.flow-link {
+  flex-shrink: 0;
+  background: var(--t-line-strong);
+  height: 1px;
+  width: 0.85rem;
+}
+
+/* Stack vertically once seven columns stop being legible. Back to icon-beside-
+   label here, since a stacked column has all the width it needs. */
+@media (max-width: 64rem) {
+  .flow {
+    flex-direction: column;
+  }
+  .flow-step {
+    flex-direction: column;
+    align-items: stretch;
+    flex: 1 1 auto;
+  }
+  .flow-node {
+    flex-direction: row;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.8rem 0.9rem;
+  }
+  .flow-link {
+    width: 1px;
+    height: 0.8rem;
+    margin-inline-start: 1.5rem;
+  }
+}
+
+/* ------------------------------------------------------ hero block stream */
+
+.bs {
+  border-radius: 9px;
+  background: var(--t-raised);
+  box-shadow: var(--t-shadow-card);
+  overflow: hidden;
+}
+
+.bs-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.65rem 0.9rem;
+  border-bottom: 1px solid var(--t-line);
+  font-family: var(--t-mono);
+  font-size: 0.63rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--t-fg-3);
+}
+
+.bs-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--t-ok);
+  box-shadow: 0 0 0 3px var(--t-ok-tint);
+  flex-shrink: 0;
+}
+
+.bs-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.bs-block {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: baseline;
+  gap: 0.8rem;
+  padding: 0.62rem 0.9rem;
+  border-bottom: 1px solid var(--t-line);
+  font-family: var(--t-mono);
+  font-size: 0.69rem;
+  color: var(--t-fg-4);
+  /* Each new block streams in the way a chain tip actually arrives. */
+  animation: t-stream-in 300ms var(--t-ease) both;
+}
+
+.bs-block:last-child {
+  border-bottom: none;
+}
+
+/* The newest block is the only one at full contrast, so the eye lands on the
+   row that just changed and the rest recede into history. */
+.bs-block[data-lead] {
+  background: var(--t-raised-2);
+}
+
+.bs-block[data-lead] .bs-height,
+.bs-block[data-lead] .bs-hash {
+  color: var(--t-fg);
+}
+
+.bs-height {
+  color: var(--t-fg-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.bs-hash {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bs-txs {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ------------------------------------------------------------ trust strip */
+
+.lp-trust {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.8rem 1.6rem;
+  padding-block: 1.5rem;
+  border-top: 1px solid var(--t-line);
+  border-bottom: 1px solid var(--t-line);
+}
+
+.lp-trust-item {
+  font-family: var(--t-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  color: var(--t-fg-3);
+  position: relative;
+}
+
+.lp-trust-item + .lp-trust-item::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: -0.85rem;
+  top: 0.15em;
+  bottom: 0.15em;
+  width: 1px;
+  background: var(--t-line-strong);
+}
+
+/* ----------------------------------------------------------- feature grid */
+
+.lp-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  background: var(--t-line);
+  border: 1px solid var(--t-line);
+  border-radius: 11px;
+  overflow: hidden;
+}
+
+.lp-card {
+  background: var(--t-raised);
+  padding: 1.6rem 1.4rem;
+  transition: background-color 180ms var(--t-ease);
+}
+
+.lp-card:hover {
+  background: var(--t-raised-2);
+}
+
+.lp-card-icon {
+  display: block;
+  color: var(--t-fg-3);
+  margin-bottom: 0.85rem;
+  transition: color 180ms var(--t-ease);
+}
+
+.lp-card:hover .lp-card-icon {
+  color: var(--t-fg);
+}
+
+.lp-card-title {
+  font-size: 0.96rem;
+  font-weight: 600;
+  letter-spacing: -0.008em;
+  margin: 0 0 0.38rem;
+}
+
+.lp-card-body {
+  font-size: 0.85rem;
+  line-height: 1.58;
+  color: var(--t-fg-2);
+  margin: 0;
+}
+
+@media (max-width: 60rem) {
+  .lp-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 38rem) {
+  .lp-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ------------------------------------------------------------- comparison */
+
+.lp-compare {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.1rem;
+}
+
+.lp-col {
+  border-radius: 11px;
+  padding: 1.6rem 1.5rem;
+  background: var(--t-raised);
+  box-shadow: var(--t-ring);
+}
+
+/* The emphasis is one step of elevation — enough to read as the answer without
+   turning the comparison into an advertisement. */
+.lp-col-emphasis {
+  background: var(--t-raised-2);
+  box-shadow: var(--t-shadow-raised);
+}
+
+.lp-col-title {
+  font-family: var(--t-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--t-fg-3);
+  margin: 0 0 1.1rem;
+  font-weight: 400;
+}
+
+.lp-col-emphasis .lp-col-title {
+  color: var(--t-fg);
+}
+
+.lp-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.lp-list-item {
+  display: flex;
+  align-items: baseline;
+  gap: 0.65rem;
+  font-size: 0.89rem;
+  color: var(--t-fg-2);
+}
+
+.lp-col-emphasis .lp-list-item {
+  color: var(--t-fg);
+}
+
+.lp-mark {
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  border: 1px solid var(--t-no);
+  background: var(--t-no-tint);
+  transform: translateY(-0.1em);
+}
+
+.lp-mark-on {
+  border-color: var(--t-ok);
+  background: var(--t-ok);
+}
+
+@media (max-width: 46rem) {
+  .lp-compare {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* --------------------------------------------------------------- preview */
+
+.lp-preview {
+  border-radius: 11px;
+  background: var(--t-raised);
+  box-shadow: var(--t-shadow-card);
+  padding: 1.75rem;
+  display: grid;
+  gap: 1.6rem;
+}
+
+.lp-preview-head {
+  display: grid;
+  gap: 0.28rem;
+}
+
+.lp-status {
+  font-family: var(--t-mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--t-ok);
+  border: 1px solid var(--t-ok-line);
+  background: var(--t-ok-tint);
+  border-radius: 4px;
+  padding: 0.16rem 0.48rem;
+  justify-self: start;
+  margin-bottom: 0.3rem;
+}
+
+.lp-preview-title {
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.lp-preview-sub {
+  font-size: 0.85rem;
+  color: var(--t-fg-3);
+}
+
+.lp-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  margin: 0;
+  background: var(--t-line);
+  border: 1px solid var(--t-line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.lp-metric {
+  background: var(--t-raised-2);
+  padding: 0.85rem 0.95rem;
+}
+
+.lp-metric dt {
+  font-family: var(--t-mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--t-fg-4);
+  margin-bottom: 0.28rem;
+}
+
+.lp-metric dd {
+  margin: 0;
+  font-size: 0.87rem;
+  color: var(--t-fg);
+}
+
+@media (max-width: 46rem) {
+  .lp-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.lp-timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.85rem;
+}
+
+.lp-timeline-item {
+  position: relative;
+  padding-inline-start: 1.45rem;
+  font-size: 0.86rem;
+  color: var(--t-fg-2);
+}
+
+.lp-timeline-item::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: 0;
+  top: 0.5em;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--t-ok);
+}
+
+/* Runs the rail between dots, but not past the last one. */
+.lp-timeline-item:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  inset-inline-start: 3px;
+  top: calc(0.5em + 8px);
+  height: calc(100% + 0.85rem - 9px);
+  width: 1px;
+  background: var(--t-ok-line);
+}
+
+/* ------------------------------------------------------------------ prose */
+
+.lp-prose {
+  display: grid;
+  gap: 1rem;
+  max-width: 54ch;
+}
+
+.lp-prose p {
+  margin: 0;
+  padding-inline-start: 1rem;
+  border-inline-start: 2px solid var(--t-line-strong);
+  font-size: 0.97rem;
+  color: var(--t-fg-2);
+}
+
+/* -------------------------------------------------------------------- CTA */
+
+.lp-cta {
+  text-align: center;
+  padding-block: clamp(4.5rem, 10vw, 7rem);
+  border-top: 1px solid var(--t-line);
+}
+
+.lp-cta-title {
+  font-size: clamp(1.65rem, 3.6vw, 2.6rem);
+  line-height: 1.14;
+  letter-spacing: -0.028em;
+  font-weight: 600;
+  margin: 0 0 1.9rem;
+  text-wrap: balance;
+}
+
+.lp-cta-note {
+  font-size: 0.81rem;
+  color: var(--t-fg-4);
+  margin: 1rem 0 0;
+}
+
+/* ----------------------------------------------------------------- footer */
+
+.lp-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem 1.75rem;
+  align-items: center;
+  justify-content: space-between;
+  padding-block: 2.1rem;
+  border-top: 1px solid var(--t-line);
+}
+
+.lp-footer-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+}
+
+.lp-footer-links a {
+  font-size: 0.83rem;
+  color: var(--t-fg-3);
+  text-decoration: none;
+  transition: color var(--t-t) var(--t-ease);
+}
+
+.lp-footer-links a:hover {
+  color: var(--t-fg);
+}
+
+.lp-footer-note {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: var(--t-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  color: var(--t-fg-4);
+  margin: 0;
+}
+
+/* -------------------------------------------------------------- responsive */
+
+@media (max-width: 52rem) {
+  .lp-hero {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  /* The totem stays — it is the page's identity. The block feed goes, since
+     the diagram a section later already carries the "this is live" claim. */
+  .lp-hero-visual .bs {
+    display: none;
+  }
+  .totem-hero-svg {
+    max-width: 12rem;
+  }
+}

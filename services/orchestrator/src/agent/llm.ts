@@ -4,7 +4,7 @@
  * ## Why this reads attacker-controlled text on purpose
  *
  * The vendor's `description` is passed to the model verbatim. That is not an
- * oversight; it is the threat model (plan §1). A real agent must read HTTP
+ * oversight; it is the threat model (ARCHITECTURE.md §1). A real agent must read HTTP
  * response bodies, error strings and vendor prose, so any design that depends
  * on *not* reading them is a design that does not survive contact with the
  * internet. This architecture's claim is narrower and stronger: the component
@@ -13,7 +13,7 @@
  * What the model may **not** do is supply the numbers. It returns
  * `{ reasoning, proceed }` — a sentiment and a boolean. `amount`, `payTo` and
  * `asset` come from the schema validator and go to the vault as typed calldata
- * (plan §6.2). So the strongest outcome of a successful injection is that the
+ * (ARCHITECTURE.md §6.1). So the strongest outcome of a successful injection is that the
  * agent enthusiastically requests exactly the spend the 402 already asked for,
  * which then bounces off the confidential policy.
  *

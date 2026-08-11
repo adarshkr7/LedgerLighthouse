@@ -1,0 +1,1292 @@
+/*
+ * The execution console.
+ *
+ * Scoped under `.dash`. Reads global tokens from styles.css and defines no
+ * colours of its own, so the four semantic states mean the same thing here as
+ * on the landing page.
+ *
+ * Panels are separated by a hairline ring and a tight shadow — no glass, no
+ * blur, no glow. The only things that move are things that are actually
+ * happening: a running stage, a pending decision, an arriving row.
+ */
+
+.dash {
+  position: relative;
+  min-height: 100vh;
+  color: var(--t-fg);
+  font-family: var(--t-sans);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.dash :focus-visible {
+  outline: 2px solid var(--t-fg-2);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Visually hidden, still announced. */
+.d-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ------------------------------------------------------------------- brand */
+
+.totem {
+  display: block;
+  flex-shrink: 0;
+}
+
+.totem[data-spin] {
+  transform-origin: 50% 97%;
+  animation: totem-wobble 2.4s var(--t-ease) infinite;
+}
+
+@keyframes totem-wobble {
+  0%,
+  100% {
+    transform: rotate(-6deg);
+  }
+  50% {
+    transform: rotate(6deg);
+  }
+}
+
+.d-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding-inline-end: 0.5rem;
+  margin-inline-end: 0.25rem;
+  border-inline-end: 1px solid var(--t-line);
+}
+
+.d-brand-name {
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--t-fg);
+}
+
+/* --------------------------------------------------------------- status bar */
+
+.d-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem 1.35rem;
+  padding: 0.75rem clamp(1rem, 3vw, 2rem);
+  background: var(--t-raised);
+  border-bottom: 1px solid var(--t-line);
+}
+
+.d-topbar-group {
+  display: flex;
+  align-items: center;
+  gap: 0.42rem;
+  font-family: var(--t-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.05em;
+  color: var(--t-fg-3);
+  text-transform: uppercase;
+}
+
+.d-topbar-group strong {
+  font-weight: 500;
+  color: var(--t-fg-2);
+  text-transform: none;
+  letter-spacing: 0.01em;
+}
+
+.d-spacer {
+  margin-inline-start: auto;
+}
+
+.d-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--t-ok);
+  box-shadow: 0 0 0 3px var(--t-ok-tint);
+}
+
+.d-dot[data-tone="idle"] {
+  background: transparent;
+  border: 1px solid var(--t-fg-4);
+  box-shadow: none;
+}
+
+/* ------------------------------------------------------------ progress rail */
+
+/*
+ * The five acts of the demo, always visible.
+ *
+ * Rendered from the `stepState` machine in App.tsx. A first-time viewer can see
+ * the whole sequence and where they are in it before touching anything — a
+ * console that only reveals the next step teaches nobody what the system does.
+ */
+.d-rail {
+  display: flex;
+  align-items: center;
+  list-style: none;
+  margin: 0 auto;
+  padding: 0.85rem clamp(1rem, 3vw, 2rem) 0.2rem;
+  max-width: 96rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.d-rail::-webkit-scrollbar {
+  display: none;
+}
+
+.d-rail-step {
+  /* Positioned so the visually-hidden state span resolves against the step
+     rather than against `.dash`. Without this the absolutely-positioned spans
+     escape the rail's scroll container, and their static positions — which sit
+     past the viewport once the rail overflows — widen the whole document. */
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.d-rail-num {
+  display: grid;
+  place-items: center;
+  width: 21px;
+  height: 21px;
+  border-radius: 50%;
+  border: 1px solid var(--t-line-strong);
+  font-family: var(--t-mono);
+  font-size: 0.62rem;
+  color: var(--t-fg-3);
+  background: var(--t-raised-2);
+  transition: all var(--t-t) var(--t-ease);
+}
+
+.d-rail-label {
+  font-family: var(--t-mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--t-fg-4);
+  white-space: nowrap;
+  transition: color var(--t-t) var(--t-ease);
+}
+
+.d-rail-link {
+  width: clamp(1rem, 3vw, 2.4rem);
+  height: 1px;
+  background: var(--t-line);
+  margin-inline: 0.65rem;
+  flex-shrink: 0;
+}
+
+.d-rail-step[data-state="done"] .d-rail-num {
+  background: var(--t-ok-tint);
+  border-color: var(--t-ok-line);
+  color: var(--t-ok);
+}
+
+.d-rail-step[data-state="done"] .d-rail-label {
+  color: var(--t-fg-2);
+}
+
+/* Ready: the one the viewer should act on. */
+.d-rail-step[data-state="ready"] .d-rail-num {
+  border-color: var(--t-fg-2);
+  color: var(--t-fg);
+  background: var(--t-raised-2);
+}
+
+.d-rail-step[data-state="ready"] .d-rail-label {
+  color: var(--t-fg);
+}
+
+.d-rail-step[data-state="blocked"] {
+  opacity: 0.4;
+}
+
+/* ----------------------------------------------------------------- columns */
+
+.d-main {
+  display: grid;
+  grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.3fr) minmax(0, 0.95fr);
+  gap: 0.9rem;
+  align-items: start;
+  padding: 0.7rem clamp(1rem, 3vw, 2rem) 5rem;
+  max-width: 96rem;
+  margin: 0 auto;
+}
+
+.d-col {
+  display: grid;
+  gap: 0.9rem;
+  min-width: 0;
+}
+
+@media (max-width: 82rem) {
+  .d-main {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  /* Evidence column drops beneath, spanning both, before going single-file. */
+  .d-col:nth-child(3) {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 56rem) {
+  .d-main {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .d-col:nth-child(3) {
+    grid-column: auto;
+  }
+}
+
+/* ------------------------------------------------------------------- cards */
+
+.d-card {
+  position: relative;
+  border-radius: var(--t-r);
+  padding: 1.05rem 1.1rem;
+  background: var(--t-raised);
+  box-shadow: var(--t-shadow-card);
+  animation: t-fade-up 260ms var(--t-ease) both;
+}
+
+.d-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.85rem;
+  padding-bottom: 0.65rem;
+  border-bottom: 1px solid var(--t-line);
+}
+
+.d-card-title {
+  font-family: var(--t-mono);
+  font-size: 0.67rem;
+  font-weight: 500;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  margin: 0;
+  color: var(--t-fg-3);
+}
+
+.d-label {
+  display: block;
+  font-family: var(--t-mono);
+  font-size: 0.61rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--t-fg-4);
+}
+
+.d-value {
+  display: block;
+  font-size: 0.86rem;
+  color: var(--t-fg);
+  word-break: break-word;
+}
+
+.d-field {
+  display: grid;
+  gap: 0.16rem;
+  padding: 0.48rem 0;
+  border-bottom: 1px solid var(--t-line);
+}
+
+.d-field:last-child {
+  border-bottom: none;
+}
+
+.d-caption {
+  font-size: 0.75rem;
+  color: var(--t-fg-3);
+  margin: 0.5rem 0 0;
+}
+
+.d-muted {
+  color: var(--t-fg-4);
+}
+
+.d-mono {
+  font-family: var(--t-mono);
+  font-size: 0.76rem;
+}
+
+/* Encrypted values are violet — a substance, not a status. */
+.d-cipher {
+  color: var(--t-cipher);
+}
+
+/* ---------------------------------------------------------------- copyable */
+
+.d-copyable {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.42rem;
+  min-width: 0;
+}
+
+.d-copyable a {
+  color: var(--t-fg);
+  text-decoration: none;
+  border-bottom: 1px solid var(--t-line-strong);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: border-color var(--t-t) var(--t-ease);
+}
+
+.d-copyable a:hover {
+  border-bottom-color: var(--t-fg);
+}
+
+.d-copy-btn {
+  font-family: var(--t-mono);
+  font-size: 0.56rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--t-fg-4);
+  background: var(--t-raised-2);
+  border: 1px solid var(--t-line);
+  border-radius: 4px;
+  padding: 0.1rem 0.34rem;
+  cursor: pointer;
+  transition: all var(--t-t) var(--t-ease);
+  flex-shrink: 0;
+}
+
+.d-copy-btn:hover {
+  color: var(--t-fg);
+  border-color: var(--t-line-strong);
+}
+
+/* -------------------------------------------------------------------- ring */
+
+.d-ring {
+  position: relative;
+  display: grid;
+  place-items: center;
+  justify-self: center;
+  margin: 0.4rem 0 0.55rem;
+}
+
+.d-ring svg {
+  transform: rotate(-90deg);
+}
+
+.d-ring-track,
+.d-ring-value {
+  fill: none;
+  stroke-width: 3.5;
+}
+
+.d-ring-track {
+  stroke: var(--t-line);
+}
+
+.d-ring-value {
+  stroke: var(--t-ok);
+  stroke-linecap: round;
+  transition: stroke-dashoffset 600ms var(--t-ease);
+}
+
+.d-ring-centre {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  text-align: center;
+}
+
+.d-ring-figure {
+  font-size: 1.45rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.03em;
+  color: var(--t-fg);
+}
+
+.d-ring-unit {
+  font-family: var(--t-mono);
+  font-size: 0.55rem;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--t-fg-4);
+}
+
+/* ----------------------------------------------------------------- buttons */
+
+.d-btn {
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 550;
+  padding: 0.55rem 0.9rem;
+  border-radius: var(--t-r-sm);
+  cursor: pointer;
+  border: none;
+  background: var(--t-fg);
+  color: #17181a;
+  box-shadow: var(--t-shadow-btn);
+  transition: all var(--t-t) var(--t-ease);
+}
+
+.d-btn:hover:not(:disabled) {
+  background: #fff;
+}
+
+.d-btn[data-kind="outline"] {
+  background: var(--t-raised-2);
+  color: var(--t-fg);
+}
+
+.d-btn[data-kind="outline"]:hover:not(:disabled) {
+  background: #292c31;
+}
+
+.d-btn[data-kind="ghost"] {
+  background: transparent;
+  color: var(--t-fg-3);
+  box-shadow: none;
+}
+
+.d-btn[data-kind="ghost"]:hover:not(:disabled) {
+  color: var(--t-fg);
+  background: var(--t-raised-2);
+}
+
+.d-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.35;
+}
+
+.d-controls {
+  display: grid;
+  gap: 0.45rem;
+}
+
+/*
+ * Why a control is unavailable, stated rather than implied.
+ *
+ * A greyed button with no explanation makes the viewer hunt for the
+ * precondition; on a three-minute demo clock that hunt is the whole slot.
+ */
+.d-hint {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  font-family: var(--t-mono);
+  font-size: 0.65rem;
+  color: var(--t-wait);
+  margin: 0.2rem 0 0;
+  animation: t-fade-in 200ms var(--t-ease) both;
+}
+
+.d-hint::before {
+  content: "→";
+  opacity: 0.75;
+}
+
+/* ---------------------------------------------------------------- timeline */
+
+.d-timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.d-tl-item {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1.5rem minmax(0, 1fr) auto auto;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.5rem 0;
+  color: var(--t-fg-4);
+  transition: color var(--t-t) var(--t-ease);
+}
+
+.d-tl-marker {
+  grid-column: 1;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1px solid var(--t-fg-4);
+  margin-inline-start: 1px;
+  transform: translateY(-1px);
+  transition: all var(--t-t) var(--t-ease);
+}
+
+/* The rail. Stops before the last row so it does not dangle. */
+.d-tl-item:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  inset-inline-start: 4.5px;
+  top: calc(0.5rem + 9px);
+  height: calc(100% - 9px);
+  width: 1px;
+  background: var(--t-line);
+}
+
+.d-tl-label {
+  font-size: 0.82rem;
+}
+
+.d-tl-detail {
+  font-family: var(--t-mono);
+  font-size: 0.66rem;
+  color: var(--t-fg-4);
+}
+
+.d-tl-time {
+  font-family: var(--t-mono);
+  font-size: 0.66rem;
+  color: var(--t-fg-4);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  min-width: 3rem;
+}
+
+/* Done — reached. Rows resolve the way streamed text arrives. */
+.d-tl-item[data-status="done"] {
+  color: var(--t-fg);
+  animation: t-stream-in 320ms var(--t-ease) both;
+}
+.d-tl-item[data-status="done"] .d-tl-marker {
+  background: var(--t-ok);
+  border-color: var(--t-ok);
+}
+.d-tl-item[data-status="done"] .d-tl-detail {
+  color: var(--t-ok);
+}
+.d-tl-item[data-status="done"]:not(:last-child)::after {
+  background: var(--t-ok-line);
+}
+
+/* Active — committed, not yet knowable. The one moment of real suspense, so
+   it is the only row carrying an indeterminate loader. */
+.d-tl-item[data-status="active"] {
+  color: var(--t-fg);
+}
+.d-tl-item[data-status="active"] .d-tl-marker {
+  border-color: var(--t-wait);
+  background: var(--t-wait-tint);
+}
+.d-tl-item[data-status="active"] .d-tl-label {
+  background: linear-gradient(
+    90deg,
+    var(--t-fg-3) 0%,
+    var(--t-fg-3) 35%,
+    var(--t-fg) 50%,
+    var(--t-fg-3) 65%,
+    var(--t-fg-3) 100%
+  );
+  background-size: 220% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: t-shimmer 2.4s linear infinite;
+}
+
+/* Skipped reads as deliberately-not-run, distinct from still-pending. */
+.d-tl-item[data-status="skipped"] {
+  color: var(--t-fg-4);
+  opacity: 0.55;
+}
+.d-tl-item[data-status="skipped"] .d-tl-label {
+  text-decoration: line-through;
+  text-decoration-color: var(--t-line-strong);
+}
+
+/* Failed — refused. */
+.d-tl-item[data-status="failed"] {
+  color: var(--t-no);
+  animation: t-pop-in 240ms var(--t-ease) both;
+}
+.d-tl-item[data-status="failed"] .d-tl-marker {
+  border-color: var(--t-no);
+  background: var(--t-no);
+}
+.d-tl-item[data-status="failed"] .d-tl-detail {
+  color: var(--t-no);
+}
+
+/* Before a run: the whole nine-stage shape, dimmed. */
+.d-timeline[data-idle] .d-tl-item {
+  opacity: 0.4;
+}
+
+.d-tl-legend {
+  margin: 0.85rem 0 0;
+  padding-top: 0.7rem;
+  border-top: 1px solid var(--t-line);
+  font-size: 0.75rem;
+  color: var(--t-fg-3);
+}
+
+/* The pixel grid sits in the time column, so it must not stretch the row. */
+.d-tl-time .t-pixels {
+  justify-content: flex-end;
+  margin-inline-start: auto;
+  color: var(--t-wait);
+}
+
+.d-btn-busy {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.d-spin {
+  animation: t-spin 750ms linear infinite;
+}
+
+/* The running indicator in the card header. */
+.d-running {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-family: var(--t-mono);
+  font-size: 0.65rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--t-wait);
+}
+
+/* ----------------------------------------------------------------- outcome */
+
+/*
+ * The verdict, stated in full.
+ *
+ * The bounce is the entire point of the demo and it used to render as a
+ * four-letter caption. Tone drives colour; the body says what happened to the
+ * money, because that is the question every viewer actually has.
+ */
+.d-outcome {
+  display: grid;
+  gap: 0.28rem;
+  padding: 0.85rem 0.95rem 0.9rem 1.05rem;
+  margin-bottom: 0.9rem;
+  border-radius: var(--t-r-sm);
+  border-inline-start: 3px solid var(--t-fg-3);
+  background: var(--t-raised-2);
+  animation: t-pop-in 260ms var(--t-ease) both;
+}
+
+.d-outcome-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: var(--t-mono);
+  font-size: 0.67rem;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.d-outcome-body {
+  margin: 0;
+  font-size: 0.83rem;
+  color: var(--t-fg-2);
+  animation: t-stream-in 400ms var(--t-ease) both;
+  animation-delay: 120ms;
+}
+
+.d-outcome[data-tone="ok"] {
+  border-inline-start-color: var(--t-ok);
+  background: var(--t-ok-tint);
+}
+.d-outcome[data-tone="ok"] .d-outcome-head {
+  color: var(--t-ok);
+}
+
+.d-outcome[data-tone="no"] {
+  border-inline-start-color: var(--t-no);
+  background: var(--t-no-tint);
+}
+.d-outcome[data-tone="no"] .d-outcome-head {
+  color: var(--t-no);
+}
+
+.d-outcome[data-tone="wait"] {
+  border-inline-start-color: var(--t-wait);
+  background: var(--t-wait-tint);
+}
+.d-outcome[data-tone="wait"] .d-outcome-head {
+  color: var(--t-wait);
+}
+
+/* ------------------------------------------------------------------- split */
+
+.d-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.7rem;
+}
+
+.d-split-pane {
+  display: grid;
+  gap: 0.38rem;
+  min-width: 0;
+  animation: t-fade-up 280ms var(--t-ease) both;
+}
+
+.d-split-pane:nth-child(2) {
+  animation-delay: 80ms;
+}
+
+.d-code {
+  font-family: var(--t-mono);
+  font-size: 0.68rem;
+  line-height: 1.6;
+  margin: 0;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--t-line);
+  border-radius: var(--t-r-sm);
+  background: var(--t-inset);
+  color: var(--t-fg-2);
+  max-height: 12rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  box-shadow: var(--t-shadow-inset);
+}
+
+/* The structured pane is what the policy acts on; the hostile pane is what the
+   attacker writes. Two colours, one distinction — the page's whole argument. */
+.d-split-pane[data-tone="safe"] .d-code {
+  border-inline-start: 2px solid var(--t-ok-line);
+}
+.d-split-pane[data-tone="safe"] .d-label {
+  color: var(--t-ok);
+}
+
+.d-split-pane[data-tone="hostile"] .d-code {
+  border-inline-start: 2px solid var(--t-no-line);
+}
+.d-split-pane[data-tone="hostile"] .d-label {
+  color: var(--t-no);
+}
+
+@media (min-width: 60rem) {
+  .d-split {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* -------------------------------------------------------------- guarantees */
+
+.d-guarantees {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  background: var(--t-line);
+  border: 1px solid var(--t-line);
+  border-radius: var(--t-r-sm);
+  overflow: hidden;
+}
+
+.d-guarantee {
+  background: var(--t-raised);
+  padding: 0.7rem 0.75rem;
+  display: grid;
+  gap: 0.1rem;
+  transition: background-color var(--t-t) var(--t-ease);
+}
+
+.d-guarantee:hover {
+  background: var(--t-raised-2);
+}
+
+.d-guarantee-title {
+  font-size: 0.77rem;
+  color: var(--t-fg);
+}
+
+.d-guarantee .d-caption {
+  margin: 0;
+  font-size: 0.69rem;
+}
+
+@media (max-width: 34rem) {
+  .d-guarantees {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ------------------------------------------------------------------ drawer */
+
+.d-drawer-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: 1rem;
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  text-align: start;
+}
+
+.d-drawer-toggle .d-caption {
+  margin: 0;
+}
+
+.d-drawer-body {
+  margin-top: 0.85rem;
+  padding-top: 0.3rem;
+  border-top: 1px solid var(--t-line);
+  animation: t-fade-up 220ms var(--t-ease) both;
+}
+
+/* ----------------------------------------------------------------- notices */
+
+.d-notice {
+  font-size: 0.79rem;
+  padding: 0.58rem 0.72rem;
+  border-radius: var(--t-r-sm);
+  border: 1px solid var(--t-wait-line);
+  background: var(--t-wait-tint);
+  color: var(--t-fg-2);
+  margin: 0 0 0.7rem;
+  animation: t-fade-up 240ms var(--t-ease) both;
+}
+
+.d-notice a {
+  color: var(--t-wait);
+}
+
+.d-notice[data-tone="error"] {
+  border-color: var(--t-no-line);
+  background: var(--t-no-tint);
+}
+
+.d-setup {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.d-input {
+  font: inherit;
+  font-family: var(--t-mono);
+  font-size: 0.77rem;
+  padding: 0.48rem 0.58rem;
+  width: 100%;
+  background: var(--t-inset);
+  color: var(--t-fg);
+  border: 1px solid var(--t-line-strong);
+  border-radius: var(--t-r-sm);
+  box-shadow: var(--t-shadow-inset);
+  transition: border-color var(--t-t) var(--t-ease);
+}
+
+.d-input:focus {
+  border-color: var(--t-fg-3);
+  outline: none;
+}
+
+.d-inline {
+  display: flex;
+  gap: 0.45rem;
+  align-items: center;
+}
+
+/* ------------------------------------------------------------- goal picker */
+
+/*
+ * Interaction adapted from the Beautiful UI prompt bar. The one detail carried
+ * over deliberately is `.gp-glide`: a single highlight that animates its `top`
+ * to the active row, rather than each row toggling its own background. The
+ * first reads as a cursor moving down a list; the second reads as blinking.
+ */
+
+.gp {
+  position: relative;
+}
+
+.gp-field {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--t-line-strong);
+  border-radius: var(--t-r-sm);
+  background: var(--t-inset);
+  box-shadow: var(--t-shadow-inset);
+  transition: border-color var(--t-t) var(--t-ease);
+}
+
+.gp-field[data-open],
+.gp-field:focus-within {
+  border-color: var(--t-fg-3);
+}
+
+.gp-icon {
+  color: var(--t-fg-4);
+  flex-shrink: 0;
+}
+
+.gp-input {
+  font: inherit;
+  font-size: 0.82rem;
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--t-fg);
+}
+
+.gp-input::placeholder {
+  color: var(--t-fg-3);
+}
+
+.gp-price {
+  font-family: var(--t-mono);
+  font-size: 0.68rem;
+  color: var(--t-fg-3);
+  white-space: nowrap;
+}
+
+.gp-chevron {
+  color: var(--t-fg-4);
+  flex-shrink: 0;
+  transition: transform var(--t-t) var(--t-ease);
+}
+
+.gp-chevron[data-open] {
+  transform: rotate(180deg);
+}
+
+.gp-menu {
+  position: absolute;
+  inset-inline: 0;
+  top: calc(100% + 0.4rem);
+  z-index: 15;
+  padding: 0.25rem;
+  border-radius: var(--t-r);
+  background: var(--t-raised-2);
+  box-shadow: var(--t-shadow-raised), 0 12px 32px rgba(0, 0, 0, 0.5);
+  animation: t-pop-in 170ms var(--t-ease) both;
+  transform-origin: top center;
+}
+
+/* The gliding highlight. Sits under the rows; only `top`/`height` animate. */
+.gp-glide {
+  position: absolute;
+  inset-inline: 0.25rem;
+  border-radius: var(--t-r-sm);
+  background: rgba(255, 255, 255, 0.06);
+  pointer-events: none;
+  transition:
+    top 200ms var(--t-ease),
+    height 200ms var(--t-ease),
+    opacity 140ms ease;
+}
+
+.gp-row {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  padding: 0.5rem 0.55rem;
+  border: none;
+  border-radius: var(--t-r-sm);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.gp-row-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--t-ok);
+}
+
+.gp-row[data-kind="malicious"] .gp-row-dot {
+  background: var(--t-no);
+}
+
+.gp-row-text {
+  display: grid;
+  gap: 0.05rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.gp-row-name {
+  font-size: 0.82rem;
+  color: var(--t-fg);
+}
+
+.gp-row-blurb {
+  font-size: 0.72rem;
+  color: var(--t-fg-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gp-row-price {
+  font-family: var(--t-mono);
+  font-size: 0.72rem;
+  color: var(--t-fg-2);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.gp-row-tag {
+  font-family: var(--t-mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--t-fg-4);
+  flex-shrink: 0;
+  min-width: 5.5rem;
+  text-align: right;
+}
+
+.gp-row[data-kind="malicious"] .gp-row-tag {
+  color: var(--t-no);
+}
+
+.gp-empty,
+.gp-foot {
+  margin: 0;
+  padding: 0.5rem 0.55rem;
+  font-size: 0.71rem;
+  color: var(--t-fg-4);
+}
+
+.gp-foot {
+  border-top: 1px solid var(--t-line);
+  margin-top: 0.25rem;
+}
+
+/* --------------------------------------------------------------- model input */
+
+/*
+ * The vendor's text drawn as a selection, with a pill bar anchored beneath its
+ * last line. Adapted from the Beautiful UI selection-actions pattern.
+ *
+ * `box-decoration-clone` is what makes the highlight read as one continuous
+ * selection across wrapped lines instead of as a stack of separate boxes with
+ * rounded ends mid-sentence.
+ */
+
+.mi-host {
+  position: relative;
+  padding-bottom: 3.25rem;
+  user-select: none;
+}
+
+.mi-prose {
+  margin: 0;
+  font-size: 0.86rem;
+  line-height: 1.75;
+  color: var(--t-fg-2);
+}
+
+.mi-lead {
+  color: var(--t-fg-4);
+}
+
+.mi-selection {
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  border-radius: 3px;
+  padding: 0.1em 0.15em;
+  background: var(--t-no-tint);
+  box-shadow: inset 0 0 0 1px var(--t-no-line);
+  color: var(--t-fg);
+}
+
+.mi-anchor {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 5;
+  transition:
+    transform 320ms cubic-bezier(0.77, 0, 0.175, 1),
+    opacity 180ms ease-out;
+  will-change: transform;
+}
+
+.mi-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  height: 2rem;
+  width: max-content;
+  max-width: calc(100vw - 3rem);
+  padding: 0.25rem 0.3rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--t-raised-2);
+  box-shadow: var(--t-shadow-raised), 0 8px 22px rgba(0, 0, 0, 0.45);
+  animation: t-pop-in 220ms var(--t-ease) both;
+}
+
+.mi-busy {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0 0.55rem;
+  white-space: nowrap;
+  font-size: 0.75rem;
+  color: var(--t-fg-2);
+}
+
+.mi-spinner {
+  width: 11px;
+  height: 11px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 1.5px solid var(--t-line-strong);
+  border-top-color: var(--t-fg-2);
+  animation: t-spin 700ms linear infinite;
+}
+
+.mi-verdict {
+  padding: 0 0.2rem 0 0.55rem;
+  font-size: 0.75rem;
+  white-space: nowrap;
+  color: var(--t-fg);
+}
+
+/* Complied is the interesting outcome, and it is not a success. */
+.mi-verdict[data-complied] {
+  color: var(--t-no);
+}
+
+.mi-source {
+  font-family: var(--t-mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--t-fg-4);
+  white-space: nowrap;
+}
+
+.mi-sep {
+  width: 1px;
+  height: 0.9rem;
+  flex-shrink: 0;
+  background: var(--t-line);
+  margin-inline: 0.15rem;
+}
+
+.mi-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  height: 1.55rem;
+  padding: 0 0.6rem;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--t-fg-2);
+  font: inherit;
+  font-size: 0.73rem;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: all var(--t-t) var(--t-ease);
+}
+
+.mi-toggle:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--t-fg);
+}
+
+.mi-toggle:active {
+  transform: scale(0.96);
+}
+
+.mi-structured {
+  display: grid;
+  gap: 0.35rem;
+  margin-top: 0.2rem;
+  animation: t-fade-up 240ms var(--t-ease) both;
+}
+
+.mi-structured .d-label {
+  color: var(--t-ok);
+}
+
+.mi-structured .d-code {
+  border-inline-start: 2px solid var(--t-ok-line);
+}
+
+/* -------------------------------------------------------------- budget input */
+
+.d-budget {
+  padding: 0.7rem 0.75rem;
+  border-radius: var(--t-r-sm);
+  background: var(--t-raised-2);
+  box-shadow: var(--t-ring);
+}
+
+.d-budget .d-caption {
+  margin-top: 0.5rem;
+}
+
+.d-budget-unit {
+  font-family: var(--t-mono);
+  font-size: 0.7rem;
+  color: var(--t-fg-3);
+  flex-shrink: 0;
+}
+
+/* What the selected resource is expected to do, before it is run. */
+.d-expectation {
+  margin: 0.6rem 0 0;
+  padding: 0.6rem 0.7rem;
+  border-radius: var(--t-r-sm);
+  border-inline-start: 2px solid var(--t-line-strong);
+  background: var(--t-raised-2);
+  font-size: 0.78rem;
+  color: var(--t-fg-2);
+  animation: t-fade-up 220ms var(--t-ease) both;
+}
+
+.d-expectation[data-kind="malicious"] {
+  border-inline-start-color: var(--t-no);
+}
+
+.d-expectation[data-kind="honest"] {
+  border-inline-start-color: var(--t-ok);
+}
+
+/* An advanced escape hatch, visually demoted below the primary path. */
+.d-advanced {
+  margin-top: 0.45rem;
+  padding-top: 0.7rem;
+  border-top: 1px dashed var(--t-line);
+}

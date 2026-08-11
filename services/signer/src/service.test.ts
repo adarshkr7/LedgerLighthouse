@@ -1,7 +1,7 @@
 /**
  * M2 acceptance tests for the Authorization Signer.
  *
- * From IMPLEMENTATION.md §6, M2 — "passes when … the signer refuses an
+ * From IMPLEMENTATION.md §7, M2 — "passes when … the signer refuses an
  * unapproved (goalId, seq); a request carrying any terms field is rejected by
  * schema validation; the signer asserts the USDC address and chain id before
  * signing; an interrupted settlement retried with the identical authorization
@@ -101,10 +101,10 @@ describe("AuthorizationSigner", () => {
   let signer: AuthorizationSigner;
   let payer: Address;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     vault = new FakeVault();
     keys = new InMemoryKeyStore();
-    payer = keys.mint();
+    payer = await keys.mint();
     vault.goals.set("1", makeGoal({ payer }));
     vault.spends.set("1:1", makeSpend(payer));
     signer = new AuthorizationSigner({
@@ -302,10 +302,10 @@ describe("AuthorizationSigner", () => {
     }
   });
 
-  it("mints a payer address without exposing a key", () => {
-    const { address } = signer.mintPayer();
+  it("mints a payer address without exposing a key", async () => {
+    const { address } = await signer.mintPayer();
     expect(address).toMatch(/^0x[0-9a-fA-F]{40}$/);
     expect(Object.keys({ address })).toEqual(["address"]);
-    expect(keys.signerFor(address)).toBeDefined();
+    expect(await keys.signerFor(address)).toBeDefined();
   });
 });

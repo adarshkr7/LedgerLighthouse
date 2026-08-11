@@ -1,6 +1,7 @@
 {
-  "name": "ntu-x402",
+  "name": "ledgerlighthouse",
   "private": true,
+  "description": "Confidential agentic payments: an AI agent pays for APIs over x402 while the spending policy is enforced by confidential computation on Inco.",
   "packageManager": "pnpm@11.20.0+sha512.9a6f330a95b66446ea088faf1521405a8a01f07fde7124cc9958dfed52d4bb436737e65b08f85f37b46fcba375092558ac51262b816844b22f63406ed166bfee",
   "engines": {
     "node": ">=22"
