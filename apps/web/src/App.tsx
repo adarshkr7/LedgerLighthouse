@@ -17,7 +17,8 @@ import { policyVaultAbi, usdcAbi } from "@ntux402/shared";
 
 import { Card, Copyable, Dot, Field, Ring, truncate } from "./dashboard/primitives.js";
 import { Timeline } from "./dashboard/Timeline.js";
-import { Comparison, EmptyState, EvidenceDrawer, Guarantees } from "./dashboard/panels.js";
+import { Comparison, EvidenceDrawer, Guarantees, Outcome } from "./dashboard/panels.js";
+import { TotemMark } from "./brand/Totem.js";
 import "./dashboard/dashboard.css";
 import {
   CHAIN,
@@ -217,23 +218,35 @@ export default function App() {
       }
     });
 
-  const stepState = useMemo(
-    () => ({
-      connect: (isConnected && !wrongChain ? "done" : "ready"),
-      payer: (payer ? "done" : isConnected && !wrongChain ? "ready" : "blocked"),
-      goal: (goalId ? "done" : payer ? "ready" : "blocked"),
-      fund: (funded ? "done" : goalId ? "ready" : "blocked"),
-      run: (goalId ? "ready" : "blocked"),
-    }),
-    [isConnected, wrongChain, payer, goalId, funded],
-  );
-
   // --- presentational derivations -------------------------------------------
   // Read-only projections of the event stream. No chain reads, no new state
   // beyond what the run already produces.
 
   const running = busy !== undefined && busy.startsWith("Running");
   const started = events.length > 0;
+
+  /**
+   * The five acts, and where the viewer is in them.
+   *
+   * Rendered as the rail under the status bar. Keeping it as one derivation
+   * means the rail and the per-control hints below can never disagree about
+   * what is blocked — they read the same source.
+   */
+  const steps = useMemo(
+    () =>
+      [
+        { key: "connect", label: "Connect", state: isConnected && !wrongChain ? "done" : "ready" },
+        {
+          key: "payer",
+          label: "Mint payer",
+          state: payer ? "done" : isConnected && !wrongChain ? "ready" : "blocked",
+        },
+        { key: "goal", label: "Open goal", state: goalId ? "done" : payer ? "ready" : "blocked" },
+        { key: "fund", label: "Fund", state: funded ? "done" : goalId ? "ready" : "blocked" },
+        { key: "run", label: "Run", state: started ? "done" : goalId ? "ready" : "blocked" },
+      ] as const,
+    [isConnected, wrongChain, payer, goalId, funded, started],
+  );
 
   /** Public, and the honest basis for the ring: what actually left the payer. */
   const spent = useMemo(
@@ -263,6 +276,11 @@ export default function App() {
     <div className="dash">
       {/* 1 — STATUS BAR */}
       <header className="d-topbar">
+        <span className="d-brand">
+          <TotemMark size={16} spinning={running} />
+          <span className="d-brand-name">Totem</span>
+        </span>
+
         <span className="d-topbar-group">
           <Dot tone={isConnected && !wrongChain ? "live" : "idle"} />
           <strong>{isConnected && !wrongChain ? "LIVE" : "IDLE"}</strong>
@@ -298,8 +316,22 @@ export default function App() {
         ) : null}
       </header>
 
+      {/* 2 — PROGRESS RAIL. The whole sequence, visible before it is walked. */}
+      <ol className="d-rail" aria-label="Demo progress">
+        {steps.map((step, i) => (
+          <li key={step.key} className="d-rail-step" data-state={step.state}>
+            {i > 0 ? <span className="d-rail-link" aria-hidden="true" /> : null}
+            <span className="d-rail-num" aria-hidden="true">
+              {step.state === "done" ? "✓" : i + 1}
+            </span>
+            <span className="d-rail-label">{step.label}</span>
+            <span className="d-sr">{step.state}</span>
+          </li>
+        ))}
+      </ol>
+
       {configError ? (
-        <div className="d-notice" style={{ margin: "1rem" }}>
+        <div className="d-notice" data-tone="error" style={{ margin: "0 1rem 1rem" }}>
           Cannot reach the orchestrator: {configError}
         </div>
       ) : null}
@@ -326,7 +358,7 @@ export default function App() {
 
                 <Field label="Goal">#{goalId}</Field>
                 <Field label="Remaining budget">
-                  <span className="d-muted">encrypted · </span>
+                  <span className="d-cipher">encrypted · </span>
                   {budgetHandle ? (
                     <Copyable value={budgetHandle} display={truncate(budgetHandle, 10, 6)} />
                   ) : (
@@ -383,6 +415,11 @@ export default function App() {
                     >
                       Encrypt budget and open goal
                     </button>
+                    {!payer ? (
+                      <p className="d-hint">
+                        Mint the payer first — its address is a field of the goal record.
+                      </p>
+                    ) : null}
                   </>
                 )}
 
@@ -392,27 +429,30 @@ export default function App() {
                   not force another — and the run itself is driven server-side,
                   so an already-open goal can be exercised with no wallet at all.
                 */}
-                <div className="d-inline">
-                  <input
-                    className="d-input"
-                    id="resume"
-                    inputMode="numeric"
-                    placeholder="resume goal id"
-                    value={resumeId}
-                    onChange={(e) => setResumeId(e.target.value.replace(/[^0-9]/g, ""))}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && resumeId) setGoalId(resumeId);
-                    }}
-                  />
-                  <button
-                    type="button"
-                    className="d-btn"
-                    data-kind="outline"
-                    disabled={resumeId === ""}
-                    onClick={() => setGoalId(resumeId)}
-                  >
-                    Resume
-                  </button>
+                <div className="d-advanced">
+                  <span className="d-label">Already have a goal?</span>
+                  <div className="d-inline" style={{ marginTop: "0.4rem" }}>
+                    <input
+                      className="d-input"
+                      id="resume"
+                      inputMode="numeric"
+                      placeholder="goal id"
+                      value={resumeId}
+                      onChange={(e) => setResumeId(e.target.value.replace(/[^0-9]/g, ""))}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && resumeId) setGoalId(resumeId);
+                      }}
+                    />
+                    <button
+                      type="button"
+                      className="d-btn"
+                      data-kind="ghost"
+                      disabled={resumeId === ""}
+                      onClick={() => setGoalId(resumeId)}
+                    >
+                      Resume
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
@@ -501,8 +541,15 @@ export default function App() {
                 Reset demo
               </button>
             </div>
+            {!goalId ? (
+              <p className="d-hint">Open a goal first — a run spends against its encrypted budget.</p>
+            ) : null}
             {busy ? <p className="d-caption">{busy}</p> : null}
-            {error ? <p className="d-notice" style={{ marginTop: "0.75rem" }}>{error}</p> : null}
+            {error ? (
+              <p className="d-notice" data-tone="error" style={{ marginTop: "0.75rem" }}>
+                {error}
+              </p>
+            ) : null}
           </Card>
         </div>
 
@@ -511,18 +558,30 @@ export default function App() {
           <Card
             title="Live execution"
             aside={
-              result ? (
-                <span className="d-caption" style={{ margin: 0 }}>
-                  {result.kind === "paid"
-                    ? "paid"
-                    : result.kind === "policy-rejected"
-                      ? "bounced"
-                      : result.kind}
+              running ? (
+                <span className="d-topbar-group">
+                  <TotemMark size={13} spinning />
+                  running
                 </span>
               ) : null
             }
           >
-            {started ? <Timeline events={events} running={running} /> : <EmptyState />}
+            <Outcome result={result} events={events} />
+
+            {/*
+              Rendered from the first paint, not on the first event. The nine
+              stages are a fixed list precisely so the shape of the flow is
+              legible before anything has happened — an empty state in this slot
+              threw that away and told the viewer nothing about what to expect.
+            */}
+            <Timeline events={events} running={running} />
+
+            {!started ? (
+              <p className="d-tl-legend">
+                Nine stages, fixed. Run a request and watch them resolve — or run the malicious one
+                and watch it stop at the confidential evaluation.
+              </p>
+            ) : null}
           </Card>
 
           {started ? <Comparison events={events} /> : null}
@@ -531,7 +590,7 @@ export default function App() {
         {/* ============================ COLUMN 3 — EVIDENCE & SECURITY */}
         <div className="d-col">
           <Guarantees />
-          <EvidenceDrawer events={events} />
+          <EvidenceDrawer events={events} goalId={goalId} />
         </div>
       </main>
     </div>

@@ -3,9 +3,8 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "description": "M2b operator scripts: run one real goal against Base Sepolia and measure Inco reveal latency. Not part of the trust boundary — plays user, relay and finalizer at once.",
+  "description": "Operator scripts: run one real goal against Base Sepolia and measure Inco reveal latency. Not part of the trust boundary — plays user, relay and finalizer at once.",
   "scripts": {
-    "m2b": "tsx src/m2b-goal-cycle.ts",
     "preflight": "tsx src/preflight.ts",
     "typecheck": "tsc --noEmit",
     "state": "tsx src/vault-state.ts",

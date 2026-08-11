@@ -1,0 +1,93 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 440" width="1280" height="440" role="img" aria-label="Totem — confidential agentic payments">
+  <title>Totem — confidential agentic payments</title>
+
+  <defs>
+    <!-- Shallow depth of field: a lit patch of floor falling off to dark. -->
+    <radialGradient id="floor" cx="26%" cy="72%" r="78%">
+      <stop offset="0%" stop-color="#6b6155" />
+      <stop offset="42%" stop-color="#40392f" />
+      <stop offset="100%" stop-color="#14120e" />
+    </radialGradient>
+
+    <linearGradient id="haze" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0e0d0a" stop-opacity="0.85" />
+      <stop offset="45%" stop-color="#0e0d0a" stop-opacity="0" />
+      <stop offset="100%" stop-color="#0e0d0a" stop-opacity="0.55" />
+    </linearGradient>
+
+    <!-- The top itself: near-black, with the faint sheen of turned metal. -->
+    <linearGradient id="body" x1="0.15" y1="0" x2="0.9" y2="1">
+      <stop offset="0%" stop-color="#3a352d" />
+      <stop offset="28%" stop-color="#16140f" />
+      <stop offset="72%" stop-color="#0b0a07" />
+      <stop offset="100%" stop-color="#2a251d" />
+    </linearGradient>
+
+    <radialGradient id="contact" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#000" stop-opacity="0.72" />
+      <stop offset="100%" stop-color="#000" stop-opacity="0" />
+    </radialGradient>
+
+    <filter id="soften" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="7" />
+    </filter>
+
+    <filter id="blurFar" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="2.4" />
+    </filter>
+  </defs>
+
+  <rect width="1280" height="440" fill="url(#floor)" />
+  <rect width="1280" height="440" fill="url(#haze)" />
+
+  <!-- Ground contact: the shadow is what sells the spin. -->
+  <ellipse cx="322" cy="330" rx="132" ry="17" fill="url(#contact)" />
+  <ellipse cx="322" cy="330" rx="34" ry="6" fill="#000" opacity="0.55" filter="url(#soften)" />
+
+  <!-- Motion: the rim smeared into an arc, behind the solid form. -->
+  <g filter="url(#blurFar)" opacity="0.5">
+    <path d="M212 250 A 116 26 0 0 1 432 250" fill="none" stroke="#8c8272" stroke-width="2.5" stroke-linecap="round" />
+    <path d="M240 262 A 92 20 0 0 0 404 262" fill="none" stroke="#6f6658" stroke-width="1.5" stroke-linecap="round" />
+  </g>
+
+  <!-- The totem. Spire, rim, cone — one continuous silhouette. -->
+  <g>
+    <path
+      fill="url(#body)"
+      d="M322 62
+         C 326 128, 331 196, 342 232
+         L 428 246
+         Q 440 252, 426 258
+         L 350 268
+         C 340 292, 331 316, 322 332
+         C 313 316, 304 292, 294 268
+         L 218 258
+         Q 204 252, 216 246
+         L 302 232
+         C 313 196, 318 128, 322 62 Z" />
+
+    <!-- Specular edge along the lit side. -->
+    <path
+      d="M322 66 C 325 130, 330 196, 340 231"
+      fill="none" stroke="#a89c88" stroke-width="1.6" opacity="0.55" stroke-linecap="round" />
+    <path
+      d="M344 240 L 424 250"
+      fill="none" stroke="#b3a691" stroke-width="1.4" opacity="0.4" stroke-linecap="round" />
+  </g>
+
+  <!-- Wordmark -->
+  <g fill="#f2efe7" font-family="Iowan Old Style, Palatino Linotype, Palatino, Georgia, serif">
+    <text x="596" y="196" font-size="92" letter-spacing="26">TOTEM</text>
+    <text x="600" y="242" font-size="25" fill="#c8c0b0" letter-spacing="0.6">Confidential agentic payments</text>
+    <text x="600" y="292" font-size="20" fill="#9c9384" letter-spacing="0.3">
+      The agent reads the attacker&#8217;s text. It still cannot spend your money.
+    </text>
+  </g>
+
+  <g font-family="ui-monospace, SF Mono, Cascadia Mono, Menlo, Consolas, monospace"
+     font-size="14" fill="#7e7669" letter-spacing="1.8">
+    <text x="600" y="346">INCO  ·  x402  ·  EIP-3009  ·  BASE SEPOLIA</text>
+  </g>
+
+  <line x1="600" y1="316" x2="1030" y2="316" stroke="#4a4339" stroke-width="1" />
+</svg>

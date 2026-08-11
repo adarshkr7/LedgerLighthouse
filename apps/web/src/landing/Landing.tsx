@@ -11,10 +11,9 @@
  * outward action is asking the shell to connect a wallet.
  */
 
-import { useEffect } from "react";
-
 import { BlockStream } from "./BlockStream.js";
 import { Flow } from "./Flow.js";
+import { TotemHero, TotemMark } from "../brand/Totem.js";
 import {
   CapIcon,
   ClockIcon,
@@ -90,19 +89,24 @@ const METRICS = [
 const TIMELINE = ["requestSpend committed", "Confidential evaluation", "Payment settled"];
 
 export function Landing({ onConnect }: { onConnect: () => void }) {
-  // The console's stylesheet paints `body` in its own warm paper colour, which
-  // would show through on overscroll and behind the fixed viewport on iOS.
-  // Flagging the body — rather than editing the console's CSS — keeps this
-  // page's theming entirely contained, and reverts the moment it unmounts.
-  useEffect(() => {
-    document.body.dataset["surface"] = "landing";
-    return () => {
-      delete document.body.dataset["surface"];
-    };
-  }, []);
-
   return (
     <div className="landing">
+      {/* 0 — NAV */}
+      <nav className="lp-nav">
+        <span className="lp-nav-brand">
+          <TotemMark size={19} />
+          <span className="lp-nav-name">Totem</span>
+        </span>
+        <span className="lp-nav-links">
+          <a href="#flow">Flow</a>
+          <a href="#guarantees">Guarantees</a>
+          <a href="#security">Security</a>
+        </span>
+        <button type="button" className="lp-btn lp-btn-ghost" onClick={onConnect}>
+          Launch console
+        </button>
+      </nav>
+
       {/* 1 — HERO */}
       <header className="lp-hero">
         <div className="lp-hero-copy">
@@ -126,6 +130,7 @@ export function Landing({ onConnect }: { onConnect: () => void }) {
           </div>
         </div>
         <div className="lp-hero-visual">
+          <TotemHero />
           <BlockStream />
         </div>
       </header>
@@ -147,7 +152,7 @@ export function Landing({ onConnect }: { onConnect: () => void }) {
       </section>
 
       {/* 4 — FEATURES */}
-      <section className="lp-section">
+      <section className="lp-section" id="guarantees">
         <p className="lp-eyebrow">What the system guarantees</p>
         <h2 className="lp-h2">Bounds, not promises.</h2>
         <div className="lp-grid">
@@ -224,7 +229,7 @@ export function Landing({ onConnect }: { onConnect: () => void }) {
       </section>
 
       {/* 7 — SECURITY */}
-      <section className="lp-section">
+      <section className="lp-section" id="security">
         <p className="lp-eyebrow">Security model</p>
         <h2 className="lp-h2">Bounded autonomous execution</h2>
         <div className="lp-prose">
@@ -268,7 +273,10 @@ export function Landing({ onConnect }: { onConnect: () => void }) {
             BaseScan
           </a>
         </nav>
-        <p className="lp-footer-note">Built with Inco</p>
+        <p className="lp-footer-note">
+          <TotemMark size={13} />
+          Built with Inco
+        </p>
       </footer>
     </div>
   );

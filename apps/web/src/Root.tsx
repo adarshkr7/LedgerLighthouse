@@ -25,10 +25,18 @@ export default function Root() {
 
   async function enter() {
     try {
-      await connectAsync({ connector: injected() });
+      // Bounded, because "no injected wallet" is not always an error. With no
+      // provider to answer the EIP-6963 announcement, `connectAsync` can simply
+      // never settle — and an awaited promise that never settles means the CTA
+      // does nothing, forever, with no feedback. A viewer without MetaMask
+      // installed is exactly the person most likely to click it.
+      await Promise.race([
+        connectAsync({ connector: injected() }),
+        new Promise((resolve) => setTimeout(resolve, 2500)),
+      ]);
     } catch {
-      // Declined, or no injected wallet. Not fatal — the console's first step
-      // is the connect prompt, and it reports the reason properly.
+      // Declined. Not fatal — the console's first step is the connect prompt,
+      // and it reports the reason properly.
     }
     setEntered(true);
   }

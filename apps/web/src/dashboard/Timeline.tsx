@@ -189,7 +189,9 @@ export function Timeline({
   const first = stamps.current.size > 0 ? Math.min(...stamps.current.values()) : undefined;
 
   return (
-    <ol className="d-timeline">
+    // `data-idle` dims the whole list before the first event, so the shape is
+    // readable as a preview without competing with live rows once they arrive.
+    <ol className="d-timeline" {...(events.length === 0 ? { "data-idle": "" } : {})}>
       {stages.map((stage) => {
         const at = stamps.current.get(stage.id);
         const elapsed =

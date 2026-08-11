@@ -24,7 +24,7 @@ Full-bleed dark slide. Centred wordmark **TOTEM-402**, tagline beneath in a ligh
 - The intelligence that *decides* is severed from the authority that *pays*
 - **Core invariant:** compromise of the AI orchestrator must not confer arbitrary spending authority
 - IIT Patna · IIT Bombay — Track 2
-- Live on Base Sepolia · 208 tests passing
+- Live on Base Sepolia · 211 tests passing
 
 ### Presenter Script *(55 words · ~22s)*
 > Every autonomous agent that spends money has the same flaw: the intelligence deciding what to buy also holds the authority to buy it. Totem severs that link. We're students from IIT Patna and IIT Bombay, and we've built cryptographic reality anchors for AI payments — where compromising the AI grants an attacker exactly zero spending power.
@@ -177,14 +177,14 @@ Top third: three application cards with icons — Treasury Agents / Automated Pr
 
 **Shipped**
 
-| 208 | 6 | 5-step | $0.00 |
+| 211 | 6 | 5-step | $0.00 |
 |---|---|---|---|
 | tests passing | milestones (M0–M6) | live dashboard | moved under attack |
 
 > **Compromise of the AI orchestrator must not confer arbitrary spending authority.**
 
 ### Presenter Script *(51 words · ~20s)*
-> This generalizes: treasury agents, automated procurement, machine-to-machine data markets — anywhere autonomy meets money. Next is mainnet, multi-asset budgets, and a policy language richer than a cap. Two hundred and eight tests pass across six milestones on Base Sepolia. One invariant holds throughout: compromising the AI never confers spending authority. Thank you.
+> This generalizes: treasury agents, automated procurement, machine-to-machine data markets — anywhere autonomy meets money. Next is mainnet, multi-asset budgets, and a policy language richer than a cap. Two hundred and eleven tests pass across six milestones on Base Sepolia. One invariant holds throughout: compromising the AI never confers spending authority. Thank you.
 
 ---
 
@@ -195,13 +195,13 @@ Run against the repo on 2026-08-09. Safe to defend under questioning.
 | Claim | Status | Evidence |
 |---|---|---|
 | 188 Vitest tests passing | **Confirmed exactly** | 53 shared + 19 mock-api + 40 signer + 23 trace + 13 facilitator + 40 orchestrator |
-| 20 Foundry tests passing | **Confirmed exactly** | 19 `PolicyVaultTest` + 1 `IncoSmokeTestTest` |
-| **208 total, 0 failing** | **Confirmed** | full suite run |
+| 23 Foundry tests passing | **Confirmed exactly** | 19 `PolicyVaultTest` + 3 `TraceAnchorTest` + 1 `IncoSmokeTestTest` |
+| **211 total, 0 failing** | **Confirmed** | full suite run |
 | `e.select` write-ahead debit | **Confirmed** | `PolicyVault.sol:306–307` |
 | Budget is `euint256` handle | **Confirmed** | `PolicyVault.sol:94`, `remainingBudgetHandle()` at `:420` |
 | `TraceAnchor.sol` exists | **Confirmed** | `contracts/src/TraceAnchor.sol` |
 | Standalone offline verifier | **Confirmed** | `services/trace/src/cli.ts` — takes file + RPC only, `--offline` supported |
-| M0–M6 defined & complete | **Confirmed** | `IMPLEMENTATION.md:183–257` |
+| M0–M6 defined & complete | **Confirmed** | `docs/IMPLEMENTATION.md:183–257` |
 | Honest $0.01 / malicious $5.00 | **Confirmed** | `mock-api/src/config.ts:11–13` |
 
 **Corrections applied to the original brief**
