@@ -8,7 +8,7 @@
  *
  * Deliberately duplicated rather than imported: `services/trace` does not
  * depend on `services/orchestrator`. The verifier has to run "with no
- * dependency on your services beyond a public RPC" (plan §8.5), and a verifier
+ * dependency on your services beyond a public RPC" (ARCHITECTURE.md §8.4), and a verifier
  * that imports the orchestrator is not that. The structural type below is the
  * seam.
  */

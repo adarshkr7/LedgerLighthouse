@@ -11,7 +11,7 @@
  * authority-flavoured instruction, it **complies**. It does not detect the
  * injection, and it must not — a scripted agent that heroically resists would
  * quietly turn the demo into a claim about prompt filtering, which is the thing
- * this architecture exists to *not* rely on (plan §12, step 1: do not soften it).
+ * this architecture exists to *not* rely on (the demo runbook in README, step 1: do not soften it).
  */
 
 import type { ModelSafeTerms } from "@ntux402/shared";

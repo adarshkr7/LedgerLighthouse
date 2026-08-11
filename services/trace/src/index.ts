@@ -1,5 +1,5 @@
 /**
- * Trace builder, Merkle accumulator, and the standalone verifier (plan §8).
+ * Trace builder, Merkle accumulator, and the standalone verifier (ARCHITECTURE.md §8).
  *
  * The claim the trace supports is the narrow one from §8.3: every payment in it
  * corresponds to a confidential policy evaluation whose result was attested by

@@ -2,7 +2,7 @@
  * Chooses between the public landing page and the execution console.
  *
  * This exists so `App.tsx` — the console — needs no change at all. There is no
- * router in this app and the brief rules out new dependencies, so the split is
+ * router in this app and a router would be a new dependency for two routes, so the split is
  * a single piece of state rather than a route. If routing is wanted later, this
  * is the one file that has to learn about it.
  *

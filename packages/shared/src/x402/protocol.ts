@@ -4,7 +4,7 @@
  * v1 uses the `X-PAYMENT` request header and `X-PAYMENT-RESPONSE` on the way back.
  * v2 renames these to `PAYMENT-REQUIRED` / `PAYMENT-SIGNATURE` / `PAYMENT-RESPONSE`
  * and expresses `network` as CAIP-2 (`eip155:84532`). We build against v1 only, and
- * the mock API speaks only v1 (plan §6.1).
+ * the mock API speaks only v1 (ARCHITECTURE.md §6.1).
  */
 
 export const X402_VERSION = 1;

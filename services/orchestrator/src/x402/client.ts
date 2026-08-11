@@ -1,5 +1,5 @@
 /**
- * x402 v1 resource client (plan §6).
+ * x402 v1 resource client (ARCHITECTURE.md §6).
  *
  * The defining choice here: **402 is control flow, not an error.** It resolves
  * to an ordinary outcome carrying typed terms, exactly like a 200 resolves to

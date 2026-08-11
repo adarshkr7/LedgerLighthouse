@@ -4,7 +4,7 @@ pragma solidity ^0.8.29;
 import {euint256, e, inco} from "@inco/lightning/src/Lib.sol";
 
 // M0 toolchain smoke test — confirms the inco-lightning remapping, solc version and Foundry
-// cheatcode infra resolve correctly end to end. Remove once PolicyVault (M3) exercises the
+// cheatcode infra resolve correctly end to end. Kept alongside PolicyVault, which exercises the
 // same import path and cheatcodes for real.
 contract IncoSmokeTest {
     using e for euint256;

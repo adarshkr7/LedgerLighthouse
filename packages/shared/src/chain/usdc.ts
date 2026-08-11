@@ -1,7 +1,7 @@
 /**
  * Base Sepolia USDC — EIP-3009 surface and EIP-712 domain.
  *
- * The address is a checked-in constant deliberately (brief §9): a blank makes it
+ * The address is a checked-in constant deliberately (IMPLEMENTATION.md §7): a blank makes it
  * too easy to point the signer at whatever a 402 body claims. A 402's
  * `extra.name` / `extra.version` are *claims*; the values here — and better, the
  * ones read back off the token contract — are the truth.
@@ -37,7 +37,7 @@ export const TRANSFER_WITH_AUTHORIZATION_TYPES = {
  * The authorization tuple, frozen. A retry must re-send this **byte for byte**:
  * EIP-3009 marks the whole authorization used, not just the nonce, so a
  * regenerated validity window is a *different* authorization that can execute a
- * second time (plan §7.6).
+ * second time (ARCHITECTURE.md §7.4).
  */
 export interface TransferAuthorization {
   readonly from: Address;

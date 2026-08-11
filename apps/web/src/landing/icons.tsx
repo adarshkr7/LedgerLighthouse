@@ -1,7 +1,7 @@
 /**
  * Monochrome line icons for the landing page.
  *
- * Inline SVG rather than an icon package: the brief rules out new dependencies,
+ * Inline SVG rather than an icon package: a package would be a new dependency for six glyphs,
  * and thirteen 20px glyphs are not worth a runtime. Every icon is a 1px stroke
  * on `currentColor`, so colour is decided entirely by CSS and the set stays
  * uniform — no fills, no two-tone, nothing that would read as decoration.

@@ -59,7 +59,7 @@ const usdc = (whole: number) => Math.round(whole * 1_000_000).toString();
 /**
  * The prompt injection, delivered inside a legitimate-looking field.
  *
- * Two things make this the right shape of attack for the demo (plan §12): it
+ * Two things make this the right shape of attack for the demo (the demo runbook in README): it
  * arrives in `description`, a field a real vendor genuinely uses; and it asks
  * the agent to skip the budget check rather than to do something obviously
  * absurd. The agent is *supposed* to be convinced — the point is that being

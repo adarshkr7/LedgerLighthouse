@@ -4,7 +4,7 @@
  * MetaMask signs exactly three things: `openGoal`, the USDC funding transfer,
  * and (optionally) goal closure. It signs **nothing inside the payment loop** —
  * that is what the ephemeral payer key is for, and what `e.reveal` makes
- * possible (plan §11.1). If a wallet prompt ever appears while a run is in
+ * possible (ARCHITECTURE.md §5.5). If a wallet prompt ever appears while a run is in
  * flight, the design has drifted.
  */
 
@@ -198,7 +198,7 @@ export default function App() {
       if (!config || !wallet || !address || !payer) throw new Error("not ready");
 
       // Re-read the chain rather than trusting connection-time state: MetaMask
-      // caches a stale chainId after a manual network change (brief §5.5).
+      // caches a stale chainId after a manual network change (IMPLEMENTATION.md §5.2).
       const live = await wallet.getChainId();
       if (live !== CHAIN_ID) throw new Error(`Wallet is on chain ${live}, expected ${CHAIN_ID}`);
 

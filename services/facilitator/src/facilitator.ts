@@ -1,7 +1,7 @@
 /**
  * A self-hosted x402 **v1** facilitator for the `exact` scheme on Base Sepolia.
  *
- * Resolves register item 10 by not depending on the answer: rather than guess
+ * Removes the dependency on a hosted facilitator: rather than guess
  * which version a hosted facilitator speaks, we run one that speaks the version
  * we pinned. The interface (`POST /verify`, `POST /settle`) matches the hosted
  * shape, so swapping in Coinbase's is a URL change.
@@ -16,7 +16,7 @@
  *
  * Its key is a **gas key**. It submits `transferWithAuthorization` and pays for
  * the transaction; the USDC moves from the payer, who authorized it. This is a
- * fourth key beyond the three in brief §5.1, and it belongs to infrastructure
+ * fourth key beyond the three in IMPLEMENTATION.md §4, and it belongs to infrastructure
  * that in production someone else operates.
  *
  * ## Verification order
@@ -187,7 +187,7 @@ export class Facilitator {
       return invalid(`authorization ${auth.nonce} has already been used by ${auth.from}`);
     }
     if (balance < BigInt(auth.value)) {
-      // The second, independent spending bound from plan §11.1: the ephemeral
+      // The second, independent spending bound from ARCHITECTURE.md §5.5: the ephemeral
       // payer holds only what the user sent it.
       return invalid(
         `payer balance ${balance} is below the authorized ${auth.value} — the ephemeral account is underfunded`,
@@ -202,7 +202,7 @@ export class Facilitator {
    * separate calls over HTTP, and state can change between them.
    *
    * Idempotent by design. If the authorization was already consumed — the retry
-   * case from plan §7.8, where the facilitator's outcome was unknown — this
+   * case from ARCHITECTURE.md §7.7, where the facilitator's outcome was unknown — this
    * reports success with `alreadySettled`, because the money did move and
    * submitting again would only waste gas on a revert.
    */

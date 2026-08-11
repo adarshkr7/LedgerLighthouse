@@ -3,7 +3,7 @@
  *
  * These are the *only* two writes the orchestrator makes, and the relay key that
  * pays for them is a gas key — it holds no funds and authorizes no payment
- * (brief §5.1). Everything the orchestrator is trusted to do is here, and it
+ * (IMPLEMENTATION.md §4). Everything the orchestrator is trusted to do is here, and it
  * amounts to "submit two transactions and pay for them".
  *
  * What is deliberately absent is as important as what is present. There is no
@@ -51,7 +51,7 @@ export interface GoalView {
 export interface VaultRelayConfig {
   readonly rpcUrl: string;
   readonly vaultAddress: Address;
-  /** Gas only. Never a payer key — see IMPLEMENTATION.md §9. */
+  /** Gas only. Never a payer key — see IMPLEMENTATION.md §6. */
   readonly relayKey: Hex;
   readonly chainId: number;
 }
@@ -83,7 +83,7 @@ export class VaultRelay {
     return this.#relay;
   }
 
-  /** Asserted before every write. Never inferred from a wallet (brief §5.5). */
+  /** Asserted before every write. Never inferred from a wallet (IMPLEMENTATION.md §5.2). */
   async assertChain(): Promise<void> {
     const actual = await this.#public.getChainId();
     if (actual !== this.#chainId) {

@@ -1,5 +1,5 @@
 /**
- * M5 acceptance tests (IMPLEMENTATION.md §6):
+ * Trace and verifier properties (IMPLEMENTATION.md §7):
  *
  *   "Passes when: the verifier validates a good trace, rejects a tampered step,
  *    rejects a swapped attestation, and runs with no dependency on your
@@ -311,7 +311,7 @@ describe("verifyTrace", () => {
     expect(result.findings.some((f) => f.check === "chain.link" && f.step === 0)).toBe(true);
   });
 
-  // Acceptance test 3 — the mandatory handle-match check from plan §2.6.
+  // Acceptance test 3 — the mandatory handle-match check from PRIMER.md §7.6.
   it("rejects a swapped attestation", async () => {
     // The trace is internally consistent and every hash recomputes. The only
     // thing wrong is that its attestation names a handle the vault never

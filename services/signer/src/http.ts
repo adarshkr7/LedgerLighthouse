@@ -82,7 +82,7 @@ export function createSignerServer(options: SignerServerOptions): Server {
       }
 
       if (req.method === "POST" && path === "/payer") {
-        const { address } = signer.mintPayer();
+        const { address } = await signer.mintPayer();
         log(`POST /payer -> ${address}`);
         send(res, 201, { address });
         return;

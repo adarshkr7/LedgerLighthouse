@@ -10,7 +10,7 @@ pragma solidity ^0.8.29;
 /// Putting the full trace on chain would leak prompts, purchased data and
 /// vendor relationships, and its cost would scale with volume. The root is 32
 /// bytes and lets anyone *holding* the trace prove it has not been altered
-/// since the anchor landed (plan §8.4). Someone without the trace learns
+/// since the anchor landed (ARCHITECTURE.md §8.4). Someone without the trace learns
 /// nothing from the root — which is the point.
 ///
 /// ## What anchoring does and does not prove

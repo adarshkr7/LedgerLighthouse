@@ -5,7 +5,7 @@
  * `finalizeDecision` are submitted with the **relay key**, which stays on the
  * server — and, more to the point, a payment loop that needed the browser would
  * need the user present, which is the thing the ephemeral payer exists to avoid
- * (plan §11.1). The UI opens the goal and funds the payer; everything after
+ * (ARCHITECTURE.md §5.5). The UI opens the goal and funds the payer; everything after
  * that happens here, unattended.
  *
  *   GET  /health

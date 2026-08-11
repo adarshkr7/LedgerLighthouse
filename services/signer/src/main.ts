@@ -26,7 +26,13 @@ const vault = new OnChainVaultReader({
   vaultAddress: requiredAddress("POLICY_VAULT_ADDRESS"),
 });
 
-const keys = openKeyStore(process.env["SIGNER_KEY_STORE_PATH"]);
+// ROFL when a socket is configured, file/memory otherwise. See keystore.ts for
+// why the fallback exists rather than being treated as a misconfiguration.
+const keys = openKeyStore({
+  roflSocket: process.env["SIGNER_ROFL_SOCKET"],
+  roflIndexPath: process.env["SIGNER_ROFL_INDEX_PATH"],
+  filePath: process.env["SIGNER_KEY_STORE_PATH"],
+});
 
 const signer = new AuthorizationSigner({
   vault,
@@ -42,7 +48,10 @@ const server = createSignerServer({
 server.listen(port, () => {
   console.log(`[signer] listening on http://127.0.0.1:${port}`);
   console.log(`[signer] chain ${chainId}, vault ${process.env["POLICY_VAULT_ADDRESS"]}`);
+  const roflSocket = process.env["SIGNER_ROFL_SOCKET"];
   console.log(
-    `[signer] key store: ${process.env["SIGNER_KEY_STORE_PATH"] ?? "in-memory (keys lost on restart)"}`,
+    roflSocket
+      ? `[signer] key store: ROFL enclave via ${roflSocket} — no private key is written to disk`
+      : `[signer] key store: ${process.env["SIGNER_KEY_STORE_PATH"] ?? "in-memory (keys lost on restart)"}`,
   );
 });
