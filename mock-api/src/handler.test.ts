@@ -338,3 +338,59 @@ describe("the catalog's own paths", () => {
     expect(res.status).toBe(404);
   });
 });
+
+describe("?price= override", () => {
+  const priceOf = async (path: string): Promise<bigint | undefined> => {
+    const parsed = parsePaymentRequired(await (await fetch(`${api.url}${path}`)).json());
+    if (!parsed.ok) return undefined;
+    const selected = selectTerms(parsed.value, expected);
+    return selected.ok ? selected.value.amount : undefined;
+  };
+
+  it("retunes the overcharge vendor, so it tracks a budget chosen at run time", async () => {
+    expect(await priceOf("/resource/compliance-audit?price=1050000")).toBe(1_050_000n);
+    expect(await priceOf("/resource/compliance-audit?price=4050000")).toBe(4_050_000n);
+  });
+
+  it("leaves the overcharge vendor at its catalog price when unset", async () => {
+    const goal = findDemoGoal("compliance-audit")!;
+    expect(await priceOf("/resource/compliance-audit")).toBe(BigInt(goal.priceAtomic));
+  });
+
+  /*
+   * The other three must not be retunable. The honest pair has to stay cheap
+   * enough to settle and the injection vendor's ~500x ask is the whole point of
+   * that entry; honouring the override there would let a caller decide what the
+   * catalog means.
+   */
+  it("ignores the override on every other resource", async () => {
+    for (const goal of DEMO_GOALS.filter((g) => g.tactic !== "overcharge")) {
+      const amount = await priceOf(`/resource/${goal.key}?price=999`);
+      expect(amount, goal.key).toBe(BigInt(goal.priceAtomic));
+    }
+  });
+
+  it("ignores a malformed, zero or absurd override", async () => {
+    const goal = findDemoGoal("compliance-audit")!;
+    for (const raw of ["abc", "", "0", "-5", "1e6", "999999999999"]) {
+      const amount = await priceOf(`/resource/compliance-audit?price=${encodeURIComponent(raw)}`);
+      expect(amount, raw).toBe(BigInt(goal.priceAtomic));
+    }
+  });
+
+  it("keeps the query string out of the advertised resource identifier", async () => {
+    // `resource` is what the terms hash commits to, so it must not vary with a
+    // demo control that has no bearing on what is being bought.
+    const parsed = parsePaymentRequired(
+      await (await fetch(`${api.url}/resource/compliance-audit?price=1050000`)).json(),
+    );
+    if (!parsed.ok) throw new Error(parsed.error);
+    expect(parsed.value.accepts[0]!.resource).not.toContain("price=");
+    expect(parsed.value.accepts[0]!.resource).toContain("/resource/compliance-audit");
+  });
+
+  it("still serves /health when a query string is present", async () => {
+    const res = await fetch(`${api.url}/health?whatever=1`);
+    expect(res.status).toBe(200);
+  });
+});

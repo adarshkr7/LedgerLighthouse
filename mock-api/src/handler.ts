@@ -42,7 +42,7 @@ import {
   type SettleResponse,
 } from "@ntux402/shared";
 
-import { descriptionFor, findDemoGoal } from "@ntux402/shared";
+import { descriptionFor, findDemoGoal, type DemoGoal } from "@ntux402/shared";
 
 import { DEFAULT_CONFIG, SCHEME_EXACT, X402_VERSION, type ServerConfig } from "./config.js";
 
@@ -96,8 +96,15 @@ const ALIASES: Readonly<Record<string, string>> = {
   malicious: "premium-feed",
 };
 
+/**
+ * Largest override the vendor will quote, so a malformed or hostile `price`
+ * cannot produce a 402 asking for an absurd amount.
+ */
+const MAX_PRICE_ATOMIC = 100_000_000n; // 100 USDC
+
 function routeFor(path: string): Route | undefined {
-  const match = /^\/resource\/([\w-]+)$/.exec(path);
+  const [rawPath = "", rawQuery = ""] = path.split("?");
+  const match = /^\/resource\/([\w-]+)$/.exec(rawPath);
   if (!match) return undefined;
 
   const slug = match[1] as string;
@@ -105,11 +112,35 @@ function routeFor(path: string): Route | undefined {
   if (!goal) return undefined;
 
   return {
-    amountAtomic: goal.priceAtomic,
+    amountAtomic: overridePrice(goal, rawQuery) ?? goal.priceAtomic,
     payTo: goal.payTo,
     description: descriptionFor(goal),
     mode: goal.key,
   };
+}
+
+/**
+ * `?price=<atomic>` — a demo control, honoured for the overcharge vendor only.
+ *
+ * That vendor exists to ask for slightly more than the confidential budget, and
+ * the budget is chosen by the operator at run time. A fixed price would simply
+ * be affordable at a larger budget and the case would stop demonstrating
+ * anything, so the price has to follow.
+ *
+ * Deliberately *not* honoured for the other three. The honest pair must stay
+ * cheap enough to settle, and the injection vendor's ~500x ask is the point of
+ * that entry — letting a caller retune either would turn the catalog into
+ * whatever the client says it is.
+ */
+function overridePrice(goal: DemoGoal, rawQuery: string): string | undefined {
+  if (goal.tactic !== "overcharge") return undefined;
+
+  const raw = new URLSearchParams(rawQuery).get("price");
+  if (raw === null || !/^[0-9]{1,18}$/.test(raw)) return undefined;
+
+  const value = BigInt(raw);
+  if (value <= 0n || value > MAX_PRICE_ATOMIC) return undefined;
+  return value.toString();
 }
 
 function paymentRequirements(opts: {
@@ -161,7 +192,10 @@ export async function handleRequest(
     return { status: 405, headers: JSON_HEADERS, body: { error: "method not allowed" } };
   }
 
-  if (req.path === "/health") {
+  // `req.path` may carry a query string; the resource identifier must not.
+  const barePath = req.path.split("?")[0] ?? "/";
+
+  if (barePath === "/health") {
     return {
       status: 200,
       headers: JSON_HEADERS,
@@ -174,7 +208,7 @@ export async function handleRequest(
     return { status: 404, headers: JSON_HEADERS, body: { error: "not found" } };
   }
 
-  const resource = new URL(req.path, baseUrl).toString();
+  const resource = new URL(barePath, baseUrl).toString();
   const requirements = paymentRequirements({
     config,
     amountAtomic: route.amountAtomic,

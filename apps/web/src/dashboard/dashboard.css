@@ -1090,6 +1090,180 @@
   margin-top: 0.25rem;
 }
 
+/* --------------------------------------------------------------- model input */
+
+/*
+ * The vendor's text drawn as a selection, with a pill bar anchored beneath its
+ * last line. Adapted from the Beautiful UI selection-actions pattern.
+ *
+ * `box-decoration-clone` is what makes the highlight read as one continuous
+ * selection across wrapped lines instead of as a stack of separate boxes with
+ * rounded ends mid-sentence.
+ */
+
+.mi-host {
+  position: relative;
+  padding-bottom: 3.25rem;
+  user-select: none;
+}
+
+.mi-prose {
+  margin: 0;
+  font-size: 0.86rem;
+  line-height: 1.75;
+  color: var(--t-fg-2);
+}
+
+.mi-lead {
+  color: var(--t-fg-4);
+}
+
+.mi-selection {
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  border-radius: 3px;
+  padding: 0.1em 0.15em;
+  background: var(--t-no-tint);
+  box-shadow: inset 0 0 0 1px var(--t-no-line);
+  color: var(--t-fg);
+}
+
+.mi-anchor {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 5;
+  transition:
+    transform 320ms cubic-bezier(0.77, 0, 0.175, 1),
+    opacity 180ms ease-out;
+  will-change: transform;
+}
+
+.mi-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  height: 2rem;
+  width: max-content;
+  max-width: calc(100vw - 3rem);
+  padding: 0.25rem 0.3rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--t-raised-2);
+  box-shadow: var(--t-shadow-raised), 0 8px 22px rgba(0, 0, 0, 0.45);
+  animation: t-pop-in 220ms var(--t-ease) both;
+}
+
+.mi-busy {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0 0.55rem;
+  white-space: nowrap;
+  font-size: 0.75rem;
+  color: var(--t-fg-2);
+}
+
+.mi-spinner {
+  width: 11px;
+  height: 11px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 1.5px solid var(--t-line-strong);
+  border-top-color: var(--t-fg-2);
+  animation: t-spin 700ms linear infinite;
+}
+
+.mi-verdict {
+  padding: 0 0.2rem 0 0.55rem;
+  font-size: 0.75rem;
+  white-space: nowrap;
+  color: var(--t-fg);
+}
+
+/* Complied is the interesting outcome, and it is not a success. */
+.mi-verdict[data-complied] {
+  color: var(--t-no);
+}
+
+.mi-source {
+  font-family: var(--t-mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--t-fg-4);
+  white-space: nowrap;
+}
+
+.mi-sep {
+  width: 1px;
+  height: 0.9rem;
+  flex-shrink: 0;
+  background: var(--t-line);
+  margin-inline: 0.15rem;
+}
+
+.mi-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  height: 1.55rem;
+  padding: 0 0.6rem;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--t-fg-2);
+  font: inherit;
+  font-size: 0.73rem;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: all var(--t-t) var(--t-ease);
+}
+
+.mi-toggle:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--t-fg);
+}
+
+.mi-toggle:active {
+  transform: scale(0.96);
+}
+
+.mi-structured {
+  display: grid;
+  gap: 0.35rem;
+  margin-top: 0.2rem;
+  animation: t-fade-up 240ms var(--t-ease) both;
+}
+
+.mi-structured .d-label {
+  color: var(--t-ok);
+}
+
+.mi-structured .d-code {
+  border-inline-start: 2px solid var(--t-ok-line);
+}
+
+/* -------------------------------------------------------------- budget input */
+
+.d-budget {
+  padding: 0.7rem 0.75rem;
+  border-radius: var(--t-r-sm);
+  background: var(--t-raised-2);
+  box-shadow: var(--t-ring);
+}
+
+.d-budget .d-caption {
+  margin-top: 0.5rem;
+}
+
+.d-budget-unit {
+  font-family: var(--t-mono);
+  font-size: 0.7rem;
+  color: var(--t-fg-3);
+  flex-shrink: 0;
+}
+
 /* What the selected resource is expected to do, before it is run. */
 .d-expectation {
   margin: 0.6rem 0 0;

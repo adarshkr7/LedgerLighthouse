@@ -17,7 +17,8 @@ import { DEMO_GOALS, DEMO_PAYEES, policyVaultAbi, usdcAbi, type DemoGoal } from 
 
 import { Card, Copyable, Dot, Field, Ring, truncate } from "./dashboard/primitives.js";
 import { Timeline } from "./dashboard/Timeline.js";
-import { Comparison, EvidenceDrawer, Guarantees, Outcome } from "./dashboard/panels.js";
+import { EvidenceDrawer, Guarantees, Outcome } from "./dashboard/panels.js";
+import { ModelInput } from "./dashboard/ModelInput.js";
 import { GoalPicker } from "./dashboard/GoalPicker.js";
 import { TotemMark } from "./brand/Totem.js";
 import "./dashboard/dashboard.css";
@@ -31,11 +32,62 @@ import {
 } from "./lib/config.js";
 import { streamRun, type PaymentEvent, type RunResult } from "./lib/run.js";
 
-/** The encrypted budget, and a cap set deliberately above the malicious price. */
-const BUDGET = 200_000n; // 0.20 USDC — confidential
-const PER_CALL_CAP = 6_000_000n; // 6.00 USDC — public, above the 5.00 malicious ask
+/**
+ * Budget bounds, and why they are these numbers.
+ *
+ * The floor is the smallest budget that still lets both honest calls settle
+ * (0.01 + 0.12) with headroom left over, so a viewer always gets to watch two
+ * real debits before anything is refused.
+ *
+ * The ceiling exists so `premium-feed` stays hostile. Its 5.00 ask is fixed, so
+ * a budget above that would make the injection call *affordable* — the agent
+ * would be deceived, comply, and the payment would go through. Capping the
+ * budget below 5.00 keeps that case a refusal no matter what is chosen.
+ */
+const MIN_BUDGET = 300_000n; // 0.30 USDC
+const MAX_BUDGET = 4_000_000n; // 4.00 USDC — below the 5.00 injection ask
+const DEFAULT_BUDGET = MIN_BUDGET;
+
+/** Funded above the budget on purpose, so Inco binds before the balance does. */
+const FUNDING_HEADROOM = 100_000n; // 0.10 USDC
+
+/**
+ * Public, and deliberately above every price in the catalog — including the
+ * 5.00 injection ask and the largest possible overcharge (MAX_BUDGET + 0.05).
+ * A hostile call must fail the *confidential* check, never this one.
+ */
+const PER_CALL_CAP = 6_000_000n; // 6.00 USDC
 const CALLS_REMAINING = 5;
-const PAYER_FUNDING = 300_000n; // 0.30 USDC — above the budget, on purpose
+
+/** How far over the chosen budget the overcharge vendor asks. */
+const OVERCHARGE_MARGIN = 50_000n; // 0.05 USDC
+
+/**
+ * What a vendor asks for this run.
+ *
+ * Fixed for three of the four. The overcharge vendor is the exception: its
+ * entire purpose is to sit *just* above the confidential budget while staying
+ * far below the public cap, and the budget is now chosen by the viewer — so a
+ * hardcoded 0.35 would simply be affordable at any budget above it, and the
+ * case it exists to demonstrate would silently stop demonstrating anything.
+ *
+ * Returns undefined when the catalog price already stands, so the request
+ * carries no override and the vendor's own number is used.
+ */
+function priceFor(goal: DemoGoal, budget: bigint): string | undefined {
+  if (goal.tactic !== "overcharge") return undefined;
+  return (budget + OVERCHARGE_MARGIN).toString();
+}
+
+/** Decimal USDC to atomic units. Undefined for anything unparseable. */
+function parseUsdc(text: string): bigint | undefined {
+  if (!/^\d*\.?\d*$/.test(text) || text === "" || text === ".") return undefined;
+  const [whole = "0", frac = ""] = text.split(".");
+  return BigInt(whole) * 1_000_000n + BigInt(frac.padEnd(6, "0").slice(0, 6));
+}
+
+const clampBudget = (value: bigint) =>
+  value < MIN_BUDGET ? MIN_BUDGET : value > MAX_BUDGET ? MAX_BUDGET : value;
 
 /** Opened on first render so the console is never in a no-resource state. */
 const DEFAULT_GOAL = DEMO_GOALS[0] as DemoGoal;
@@ -54,8 +106,22 @@ export default function App() {
   const [goalId, setGoalId] = useState<string>();
   const [resumeId, setResumeId] = useState("");
   const [budgetHandle, setBudgetHandle] = useState<Hex>();
+  /** False for a goal resumed by id: its budget was chosen in another session. */
+  const [openedHere, setOpenedHere] = useState(false);
   const [funded, setFunded] = useState(false);
   const [resource, setResource] = useState<DemoGoal>(DEFAULT_GOAL);
+  /** Chosen before the goal is opened; immutable afterwards, like the goal. */
+  const [budget, setBudget] = useState<bigint>(DEFAULT_BUDGET);
+  const [budgetDraft, setBudgetDraft] = useState("0.30");
+  /**
+   * Cumulative across every run in this session, not per run.
+   *
+   * `events` is cleared at the start of each run, so deriving spend from it
+   * showed only the latest call and the ring sprang back to full after a second
+   * purchase — reporting money as unspent that had genuinely left the payer.
+   */
+  const [sessionSpent, setSessionSpent] = useState(0n);
+  const [approvedCalls, setApprovedCalls] = useState(0);
   const [events, setEvents] = useState<PaymentEvent[]>([]);
   const [result, setResult] = useState<RunResult>();
   const [busy, setBusy] = useState<string>();
@@ -98,7 +164,8 @@ export default function App() {
   }, [config, address, funded]);
 
   const wrongChain = isConnected && chainId !== CHAIN_ID;
-  const underfunded = usdcBalance !== undefined && usdcBalance < PAYER_FUNDING;
+  const funding = budget + FUNDING_HEADROOM;
+  const underfunded = usdcBalance !== undefined && usdcBalance < funding;
   const guard = useCallback(
     async (label: string, fn: () => Promise<void>) => {
       setError(undefined);
@@ -139,7 +206,7 @@ export default function App() {
       // Bound to (this address, this vault). A ciphertext prepared for anyone
       // else yields a handle openGoal cannot use — which is why the user, not
       // the orchestrator, has to send this transaction.
-      const budgetCiphertext = (await zap.encrypt(BUDGET, {
+      const budgetCiphertext = (await zap.encrypt(budget, {
         accountAddress: address,
         dappAddress: config.vaultAddress,
         handleType: handleTypes.euint256,
@@ -184,6 +251,7 @@ export default function App() {
       const args = opened.args as unknown as { goalId: bigint; budgetHandle: Hex };
       setGoalId(args.goalId.toString());
       setBudgetHandle(args.budgetHandle);
+      setOpenedHere(true);
     });
 
   // --- step 4: fund the payer ----------------------------------------------
@@ -194,7 +262,7 @@ export default function App() {
         address: config.usdcAddress,
         abi: usdcAbi,
         functionName: "transfer",
-        args: [payer, PAYER_FUNDING],
+        args: [payer, funding],
         chain: CHAIN,
         account: address,
       });
@@ -212,10 +280,33 @@ export default function App() {
       if (!goalId) throw new Error("no goal");
       setEvents([]);
       setResult(undefined);
-      for await (const event of streamRun(goalId, which.key)) {
-        if (event.channel === "payment") setEvents((prior) => [...prior, event.data]);
-        else if (event.channel === "result") setResult(event.data);
+
+      // Also collected locally: `events` is state, so it is not readable at its
+      // final value inside this closure, and the accounting below needs the
+      // whole run rather than whatever React has committed so far.
+      const collected: PaymentEvent[] = [];
+
+      for await (const event of streamRun(goalId, which.key, priceFor(which, budget))) {
+        if (event.channel === "payment") {
+          collected.push(event.data);
+          setEvents((prior) => [...prior, event.data]);
+        } else if (event.channel === "result") setResult(event.data);
         else if (event.channel === "error") setError(event.data.message);
+      }
+
+      // Accumulate once, at the end. Only a real settlement counts — a stubbed
+      // one validated a payload and moved nothing.
+      const settled = collected.find((e) => e.type === "settled");
+      const signed = collected.find((e) => e.type === "signed");
+      if (
+        settled?.type === "settled" &&
+        !settled.settlement.simulated &&
+        signed?.type === "signed"
+      ) {
+        setSessionSpent((total) => total + BigInt(signed.value));
+      }
+      if (collected.some((e) => e.type === "decision-finalized" && e.approved)) {
+        setApprovedCalls((n) => n + 1);
       }
     });
 
@@ -250,23 +341,15 @@ export default function App() {
   );
 
   /** Public, and the honest basis for the ring: what actually left the payer. */
-  const spent = useMemo(
-    () =>
-      events.reduce((total, event) => {
-        if (event.type !== "settled") return total;
-        if (event.settlement.simulated) return total;
-        const signed = events.find((e) => e.type === "signed");
-        return signed && signed.type === "signed" ? total + BigInt(signed.value) : total;
-      }, 0n),
-    [events],
-  );
+  const spent = sessionSpent;
 
-  const finalizedEvent = events.find((e) => e.type === "decision-finalized");
-  const approvedThisRun =
-    finalizedEvent && finalizedEvent.type === "decision-finalized"
-      ? finalizedEvent.approved
-      : undefined;
-
+  /*
+   * Clears the run view only.
+   *
+   * `sessionSpent` and `approvedCalls` survive deliberately: they describe money
+   * that actually moved and calls the vault actually counted. Zeroing them on a
+   * button labelled "reset" would make the console disagree with the chain.
+   */
   const resetDemo = () => {
     setEvents([]);
     setResult(undefined);
@@ -349,7 +432,7 @@ export default function App() {
               <>
                 <Ring
                   spent={spent}
-                  funded={PAYER_FUNDING}
+                  funded={funding}
                   caption="Share of the funded payer balance already spent"
                 />
                 <p className="d-caption" style={{ textAlign: "center", marginTop: 0 }}>
@@ -366,10 +449,18 @@ export default function App() {
                     <span className="d-muted">handle unavailable on a resumed goal</span>
                   )}
                 </Field>
-                <Field label="Opened with">{formatUsdc(BUDGET)} USDC</Field>
+                <Field label="Opened with">
+                  {openedHere ? (
+                    `${formatUsdc(budget)} USDC`
+                  ) : (
+                    // A resumed goal was opened elsewhere; this session never
+                    // saw its budget and must not imply otherwise.
+                    <span className="d-muted">set in another session</span>
+                  )}
+                </Field>
                 <Field label="Per-call cap">{formatUsdc(PER_CALL_CAP)} USDC · public</Field>
                 <Field label="Calls remaining">
-                  {CALLS_REMAINING - (approvedThisRun === true ? 1 : 0)} of {CALLS_REMAINING}
+                  {Math.max(0, CALLS_REMAINING - approvedCalls)} of {CALLS_REMAINING}
                 </Field>
                 <Field label="Expiry">7 days from opening</Field>
               </>
@@ -408,13 +499,55 @@ export default function App() {
                     >
                       {payer ? "Payer minted" : "Mint ephemeral payer"}
                     </button>
+
+                    {/*
+                      Chosen here, encrypted in the next step, and immutable
+                      afterwards. Shown before `openGoal` because that is the
+                      only moment it can be set — the whole point is that
+                      nothing downstream, including this page, can change it.
+                    */}
+                    <div className="d-budget">
+                      <label className="d-label" htmlFor="budget">
+                        Confidential budget
+                      </label>
+                      <div className="d-inline" style={{ marginTop: "0.35rem" }}>
+                        <input
+                          id="budget"
+                          className="d-input"
+                          inputMode="decimal"
+                          value={budgetDraft}
+                          disabled={!!busy}
+                          onChange={(e) => {
+                            const text = e.target.value.replace(/[^0-9.]/g, "");
+                            setBudgetDraft(text);
+                            const parsed = parseUsdc(text);
+                            if (parsed !== undefined) setBudget(clampBudget(parsed));
+                          }}
+                          onBlur={() => {
+                            // Normalise on blur rather than per keystroke, so
+                            // clearing the field to retype does not fight back.
+                            const parsed = parseUsdc(budgetDraft);
+                            const next = clampBudget(parsed ?? DEFAULT_BUDGET);
+                            setBudget(next);
+                            setBudgetDraft(formatUsdc(next));
+                          }}
+                        />
+                        <span className="d-budget-unit">USDC</span>
+                      </div>
+                      <p className="d-caption">
+                        Minimum {formatUsdc(MIN_BUDGET)}, maximum {formatUsdc(MAX_BUDGET)}. You will
+                        fund the payer with {formatUsdc(funding)} — a little above the budget, so the
+                        confidential check binds before the balance does.
+                      </p>
+                    </div>
+
                     <button
                       type="button"
                       className="d-btn"
                       disabled={!payer || !!busy}
                       onClick={openGoal}
                     >
-                      Encrypt budget and open goal
+                      Encrypt {formatUsdc(budget)} USDC and open goal
                     </button>
                     {!payer ? (
                       <p className="d-hint">
@@ -476,7 +609,7 @@ export default function App() {
                 read for the payer address; this component only reads the
                 connected wallet's. Funded amount and session spend are exact. */}
             <Field label="Last funded">
-              {funded ? `${formatUsdc(PAYER_FUNDING)} USDC` : <span className="d-muted">—</span>}
+              {funded ? `${formatUsdc(funding)} USDC` : <span className="d-muted">—</span>}
             </Field>
             <Field label="Spent this session">{formatUsdc(spent)} USDC</Field>
             <p className="d-caption">This balance is the maximum autonomous spend.</p>
@@ -500,7 +633,7 @@ export default function App() {
                   disabled={!!busy}
                   onClick={fundPayer}
                 >
-                  Fund {formatUsdc(PAYER_FUNDING)} USDC
+                  Fund {formatUsdc(funding)} USDC
                 </button>
               )
             ) : null}
@@ -587,7 +720,7 @@ export default function App() {
             ) : null}
           </Card>
 
-          {started ? <Comparison events={events} running={running} /> : null}
+          {started ? <ModelInput events={events} running={running} /> : null}
         </div>
 
         {/* ============================ COLUMN 3 — EVIDENCE & SECURITY */}

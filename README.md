@@ -182,6 +182,50 @@ Enable the pre-push hook once per clone: `git config core.hooksPath .githooks`.
 
 ---
 
+## Checking the Inco path on its own
+
+Inco Lightning is a **TEE** system, not an FHE one. The confidential compute server runs inside a
+secure enclave; `@inco/lightning-js` encrypts client-side to that enclave over HPKE, and the enclave
+signs attestations that `e.verifyDecryption` checks on chain against Automata's enclave identity
+registry. Inco's FHE-era package was `@inco/js`, which this repo does not use anywhere — the rename
+to `@inco/lightning-js` came with the change of substrate, so an old doc sample showing `@inco/js` is
+also showing the old architecture.
+
+`demo` proves the *product* — x402, USDC, the signer, the injection. That makes it a poor instrument
+for the narrower question "is Inco itself working", because a fault anywhere in the payment path
+looks identical from outside. `tee-check` removes everything that is not Inco: no USDC moves, the
+signer never starts, no vendor is contacted.
+
+```sh
+pnpm --filter @ntux402/e2e run tee-check
+```
+
+It encrypts a budget, turns it into an on-chain handle, then runs two spends through the full
+round trip — one inside the budget, one past it but still under the public cap and to an allowlisted
+payee, so nothing in plaintext can account for the refusal. For each it polls `attestedReveal`,
+submits the attestation through `finalizeDecision`, and confirms the on-chain result.
+
+The load-bearing assertion is the third one per spend: the attestation is re-submitted with the
+plaintext **flipped**, and on-chain verification must reject it. Signatures cover `(handle,
+plaintext)` as a pair, so a genuine attestation paired with the opposite claim does not verify. Were
+that check to pass, the attestation would be decoration and the whole decision path worthless. It is
+simulated rather than sent, so it costs nothing and cannot consume the pending spend.
+
+Costs one Inco fee (0.000001 ETH) plus gas for five transactions. Last run, against goal 28:
+
+```
+pass  encrypted                      0.1 USDC in 28ms
+pass  budget handle                  0x7adf19cd816945ba…65000800
+pass  attestedReveal                 true in 11.43s (2 attempts), 2 signatures
+pass  flipped plaintext is rejected  claimed false, on-chain verification refused it
+pass  on-chain isApproved agrees     true
+pass  attestedReveal                 false in 7.26s (1 attempt), 2 signatures
+pass  flipped plaintext is rejected  claimed true, on-chain verification refused it
+pass  on-chain isApproved agrees     false
+```
+
+---
+
 ## Verifying a trace
 
 Every run produces a hash-chained trace with a Merkle root. The verifier needs the file and a public
@@ -229,6 +273,7 @@ Resolved against the published packages and live chain, so they no longer need r
 
 | Item | Value |
 |---|---|
+| Inco substrate | **TEE**, not FHE. Enclave-side compute; HPKE to the enclave client-side (`@hpke/*` are the SDK's only crypto deps — no FHE runtime is shipped) |
 | `@inco/lightning` (Solidity) | `1.0.2`; import path `@inco/lightning/src/Lib.sol` |
 | `@inco/lightning-js` (TS) | `1.0.2`; peer dep viem `^2.39.3` |
 | Inco Lightning executor (Base Sepolia + mainnet) | `0x4b9911b0191B0b6a6eA8F2Ed562e20Cff5AC8624` |

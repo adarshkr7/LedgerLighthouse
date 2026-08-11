@@ -18,7 +18,11 @@ export function createMockApi(options: HandlerOptions = {}): Server {
         headers[key.toLowerCase()] = Array.isArray(value) ? value[0] : value;
       }
 
-      const path = new URL(req.url ?? "/", "http://localhost").pathname;
+      // Query string included: the handler needs `?price=` for the overcharge
+      // vendor. It splits the two apart itself, and the `resource` it advertises
+      // is built from the bare path.
+      const parsed = new URL(req.url ?? "/", "http://localhost");
+      const path = `${parsed.pathname}${parsed.search}`;
       const result = await handleRequest({ method: req.method ?? "GET", path, headers }, options);
 
       res.writeHead(result.status, result.headers);

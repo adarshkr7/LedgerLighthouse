@@ -1,7 +1,10 @@
 /**
- * Right-column panels: the verdict, the structured/attacker split, the
- * guarantee grid, and the evidence drawer. All read-only projections of the
- * event stream — none of them read the chain or hold state beyond a toggle.
+ * Right-column panels: the verdict, the guarantee grid, and the evidence
+ * drawer. All read-only projections of the event stream — none of them read the
+ * chain or hold state beyond a toggle.
+ *
+ * The attacker-text panel lives in `ModelInput.tsx`, which needs layout
+ * measurement these do not.
  */
 
 import { useState } from "react";
@@ -97,51 +100,6 @@ export function Outcome({
       <span className="d-outcome-head">{view.head}</span>
       <p className="d-outcome-body">{view.body}</p>
     </div>
-  );
-}
-
-/**
- * The two inputs side by side.
- *
- * This is the page's whole argument in one panel: the left pane is the typed
- * projection the policy check acts on, the right is the vendor's free text. The
- * attacker controls only the right, and the right reaches only the model.
- */
-export function Comparison({
-  events,
-  running,
-}: {
-  events: readonly PaymentEvent[];
-  running: boolean;
-}) {
-  const reasoning = find(events, "agent-reasoning");
-  const required = find(events, "payment-required");
-
-  if (!reasoning && !required) return null;
-
-  return (
-    <Card title="Model input">
-      <div className="d-split">
-        <div className="d-split-pane" data-tone="safe">
-          <span className="d-label">Structured — what the policy acts on</span>
-          <pre className="d-code">
-            {reasoning ? JSON.stringify(reasoning.modelSafeTerms, null, 2) : "—"}
-          </pre>
-        </div>
-        <div className="d-split-pane" data-tone="hostile">
-          <span className="d-label">Attacker-controlled text</span>
-          <pre className="d-code">
-            {required?.terms.description ?? "—"}
-            {/* Only while the run is live — a caret blinking on a finished
-                transcript claims input that is no longer arriving. */}
-            {running ? <span className="t-caret" /> : null}
-          </pre>
-        </div>
-      </div>
-      <p className="d-caption">
-        Amount, payee and asset come from the schema validator, never from the prose.
-      </p>
-    </Card>
   );
 }
 

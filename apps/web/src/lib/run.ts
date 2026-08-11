@@ -72,12 +72,21 @@ export async function* streamRun(
   goalId: string,
   /** A key from the shared demo catalog. The orchestrator validates it. */
   mode: string,
+  /**
+   * Atomic USDC the vendor should ask for, overriding its catalog price.
+   *
+   * A demo control, and only honoured by the mock vendor for its overcharge
+   * resource — whose entire job is to sit just above a budget the viewer now
+   * chooses at run time. Nothing in the trust boundary reads it: the price the
+   * policy acts on is still whatever comes back in the 402.
+   */
+  priceAtomic?: string,
   signal?: AbortSignal,
 ): AsyncGenerator<RunEvent> {
   const response = await fetch(`${ORCHESTRATOR_URL}/runs`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ goalId, mode }),
+    body: JSON.stringify({ goalId, mode, ...(priceAtomic ? { priceAtomic } : {}) }),
     ...(signal ? { signal } : {}),
   });
 
