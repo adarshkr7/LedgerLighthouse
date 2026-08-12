@@ -13,9 +13,7 @@
 
 import { useEffect, useRef } from "react";
 
-import { BlockStream } from "./BlockStream.js";
 import { Flow } from "./Flow.js";
-import { LighthouseMark } from "../brand/Lighthouse.js";
 import type { ConnectPhase } from "../Root.js";
 import {
   CapIcon,
@@ -143,9 +141,6 @@ export function Landing({
       <nav className="lp-nav">
         <div className="lp-nav-inner">
           <span className="lp-nav-brand">
-            <span className="mark-chip">
-              <LighthouseMark size={16} />
-            </span>
             <span className="lp-nav-name">LedgerLighthouse</span>
           </span>
           <span className="lp-nav-links">
@@ -160,7 +155,12 @@ export function Landing({
       </nav>
 
       {/* 1 — HERO */}
-      <header className="lp-hero sw-grid">
+      <header className="lp-hero">
+        {/* Decorative: the page states everything this image states, in words,
+            immediately beside it. */}
+        <div className="lp-hero-bg" aria-hidden="true" />
+        <div className="lp-hero-scrim" aria-hidden="true" />
+
         <div className="lp-hero-copy">
           <p className="lp-eyebrow lp-in" style={{ animationDelay: "60ms" }}>
             <span className="lp-num">00</span>
@@ -196,17 +196,6 @@ export function Landing({
               Connection declined — nothing was sent. Try again when ready.
             </p>
           ) : null}
-        </div>
-
-        <div className="lp-hero-visual lp-in" style={{ animationDelay: "420ms" }}>
-          {/* A contained, duotoned photographic panel — a museum wall plate,
-              not a cinematic full-bleed background. */}
-          <div className="lp-hero-photo" role="img" aria-label="LedgerLighthouse, standing" />
-          <p className="lp-hero-caption">
-            <span>Fig. 01 — The mark</span>
-            <span>No bridge</span>
-          </p>
-          <BlockStream />
         </div>
       </header>
 
@@ -367,12 +356,7 @@ export function Landing({
             BaseScan
           </a>
         </nav>
-        <p className="lp-footer-note">
-          <span className="mark-chip">
-            <LighthouseMark size={11} />
-          </span>
-          Built with Inco
-        </p>
+        <p className="lp-footer-note">Built with Inco</p>
       </footer>
     </div>
   );

@@ -20,7 +20,6 @@ import { Timeline } from "./dashboard/Timeline.js";
 import { EvidenceDrawer, Guarantees, Outcome } from "./dashboard/panels.js";
 import { ModelInput } from "./dashboard/ModelInput.js";
 import { GoalPicker } from "./dashboard/GoalPicker.js";
-import { LighthouseMark } from "./brand/Lighthouse.js";
 import "./dashboard/dashboard.css";
 import {
   CHAIN,
@@ -372,9 +371,6 @@ export default function App() {
       {/* 1 — STATUS BAR */}
       <header className="d-topbar">
         <span className="d-brand">
-          <span className="mark-chip">
-            <LighthouseMark size={13} spinning={running} />
-          </span>
           <span className="d-brand-name">LedgerLighthouse</span>
         </span>
 

@@ -1,42 +1,28 @@
 /*
  * LedgerLighthouse — global design tokens.
  *
- * What remains here is deliberately small. Both pages this app renders are
- * now self-contained Swiss International stylesheets (`.landing`, `.dash`),
- * each declaring its own five-token palette rather than reading a shared
- * theme — a decision recorded in each of those files. This block is what is
- * left *outside* that split: the handful of tokens the brand mark's inline
- * SVG fills still reach for directly, and the couple of shared motion
- * utilities (`.t-shimmer`, `.t-eq`, `.t-pixels`) both pages still use.
+ * Both pages this app renders are self-contained Swiss International
+ * stylesheets (`.landing`, `.dash`), each declaring its own five-token
+ * palette rather than reading a shared theme — a decision recorded in each of
+ * those files. What remains here is only what is genuinely shared: the couple
+ * of motion utilities (`.t-shimmer`, `.t-eq`, `.t-pixels`) both pages still
+ * use, and the monospace stack `code {}` falls back to.
  *
- * None of these are a second theme to keep in sync with Swiss. They are load-
- * bearing plumbing, and every one is referenced by name below so a future
- * cleanup can grep for it before assuming it is dead.
+ * The brand mark that used to justify most of this block — and the tokens its
+ * inline SVG fills reached for directly — is gone. Removed with it, rather
+ * than left as unread dead weight.
  */
 
 :root {
-  /* Read by brand/Lighthouse.tsx's inline SVG `fill` attributes. The mark is
-     always enclosed in `.mark-chip` (styles.css), a solid black square, so
-     these values are chosen to read against black — not against whichever
-     page happens to be mounted around it. */
-  --t-inset: #000105;
-  --t-line: #232c44;
+  /* Read by `.t-shimmer`'s text gradient, shared by both pages. */
   --t-fg: #eef2ff;
   --t-fg-4: #545e7e;
-  --t-ok: #3dff9e;
-  --t-wait: #ffc531;
-  --t-no: #ff3d8a;
-  --t-cipher: #22e0ff;
-  --t-brass: #ffcc55;
 
   /* The scrollbar thumb, further down this file — the one piece of chrome
      neither `.landing` nor `.dash` restyles per-page. */
   --t-line-strong: #9a9a9a;
 
-  /* Read by `code {}` below, and available as a fallback for anything that
-     has not opted into a page-scoped `--sw-mono`. */
-  --t-sans: "Inter", "Inter Fallback", ui-sans-serif, system-ui, "Segoe UI",
-    Helvetica, Arial, sans-serif;
+  /* Read by `code {}` below. */
   --t-mono: "JetBrains Mono", ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
 
   /* Read by the `.t-eq` / `.t-pixels` keyframed loaders, shared by both pages. */
@@ -111,24 +97,6 @@ code {
 
 *::-webkit-scrollbar-track {
   background: transparent;
-}
-
-/*
- * Shared between `.landing` and `.dash` — deliberately not scoped under
- * either, since it is used inside both. The brand mark's own fills assume a
- * dark surface; enclosed in a solid square, it reads as a lit window
- * regardless of the page around it, and it is the "icon inside a geometric
- * shape" signature both pages otherwise carry. `var(--sw-fg, #000)` resolves
- * against whichever page-scoped token set the element is actually nested in —
- * both currently agree it is black, so the fallback is only ever a safety net.
- */
-.mark-chip {
-  display: grid;
-  place-items: center;
-  width: 1.9rem;
-  height: 1.9rem;
-  flex-shrink: 0;
-  background: var(--sw-fg, #000);
 }
 
 /* ==========================================================================

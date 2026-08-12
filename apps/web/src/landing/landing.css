@@ -156,7 +156,9 @@
   position: sticky;
   top: 0;
   z-index: 40;
-  background: var(--sw-bg);
+  background: rgba(255, 255, 255, 0.78);
+  -webkit-backdrop-filter: blur(18px) saturate(1.1);
+  backdrop-filter: blur(18px) saturate(1.1);
   border-bottom: var(--sw-b) solid var(--sw-border);
 }
 
@@ -176,11 +178,6 @@
   gap: 0.75rem;
   margin-inline-end: auto;
 }
-
-/* The mark's own SVG fills were designed for a dark surface — on white they
-   would be near-invisible. `.mark-chip` (styles.css) encloses it in a solid
-   black square, shared with the console's identical problem, so it is
-   defined once rather than twice. */
 
 .lp-nav-name {
   font-size: 0.9rem;
@@ -364,24 +361,56 @@
 /* -------------------------------------------------------------------- hero */
 
 .lp-hero {
-  max-width: var(--sw-max);
-  margin: 0 auto;
-  padding: 3.5rem var(--sw-pad) 0;
-  display: grid;
-  grid-template-columns: 7fr 5fr;
-  gap: 3rem;
-  align-items: start;
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  width: 100%;
+  margin: 0;
+  padding: 5rem 0 6rem;
   border-bottom: var(--sw-b) solid var(--sw-border);
 }
 
-.lp-hero-copy {
-  grid-column: 1;
-  padding-bottom: 3.5rem;
+/* The photograph, full-bleed behind the whole hero — not a contained panel.
+   Pushed to high-contrast black and white: a Swiss photographic treatment is
+   bold and desaturated, never a soft colour wash. */
+.lp-hero-bg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background-image: url("/lighthouse.webp");
+  background-size: cover;
+  background-position: 68% 38%;
+  filter: grayscale(1) contrast(1.4) brightness(0.75);
 }
 
-/* Massive, tight, uppercase — "let words be images." The italic emphasis
-   from a prior draft is gone entirely; Swiss type carries emphasis through
-   weight and colour, never through style. */
+/* A flat black scrim, not a gradient standing in for layout — it exists for
+   one reason, keeping the headline legible, and is honest about that: heavy
+   where the copy sits, thin enough on the right that the photograph itself
+   still reads. */
+.lp-hero-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: linear-gradient(
+    100deg,
+    rgba(0, 0, 0, 0.88) 0%,
+    rgba(0, 0, 0, 0.82) 38%,
+    rgba(0, 0, 0, 0.5) 62%,
+    rgba(0, 0, 0, 0.3) 100%
+  );
+}
+
+.lp-hero-copy {
+  position: relative;
+  z-index: 2;
+  max-width: calc(var(--sw-max) - (var(--sw-pad) * 2));
+  margin: 0 auto;
+  padding: 0 var(--sw-pad);
+}
+
+/* Massive, tight, uppercase — "let words be images." White, because the
+   surface behind it is now a dark photograph rather than the page's white
+   canvas; every other headline on this page stays black on white. */
 .lp-headline {
   margin: 0 0 1.8rem;
   font-size: clamp(3rem, 7.4vw, 6.6rem);
@@ -390,6 +419,7 @@
   font-weight: 900;
   text-transform: uppercase;
   max-width: 13ch;
+  color: #fff;
 }
 
 .lp-headline em,
@@ -404,7 +434,7 @@
   font-size: 1.05rem;
   line-height: 1.6;
   font-weight: 500;
-  color: rgba(0, 0, 0, 0.62);
+  color: rgba(255, 255, 255, 0.72);
   max-width: 38ch;
 }
 
@@ -412,6 +442,34 @@
   display: flex;
   gap: 0.75rem;
   flex-wrap: wrap;
+}
+
+/* Inverted from the page default: a solid black button would all but
+   disappear against a dark photograph, so inside the hero specifically the
+   primary is white-on-black-text and the ghost is a white outline. Nowhere
+   else on the page needs this — everywhere else is white already. */
+.lp-hero .lp-btn {
+  background: #fff;
+  border-color: #fff;
+  color: #000;
+}
+
+.lp-hero .lp-btn:hover {
+  background: var(--sw-accent);
+  border-color: var(--sw-accent);
+  color: #fff;
+}
+
+.lp-hero .lp-btn-ghost {
+  background: transparent;
+  border-color: rgba(255, 255, 255, 0.7);
+  color: #fff;
+}
+
+.lp-hero .lp-btn-ghost:hover {
+  background: #fff;
+  border-color: #fff;
+  color: #000;
 }
 
 .lp-connect-note {
@@ -423,63 +481,31 @@
   color: var(--sw-accent);
 }
 
-/* The right column: two stacked geometric panels, each its own bordered
-   rectangle, sitting flush against the hero's bottom border. Asymmetric by
-   construction — the left column carries the argument, the right carries
-   evidence. */
-.lp-hero-visual {
-  grid-column: 2;
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  border-left: var(--sw-b) solid var(--sw-border);
-}
-
-/* A contained, high-contrast photographic panel rather than a full-bleed
-   cinematic background — "no gradients to hide bad layout" rules out the
-   scrim-over-photo hero treatment entirely. Duotoned toward black/white with
-   the tiniest warm cast, framed like a museum wall plate with a caption strip
-   underneath. */
-.lp-hero-photo {
-  position: relative;
-  aspect-ratio: 4 / 3;
-  background-image: url("/lighthouse.webp");
-  background-size: cover;
-  background-position: 68% 40%;
-  filter: grayscale(0.85) contrast(1.35) brightness(0.92);
-  border-bottom: var(--sw-b) solid var(--sw-border);
-}
-
-.lp-hero-caption {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 0.75rem 1.1rem;
-  border-bottom: var(--sw-b) solid var(--sw-border);
-  font-size: 0.68rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.lp-hero-caption span:last-child {
-  color: var(--sw-accent);
+/* Everywhere else on the page, an eyebrow's index sits over white and reads in
+   black with a red numeral. Inside the hero it sits over a dark photo, so both
+   halves invert to stay legible without touching the shared rule. */
+.lp-hero .lp-eyebrow {
+  color: rgba(255, 255, 255, 0.85);
 }
 
 @media (max-width: 60rem) {
   .lp-hero {
-    grid-template-columns: minmax(0, 1fr);
-    padding-top: 2.25rem;
+    padding: 4rem 0 4.5rem;
+  }
+  .lp-hero-bg {
+    background-position: 78% center;
+  }
+  .lp-hero-scrim {
+    background: linear-gradient(
+      to bottom,
+      rgba(0, 0, 0, 0.86) 0%,
+      rgba(0, 0, 0, 0.72) 55%,
+      rgba(0, 0, 0, 0.86) 100%
+    );
   }
   .lp-hero-copy {
-    grid-column: 1;
-    padding-bottom: 0;
-  }
-  .lp-hero-visual {
-    grid-column: 1;
-    border-left: 0;
-    border-top: var(--sw-b) solid var(--sw-border);
-    margin-top: 2.5rem;
+    max-width: none;
+    padding: 0 var(--sw-pad);
   }
   .lp-headline {
     max-width: none;
@@ -914,11 +940,6 @@
   color: rgba(0, 0, 0, 0.55);
 }
 
-.lp-footer-note .mark-chip {
-  width: 1.4rem;
-  height: 1.4rem;
-}
-
 /* -------------------------------------------------------------- brand mark */
 
 .lh-mark-beam {
@@ -942,89 +963,6 @@
 
 @media (prefers-reduced-motion: reduce) {
   .lh-mark-live .lh-mark-beam {
-    animation: none;
-  }
-}
-
-/* ------------------------------------------------------------ block stream */
-
-.bs {
-  border: var(--sw-b) solid var(--sw-border);
-  background: var(--sw-bg);
-  flex: 1;
-}
-
-.bs-head {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  padding: 0.8rem 1.1rem;
-  border-bottom: var(--sw-b) solid var(--sw-border);
-  font-size: 0.66rem;
-  font-weight: 800;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
-
-.bs-dot {
-  width: 8px;
-  height: 8px;
-  background: var(--sw-accent);
-  flex-shrink: 0;
-  animation: bs-pulse 1.6s steps(2, end) infinite;
-}
-
-@keyframes bs-pulse {
-  0%,
-  49% {
-    opacity: 0.3;
-  }
-  50%,
-  100% {
-    opacity: 1;
-  }
-}
-
-.bs-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.bs-block {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  gap: 1rem;
-  align-items: center;
-  padding: 0.55rem 1.1rem;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.12);
-  font-family: "JetBrains Mono", ui-monospace, monospace;
-  font-size: 0.66rem;
-}
-
-.bs-block:last-child {
-  border-bottom: 0;
-}
-
-.bs-height {
-  font-weight: 700;
-}
-
-.bs-hash {
-  color: rgba(0, 0, 0, 0.45);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  min-width: 0;
-}
-
-.bs-txs {
-  color: var(--sw-accent);
-  font-weight: 700;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .bs-dot {
     animation: none;
   }
 }
