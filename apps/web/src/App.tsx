@@ -20,7 +20,6 @@ import { Timeline } from "./dashboard/Timeline.js";
 import { EvidenceDrawer, Guarantees, Outcome } from "./dashboard/panels.js";
 import { ModelInput } from "./dashboard/ModelInput.js";
 import { GoalPicker } from "./dashboard/GoalPicker.js";
-import { TotemMark } from "./brand/Totem.js";
 import "./dashboard/dashboard.css";
 import {
   CHAIN,
@@ -318,6 +317,17 @@ export default function App() {
   const started = events.length > 0;
 
   /**
+   * What the selected resource will actually be billed, not what the catalog
+   * lists. `priceFor` overrides the overcharge tactic to `budget + 0.05` —
+   * deliberately always just past whatever budget is chosen — so a display
+   * still showing the catalog's static price would tell a viewer the request
+   * is affordable right up until the encrypted budget disagrees. That gap is
+   * exactly what confused a viewer who set 0.40 and expected a listed 0.35 to
+   * clear; the real request was 0.45.
+   */
+  const requestedPrice = BigInt(priceFor(resource, budget) ?? resource.priceAtomic);
+
+  /**
    * The five acts, and where the viewer is in them.
    *
    * Rendered as the rail under the status bar. Keeping it as one derivation
@@ -361,8 +371,7 @@ export default function App() {
       {/* 1 — STATUS BAR */}
       <header className="d-topbar">
         <span className="d-brand">
-          <TotemMark size={16} spinning={running} />
-          <span className="d-brand-name">Totem</span>
+          <span className="d-brand-name">LedgerLighthouse</span>
         </span>
 
         <span className="d-topbar-group">
@@ -661,7 +670,7 @@ export default function App() {
                 disabled={!goalId || !!busy}
                 onClick={() => run(resource)}
               >
-                Buy {resource.label} · {formatUsdc(BigInt(resource.priceAtomic))} USDC
+                Buy {resource.label} · {formatUsdc(requestedPrice)} USDC
               </button>
               <button
                 type="button"

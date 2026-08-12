@@ -1,31 +1,65 @@
 /*
- * The execution console.
+ * The execution console — Swiss International Style.
  *
- * Scoped under `.dash`. Reads global tokens from styles.css and defines no
- * colours of its own, so the four semantic states mean the same thing here as
- * on the landing page.
+ * Scoped under `.dash`, self-contained exactly like `.landing`: its own five
+ * tokens, no shared dependency on the pixel/neon system that used to live in
+ * styles.css. The two pages are now one design system, applied twice.
  *
- * Panels are separated by a hairline ring and a tight shadow — no glass, no
- * blur, no glow. The only things that move are things that are actually
- * happening: a running stage, a pending decision, an arriving row.
+ * ## Mapping four live states onto a one-colour palette
+ *
+ * The console has to distinguish four things a marketing page never has to:
+ * approved, rejected, pending, and encrypted, sometimes all visible at once.
+ * The source brief allows exactly one signal colour, so collapsing all four
+ * into red would destroy the one distinction this whole product exists to
+ * demonstrate — "settled" and "refused" would look identical.
+ *
+ * The resolution is the brief's own logic taken further than its examples:
+ * colour is not the only way to encode a state. Pattern and weight are too.
+ *
+ *   done / approved   solid black fill      "certainty needs no colour"
+ *   rejected          Swiss red             the one legitimate warning
+ *   active / pending  diagonal stripe       committed, not yet knowable
+ *   encrypted         monospace + dot chip  a substance, not a status
+ *
+ * No blur, no glow, no radius, no soft shadow — borders and fills only.
  */
 
 .dash {
+  --sw-bg: #ffffff;
+  --sw-fg: #000000;
+  --sw-muted: #f2f2f2;
+  --sw-accent: #ff3000;
+  --sw-border: #000000;
+  --sw-font: "Inter", "Inter Fallback", ui-sans-serif, system-ui, Helvetica, Arial, sans-serif;
+  --sw-mono: "JetBrains Mono", ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  --sw-ease: cubic-bezier(0, 0, 0.2, 1);
+  --sw-b: 2px;
+
   position: relative;
   min-height: 100vh;
-  color: var(--t-fg);
-  font-family: var(--t-sans);
+  background: var(--sw-bg);
+  color: var(--sw-fg);
+  font-family: var(--sw-font);
   font-size: 14px;
-  line-height: 1.55;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+.dash * {
+  box-sizing: border-box;
+}
+
+.dash ::selection {
+  background: var(--sw-accent);
+  color: #fff;
 }
 
 .dash :focus-visible {
-  outline: 2px solid var(--t-fg-2);
+  outline: 2px solid var(--sw-accent);
   outline-offset: 2px;
-  border-radius: 4px;
+  border-radius: 0;
 }
 
-/* Visually hidden, still announced. */
 .d-sr {
   position: absolute;
   width: 1px;
@@ -40,17 +74,17 @@
 
 /* ------------------------------------------------------------------- brand */
 
-.totem {
+.lh-mark {
   display: block;
   flex-shrink: 0;
 }
 
-.totem[data-spin] {
+.lh-mark[data-spin] {
   transform-origin: 50% 97%;
-  animation: totem-wobble 2.4s var(--t-ease) infinite;
+  animation: lh-wobble 2.4s var(--sw-ease) infinite;
 }
 
-@keyframes totem-wobble {
+@keyframes lh-wobble {
   0%,
   100% {
     transform: rotate(-6deg);
@@ -63,18 +97,17 @@
 .d-brand {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding-inline-end: 0.5rem;
-  margin-inline-end: 0.25rem;
-  border-inline-end: 1px solid var(--t-line);
+  gap: 0.6rem;
+  padding-inline-end: 0.9rem;
+  margin-inline-end: 0.5rem;
+  border-inline-end: var(--sw-b) solid var(--sw-border);
 }
 
 .d-brand-name {
-  font-size: 0.8rem;
-  font-weight: 600;
-  letter-spacing: 0.18em;
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--t-fg);
 }
 
 /* --------------------------------------------------------------- status bar */
@@ -86,26 +119,26 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.65rem 1.35rem;
-  padding: 0.75rem clamp(1rem, 3vw, 2rem);
-  background: var(--t-raised);
-  border-bottom: 1px solid var(--t-line);
+  gap: 0.7rem 1.5rem;
+  padding: 0.9rem clamp(1rem, 3vw, 2rem);
+  background: var(--sw-bg);
+  border-bottom: var(--sw-b) solid var(--sw-border);
 }
 
 .d-topbar-group {
   display: flex;
   align-items: center;
-  gap: 0.42rem;
-  font-family: var(--t-mono);
-  font-size: 0.68rem;
+  gap: 0.45rem;
+  font-family: var(--sw-mono);
+  font-size: 0.66rem;
   letter-spacing: 0.05em;
-  color: var(--t-fg-3);
+  color: rgba(0, 0, 0, 0.5);
   text-transform: uppercase;
 }
 
 .d-topbar-group strong {
-  font-weight: 500;
-  color: var(--t-fg-2);
+  font-weight: 700;
+  color: var(--sw-fg);
   text-transform: none;
   letter-spacing: 0.01em;
 }
@@ -114,39 +147,32 @@
   margin-inline-start: auto;
 }
 
+/* A live/idle status square rather than a soft glowing dot — pattern instead
+   of a second colour: live is solid, idle is hollow. */
 .d-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
+  width: 7px;
+  height: 7px;
   flex-shrink: 0;
-  background: var(--t-ok);
-  box-shadow: 0 0 0 3px var(--t-ok-tint);
+  background: var(--sw-fg);
 }
 
 .d-dot[data-tone="idle"] {
   background: transparent;
-  border: 1px solid var(--t-fg-4);
-  box-shadow: none;
+  border: 1.5px solid rgba(0, 0, 0, 0.35);
 }
 
 /* ------------------------------------------------------------ progress rail */
 
-/*
- * The five acts of the demo, always visible.
- *
- * Rendered from the `stepState` machine in App.tsx. A first-time viewer can see
- * the whole sequence and where they are in it before touching anything — a
- * console that only reveals the next step teaches nobody what the system does.
- */
 .d-rail {
   display: flex;
   align-items: center;
   list-style: none;
   margin: 0 auto;
-  padding: 0.85rem clamp(1rem, 3vw, 2rem) 0.2rem;
+  padding: 0.9rem clamp(1rem, 3vw, 2rem) 0;
   max-width: 96rem;
   overflow-x: auto;
   scrollbar-width: none;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.12);
 }
 
 .d-rail::-webkit-scrollbar {
@@ -154,72 +180,68 @@
 }
 
 .d-rail-step {
-  /* Positioned so the visually-hidden state span resolves against the step
-     rather than against `.dash`. Without this the absolutely-positioned spans
-     escape the rail's scroll container, and their static positions — which sit
-     past the viewport once the rail overflows — widen the whole document. */
   position: relative;
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.55rem;
   flex-shrink: 0;
+  padding-bottom: 0.9rem;
 }
 
 .d-rail-num {
   display: grid;
   place-items: center;
-  width: 21px;
-  height: 21px;
-  border-radius: 50%;
-  border: 1px solid var(--t-line-strong);
-  font-family: var(--t-mono);
+  width: 22px;
+  height: 22px;
+  border: 1.5px solid rgba(0, 0, 0, 0.25);
+  font-family: var(--sw-mono);
   font-size: 0.62rem;
-  color: var(--t-fg-3);
-  background: var(--t-raised-2);
-  transition: all var(--t-t) var(--t-ease);
+  font-weight: 700;
+  color: rgba(0, 0, 0, 0.4);
+  background: var(--sw-bg);
+  transition: all 150ms var(--sw-ease);
 }
 
 .d-rail-label {
-  font-family: var(--t-mono);
+  font-family: var(--sw-mono);
   font-size: 0.66rem;
-  letter-spacing: 0.08em;
+  font-weight: 600;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--t-fg-4);
+  color: rgba(0, 0, 0, 0.3);
   white-space: nowrap;
-  transition: color var(--t-t) var(--t-ease);
+  transition: color 150ms var(--sw-ease);
 }
 
 .d-rail-link {
   width: clamp(1rem, 3vw, 2.4rem);
   height: 1px;
-  background: var(--t-line);
-  margin-inline: 0.65rem;
+  background: rgba(0, 0, 0, 0.15);
+  margin-inline: 0.7rem;
   flex-shrink: 0;
 }
 
 .d-rail-step[data-state="done"] .d-rail-num {
-  background: var(--t-ok-tint);
-  border-color: var(--t-ok-line);
-  color: var(--t-ok);
+  background: var(--sw-fg);
+  border-color: var(--sw-fg);
+  color: var(--sw-bg);
 }
 
 .d-rail-step[data-state="done"] .d-rail-label {
-  color: var(--t-fg-2);
+  color: var(--sw-fg);
 }
 
-/* Ready: the one the viewer should act on. */
 .d-rail-step[data-state="ready"] .d-rail-num {
-  border-color: var(--t-fg-2);
-  color: var(--t-fg);
-  background: var(--t-raised-2);
+  border-color: var(--sw-accent);
+  color: var(--sw-accent);
 }
 
 .d-rail-step[data-state="ready"] .d-rail-label {
-  color: var(--t-fg);
+  color: var(--sw-fg);
 }
 
 .d-rail-step[data-state="blocked"] {
-  opacity: 0.4;
+  opacity: 0.35;
 }
 
 /* ----------------------------------------------------------------- columns */
@@ -227,24 +249,26 @@
 .d-main {
   display: grid;
   grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.3fr) minmax(0, 0.95fr);
-  gap: 0.9rem;
+  gap: 1px;
   align-items: start;
-  padding: 0.7rem clamp(1rem, 3vw, 2rem) 5rem;
+  padding: 0;
   max-width: 96rem;
   margin: 0 auto;
+  background: rgba(0, 0, 0, 0.12);
 }
 
 .d-col {
   display: grid;
-  gap: 0.9rem;
+  gap: 1px;
   min-width: 0;
+  background: rgba(0, 0, 0, 0.12);
+  align-content: start;
 }
 
 @media (max-width: 82rem) {
   .d-main {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
-  /* Evidence column drops beneath, spanning both, before going single-file. */
   .d-col:nth-child(3) {
     grid-column: 1 / -1;
   }
@@ -263,11 +287,9 @@
 
 .d-card {
   position: relative;
-  border-radius: var(--t-r);
-  padding: 1.05rem 1.1rem;
-  background: var(--t-raised);
-  box-shadow: var(--t-shadow-card);
-  animation: t-fade-up 260ms var(--t-ease) both;
+  padding: 1.3rem 1.3rem;
+  background: var(--sw-bg);
+  animation: sw-fade-up 220ms var(--sw-ease) both;
 }
 
 .d-card-head {
@@ -275,42 +297,42 @@
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  margin-bottom: 0.85rem;
-  padding-bottom: 0.65rem;
-  border-bottom: 1px solid var(--t-line);
+  margin-bottom: 1rem;
+  padding-bottom: 0.8rem;
+  border-bottom: var(--sw-b) solid var(--sw-border);
 }
 
 .d-card-title {
-  font-family: var(--t-mono);
-  font-size: 0.67rem;
-  font-weight: 500;
-  letter-spacing: 0.13em;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   margin: 0;
-  color: var(--t-fg-3);
 }
 
 .d-label {
   display: block;
-  font-family: var(--t-mono);
-  font-size: 0.61rem;
-  letter-spacing: 0.12em;
+  font-family: var(--sw-mono);
+  font-size: 0.6rem;
+  font-weight: 500;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--t-fg-4);
+  color: rgba(0, 0, 0, 0.45);
 }
 
 .d-value {
   display: block;
   font-size: 0.86rem;
-  color: var(--t-fg);
+  font-weight: 500;
+  color: var(--sw-fg);
   word-break: break-word;
 }
 
 .d-field {
   display: grid;
-  gap: 0.16rem;
-  padding: 0.48rem 0;
-  border-bottom: 1px solid var(--t-line);
+  gap: 0.22rem;
+  padding: 0.55rem 0;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
 }
 
 .d-field:last-child {
@@ -319,22 +341,30 @@
 
 .d-caption {
   font-size: 0.75rem;
-  color: var(--t-fg-3);
+  color: rgba(0, 0, 0, 0.55);
   margin: 0.5rem 0 0;
 }
 
 .d-muted {
-  color: var(--t-fg-4);
+  color: rgba(0, 0, 0, 0.35);
 }
 
 .d-mono {
-  font-family: var(--t-mono);
+  font-family: var(--sw-mono);
   font-size: 0.76rem;
 }
 
-/* Encrypted values are violet — a substance, not a status. */
+/* Encrypted values: monospace on a muted chip, never a colour — a substance,
+   not a status. */
 .d-cipher {
-  color: var(--t-cipher);
+  font-family: var(--sw-mono);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  padding: 0.12rem 0.4rem;
+  background: var(--sw-muted);
+  color: rgba(0, 0, 0, 0.6);
 }
 
 /* ---------------------------------------------------------------- copyable */
@@ -342,41 +372,43 @@
 .d-copyable {
   display: inline-flex;
   align-items: center;
-  gap: 0.42rem;
+  gap: 0.5rem;
   min-width: 0;
 }
 
 .d-copyable a {
-  color: var(--t-fg);
+  color: var(--sw-fg);
   text-decoration: none;
-  border-bottom: 1px solid var(--t-line-strong);
+  border-bottom: 1.5px solid rgba(0, 0, 0, 0.3);
   overflow: hidden;
   text-overflow: ellipsis;
-  transition: border-color var(--t-t) var(--t-ease);
+  transition: border-color 150ms var(--sw-ease);
 }
 
 .d-copyable a:hover {
-  border-bottom-color: var(--t-fg);
+  border-bottom-color: var(--sw-accent);
+  color: var(--sw-accent);
 }
 
 .d-copy-btn {
-  font-family: var(--t-mono);
+  font-family: var(--sw-mono);
   font-size: 0.56rem;
-  letter-spacing: 0.09em;
+  font-weight: 700;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--t-fg-4);
-  background: var(--t-raised-2);
-  border: 1px solid var(--t-line);
-  border-radius: 4px;
-  padding: 0.1rem 0.34rem;
+  color: rgba(0, 0, 0, 0.5);
+  background: var(--sw-bg);
+  border: 1.5px solid rgba(0, 0, 0, 0.3);
+  padding: 0.12rem 0.4rem;
   cursor: pointer;
-  transition: all var(--t-t) var(--t-ease);
+  transition: all 150ms var(--sw-ease);
   flex-shrink: 0;
 }
 
 .d-copy-btn:hover {
-  color: var(--t-fg);
-  border-color: var(--t-line-strong);
+  color: #fff;
+  background: var(--sw-fg);
+  border-color: var(--sw-fg);
 }
 
 /* -------------------------------------------------------------------- ring */
@@ -386,7 +418,7 @@
   display: grid;
   place-items: center;
   justify-self: center;
-  margin: 0.4rem 0 0.55rem;
+  margin: 0.5rem 0 0.6rem;
 }
 
 .d-ring svg {
@@ -400,13 +432,13 @@
 }
 
 .d-ring-track {
-  stroke: var(--t-line);
+  stroke: rgba(0, 0, 0, 0.12);
 }
 
 .d-ring-value {
-  stroke: var(--t-ok);
-  stroke-linecap: round;
-  transition: stroke-dashoffset 600ms var(--t-ease);
+  stroke: var(--sw-fg);
+  stroke-linecap: butt;
+  transition: stroke-dashoffset 500ms var(--sw-ease);
 }
 
 .d-ring-centre {
@@ -417,90 +449,90 @@
 }
 
 .d-ring-figure {
-  font-size: 1.45rem;
+  font-size: 1.5rem;
+  font-weight: 800;
   font-variant-numeric: tabular-nums;
-  letter-spacing: -0.03em;
-  color: var(--t-fg);
+  letter-spacing: -0.02em;
 }
 
 .d-ring-unit {
-  font-family: var(--t-mono);
-  font-size: 0.55rem;
-  letter-spacing: 0.13em;
+  font-family: var(--sw-mono);
+  font-size: 0.54rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--t-fg-4);
+  color: rgba(0, 0, 0, 0.4);
 }
 
 /* ----------------------------------------------------------------- buttons */
 
 .d-btn {
-  font: inherit;
-  font-size: 0.8rem;
-  font-weight: 550;
-  padding: 0.55rem 0.9rem;
-  border-radius: var(--t-r-sm);
+  font-family: var(--sw-font);
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  padding: 0.65rem 1rem;
   cursor: pointer;
-  border: none;
-  background: var(--t-fg);
-  color: #17181a;
-  box-shadow: var(--t-shadow-btn);
-  transition: all var(--t-t) var(--t-ease);
+  border: var(--sw-b) solid var(--sw-fg);
+  background: var(--sw-fg);
+  color: var(--sw-bg);
+  text-transform: uppercase;
+  transition: background 150ms linear, color 150ms linear, border-color 150ms linear;
 }
 
 .d-btn:hover:not(:disabled) {
-  background: #fff;
+  background: var(--sw-accent);
+  border-color: var(--sw-accent);
+  color: #fff;
 }
 
 .d-btn[data-kind="outline"] {
-  background: var(--t-raised-2);
-  color: var(--t-fg);
+  background: var(--sw-bg);
+  color: var(--sw-fg);
 }
 
 .d-btn[data-kind="outline"]:hover:not(:disabled) {
-  background: #292c31;
+  background: var(--sw-fg);
+  border-color: var(--sw-fg);
+  color: var(--sw-bg);
 }
 
 .d-btn[data-kind="ghost"] {
   background: transparent;
-  color: var(--t-fg-3);
-  box-shadow: none;
+  color: rgba(0, 0, 0, 0.55);
+  border-color: transparent;
 }
 
 .d-btn[data-kind="ghost"]:hover:not(:disabled) {
-  color: var(--t-fg);
-  background: var(--t-raised-2);
+  color: var(--sw-fg);
+  background: var(--sw-muted);
+  border-color: transparent;
 }
 
 .d-btn:disabled {
   cursor: not-allowed;
-  opacity: 0.35;
+  opacity: 0.32;
 }
 
 .d-controls {
   display: grid;
-  gap: 0.45rem;
+  gap: 0.5rem;
 }
 
-/*
- * Why a control is unavailable, stated rather than implied.
- *
- * A greyed button with no explanation makes the viewer hunt for the
- * precondition; on a three-minute demo clock that hunt is the whole slot.
- */
 .d-hint {
   display: flex;
   align-items: baseline;
   gap: 0.4rem;
-  font-family: var(--t-mono);
-  font-size: 0.65rem;
-  color: var(--t-wait);
-  margin: 0.2rem 0 0;
-  animation: t-fade-in 200ms var(--t-ease) both;
+  font-family: var(--sw-mono);
+  font-size: 0.66rem;
+  font-weight: 600;
+  color: var(--sw-accent);
+  margin: 0.25rem 0 0;
+  animation: sw-fade-in 150ms var(--sw-ease) both;
 }
 
 .d-hint::before {
   content: "→";
-  opacity: 0.75;
 }
 
 /* ---------------------------------------------------------------- timeline */
@@ -514,137 +546,139 @@
 .d-tl-item {
   position: relative;
   display: grid;
-  grid-template-columns: 1.5rem minmax(0, 1fr) auto auto;
+  grid-template-columns: 1.4rem minmax(0, 1fr) auto auto;
   align-items: baseline;
-  gap: 0.5rem;
-  padding: 0.5rem 0;
-  color: var(--t-fg-4);
-  transition: color var(--t-t) var(--t-ease);
+  gap: 0.55rem;
+  padding: 0.55rem 0;
+  color: rgba(0, 0, 0, 0.32);
+  transition: color 150ms var(--sw-ease);
 }
 
 .d-tl-marker {
   grid-column: 1;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  border: 1px solid var(--t-fg-4);
+  width: 9px;
+  height: 9px;
+  border: 1.5px solid rgba(0, 0, 0, 0.3);
   margin-inline-start: 1px;
   transform: translateY(-1px);
-  transition: all var(--t-t) var(--t-ease);
+  transition: all 150ms var(--sw-ease);
 }
 
-/* The rail. Stops before the last row so it does not dangle. */
 .d-tl-item:not(:last-child)::after {
   content: "";
   position: absolute;
-  inset-inline-start: 4.5px;
-  top: calc(0.5rem + 9px);
-  height: calc(100% - 9px);
+  inset-inline-start: 5px;
+  top: calc(0.55rem + 10px);
+  height: calc(100% - 10px);
   width: 1px;
-  background: var(--t-line);
+  background: rgba(0, 0, 0, 0.12);
 }
 
 .d-tl-label {
   font-size: 0.82rem;
+  font-weight: 500;
 }
 
 .d-tl-detail {
-  font-family: var(--t-mono);
-  font-size: 0.66rem;
-  color: var(--t-fg-4);
+  font-family: var(--sw-mono);
+  font-size: 0.64rem;
+  color: rgba(0, 0, 0, 0.4);
 }
 
 .d-tl-time {
-  font-family: var(--t-mono);
-  font-size: 0.66rem;
-  color: var(--t-fg-4);
+  font-family: var(--sw-mono);
+  font-size: 0.64rem;
+  color: rgba(0, 0, 0, 0.4);
   font-variant-numeric: tabular-nums;
   text-align: right;
   min-width: 3rem;
 }
 
-/* Done — reached. Rows resolve the way streamed text arrives. */
+/* Done — solid black. Certainty needs no colour. */
 .d-tl-item[data-status="done"] {
-  color: var(--t-fg);
-  animation: t-stream-in 320ms var(--t-ease) both;
+  color: var(--sw-fg);
 }
 .d-tl-item[data-status="done"] .d-tl-marker {
-  background: var(--t-ok);
-  border-color: var(--t-ok);
+  background: var(--sw-fg);
+  border-color: var(--sw-fg);
 }
 .d-tl-item[data-status="done"] .d-tl-detail {
-  color: var(--t-ok);
+  color: var(--sw-fg);
+  font-weight: 700;
 }
 .d-tl-item[data-status="done"]:not(:last-child)::after {
-  background: var(--t-ok-line);
+  background: var(--sw-fg);
 }
 
-/* Active — committed, not yet knowable. The one moment of real suspense, so
-   it is the only row carrying an indeterminate loader. */
+/* Active — committed, not yet knowable. Diagonal stripes stand in for a third
+   colour: pattern encodes "in flight" the way the brief's own sidebar texture
+   encodes "supplementary". */
 .d-tl-item[data-status="active"] {
-  color: var(--t-fg);
+  color: var(--sw-fg);
 }
 .d-tl-item[data-status="active"] .d-tl-marker {
-  border-color: var(--t-wait);
-  background: var(--t-wait-tint);
+  border-color: var(--sw-fg);
+  background-image: repeating-linear-gradient(
+    45deg,
+    var(--sw-fg) 0 2px,
+    transparent 2px 4px
+  );
 }
 .d-tl-item[data-status="active"] .d-tl-label {
   background: linear-gradient(
     90deg,
-    var(--t-fg-3) 0%,
-    var(--t-fg-3) 35%,
-    var(--t-fg) 50%,
-    var(--t-fg-3) 65%,
-    var(--t-fg-3) 100%
+    rgba(0, 0, 0, 0.35) 0%,
+    rgba(0, 0, 0, 0.35) 35%,
+    var(--sw-fg) 50%,
+    rgba(0, 0, 0, 0.35) 65%,
+    rgba(0, 0, 0, 0.35) 100%
   );
   background-size: 220% auto;
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  animation: t-shimmer 2.4s linear infinite;
+  animation: sw-shimmer 1.6s linear infinite;
 }
 
-/* Skipped reads as deliberately-not-run, distinct from still-pending. */
+/* Skipped — deliberately not run. */
 .d-tl-item[data-status="skipped"] {
-  color: var(--t-fg-4);
-  opacity: 0.55;
+  color: rgba(0, 0, 0, 0.28);
+  opacity: 0.7;
 }
 .d-tl-item[data-status="skipped"] .d-tl-label {
   text-decoration: line-through;
-  text-decoration-color: var(--t-line-strong);
+  text-decoration-color: rgba(0, 0, 0, 0.3);
 }
 
-/* Failed — refused. */
+/* Failed — refused. The one state that earns the accent. */
 .d-tl-item[data-status="failed"] {
-  color: var(--t-no);
-  animation: t-pop-in 240ms var(--t-ease) both;
+  color: var(--sw-accent);
 }
 .d-tl-item[data-status="failed"] .d-tl-marker {
-  border-color: var(--t-no);
-  background: var(--t-no);
+  border-color: var(--sw-accent);
+  background: var(--sw-accent);
 }
 .d-tl-item[data-status="failed"] .d-tl-detail {
-  color: var(--t-no);
+  color: var(--sw-accent);
+  font-weight: 700;
 }
 
-/* Before a run: the whole nine-stage shape, dimmed. */
 .d-timeline[data-idle] .d-tl-item {
   opacity: 0.4;
 }
 
 .d-tl-legend {
-  margin: 0.85rem 0 0;
-  padding-top: 0.7rem;
-  border-top: 1px solid var(--t-line);
+  margin: 0.9rem 0 0;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(0, 0, 0, 0.12);
   font-size: 0.75rem;
-  color: var(--t-fg-3);
+  color: rgba(0, 0, 0, 0.5);
 }
 
-/* The pixel grid sits in the time column, so it must not stretch the row. */
 .d-tl-time .t-pixels {
   justify-content: flex-end;
   margin-inline-start: auto;
-  color: var(--t-wait);
+  color: var(--sw-fg);
 }
 
 .d-btn-busy {
@@ -654,81 +688,77 @@
 }
 
 .d-spin {
-  animation: t-spin 750ms linear infinite;
+  animation: sw-spin 750ms linear infinite;
 }
 
-/* The running indicator in the card header. */
 .d-running {
   display: inline-flex;
   align-items: center;
-  gap: 0.45rem;
-  font-family: var(--t-mono);
-  font-size: 0.65rem;
+  gap: 0.5rem;
+  font-family: var(--sw-mono);
+  font-size: 0.64rem;
+  font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--t-wait);
+  color: var(--sw-accent);
 }
 
 /* ----------------------------------------------------------------- outcome */
 
-/*
- * The verdict, stated in full.
- *
- * The bounce is the entire point of the demo and it used to render as a
- * four-letter caption. Tone drives colour; the body says what happened to the
- * money, because that is the question every viewer actually has.
- */
 .d-outcome {
   display: grid;
-  gap: 0.28rem;
-  padding: 0.85rem 0.95rem 0.9rem 1.05rem;
-  margin-bottom: 0.9rem;
-  border-radius: var(--t-r-sm);
-  border-inline-start: 3px solid var(--t-fg-3);
-  background: var(--t-raised-2);
-  animation: t-pop-in 260ms var(--t-ease) both;
+  gap: 0.32rem;
+  padding: 1rem 1.1rem;
+  margin-bottom: 1rem;
+  border: var(--sw-b) solid var(--sw-border);
+  background: var(--sw-bg);
+  animation: sw-pop-in 200ms var(--sw-ease) both;
 }
 
 .d-outcome-head {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  font-family: var(--t-mono);
-  font-size: 0.67rem;
-  letter-spacing: 0.13em;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
 .d-outcome-body {
   margin: 0;
-  font-size: 0.83rem;
-  color: var(--t-fg-2);
-  animation: t-stream-in 400ms var(--t-ease) both;
-  animation-delay: 120ms;
+  font-size: 0.85rem;
+  line-height: 1.55;
+  color: rgba(0, 0, 0, 0.6);
 }
 
 .d-outcome[data-tone="ok"] {
-  border-inline-start-color: var(--t-ok);
-  background: var(--t-ok-tint);
+  background: var(--sw-fg);
 }
-.d-outcome[data-tone="ok"] .d-outcome-head {
-  color: var(--t-ok);
+.d-outcome[data-tone="ok"] .d-outcome-head,
+.d-outcome[data-tone="ok"] .d-outcome-body {
+  color: var(--sw-bg);
+}
+.d-outcome[data-tone="ok"] .d-outcome-body {
+  color: rgba(255, 255, 255, 0.75);
 }
 
 .d-outcome[data-tone="no"] {
-  border-inline-start-color: var(--t-no);
-  background: var(--t-no-tint);
+  border-color: var(--sw-accent);
 }
 .d-outcome[data-tone="no"] .d-outcome-head {
-  color: var(--t-no);
+  color: var(--sw-accent);
 }
 
 .d-outcome[data-tone="wait"] {
-  border-inline-start-color: var(--t-wait);
-  background: var(--t-wait-tint);
+  background-image: repeating-linear-gradient(
+    45deg,
+    rgba(0, 0, 0, 0.06) 0 1px,
+    transparent 1px 9px
+  );
 }
 .d-outcome[data-tone="wait"] .d-outcome-head {
-  color: var(--t-wait);
+  color: var(--sw-fg);
 }
 
 /* ------------------------------------------------------------------- split */
@@ -736,51 +766,54 @@
 .d-split {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 0.7rem;
+  gap: 1px;
+  background: rgba(0, 0, 0, 0.12);
 }
 
 .d-split-pane {
   display: grid;
-  gap: 0.38rem;
+  gap: 0.42rem;
   min-width: 0;
-  animation: t-fade-up 280ms var(--t-ease) both;
+  padding: 0.9rem;
+  background: var(--sw-bg);
+  animation: sw-fade-up 240ms var(--sw-ease) both;
 }
 
 .d-split-pane:nth-child(2) {
-  animation-delay: 80ms;
+  animation-delay: 60ms;
 }
 
 .d-code {
-  font-family: var(--t-mono);
+  font-family: var(--sw-mono);
   font-size: 0.68rem;
   line-height: 1.6;
   margin: 0;
-  padding: 0.65rem 0.75rem;
-  border: 1px solid var(--t-line);
-  border-radius: var(--t-r-sm);
-  background: var(--t-inset);
-  color: var(--t-fg-2);
+  padding: 0.7rem 0.8rem;
+  border: 1.5px solid rgba(0, 0, 0, 0.18);
+  background: var(--sw-muted);
+  color: rgba(0, 0, 0, 0.7);
   max-height: 12rem;
   overflow: auto;
   white-space: pre-wrap;
   word-break: break-word;
-  box-shadow: var(--t-shadow-inset);
 }
 
-/* The structured pane is what the policy acts on; the hostile pane is what the
-   attacker writes. Two colours, one distinction — the page's whole argument. */
+/* The structured pane is what the policy acts on; the hostile pane is what
+   the attacker writes. Black versus red is the page's whole argument. */
 .d-split-pane[data-tone="safe"] .d-code {
-  border-inline-start: 2px solid var(--t-ok-line);
+  border-inline-start: 3px solid var(--sw-fg);
 }
 .d-split-pane[data-tone="safe"] .d-label {
-  color: var(--t-ok);
+  color: var(--sw-fg);
+  font-weight: 700;
 }
 
 .d-split-pane[data-tone="hostile"] .d-code {
-  border-inline-start: 2px solid var(--t-no-line);
+  border-inline-start: 3px solid var(--sw-accent);
 }
 .d-split-pane[data-tone="hostile"] .d-label {
-  color: var(--t-no);
+  color: var(--sw-accent);
+  font-weight: 700;
 }
 
 @media (min-width: 60rem) {
@@ -798,32 +831,30 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1px;
-  background: var(--t-line);
-  border: 1px solid var(--t-line);
-  border-radius: var(--t-r-sm);
-  overflow: hidden;
+  background: rgba(0, 0, 0, 0.12);
+  border: 1.5px solid rgba(0, 0, 0, 0.18);
 }
 
 .d-guarantee {
-  background: var(--t-raised);
-  padding: 0.7rem 0.75rem;
+  background: var(--sw-bg);
+  padding: 0.8rem 0.85rem;
   display: grid;
-  gap: 0.1rem;
-  transition: background-color var(--t-t) var(--t-ease);
+  gap: 0.15rem;
+  transition: background 150ms var(--sw-ease);
 }
 
 .d-guarantee:hover {
-  background: var(--t-raised-2);
+  background: var(--sw-muted);
 }
 
 .d-guarantee-title {
-  font-size: 0.77rem;
-  color: var(--t-fg);
+  font-size: 0.78rem;
+  font-weight: 700;
 }
 
 .d-guarantee .d-caption {
   margin: 0;
-  font-size: 0.69rem;
+  font-size: 0.68rem;
 }
 
 @media (max-width: 34rem) {
@@ -854,72 +885,70 @@
 }
 
 .d-drawer-body {
-  margin-top: 0.85rem;
-  padding-top: 0.3rem;
-  border-top: 1px solid var(--t-line);
-  animation: t-fade-up 220ms var(--t-ease) both;
+  margin-top: 1rem;
+  padding-top: 0.4rem;
+  border-top: 1px solid rgba(0, 0, 0, 0.12);
+  animation: sw-fade-up 180ms var(--sw-ease) both;
 }
 
 /* ----------------------------------------------------------------- notices */
 
 .d-notice {
   font-size: 0.79rem;
-  padding: 0.58rem 0.72rem;
-  border-radius: var(--t-r-sm);
-  border: 1px solid var(--t-wait-line);
-  background: var(--t-wait-tint);
-  color: var(--t-fg-2);
-  margin: 0 0 0.7rem;
-  animation: t-fade-up 240ms var(--t-ease) both;
+  font-weight: 500;
+  padding: 0.65rem 0.8rem;
+  border: 1.5px solid var(--sw-fg);
+  background: var(--sw-muted);
+  color: var(--sw-fg);
+  margin: 0 0 0.75rem;
+  animation: sw-fade-up 200ms var(--sw-ease) both;
 }
 
 .d-notice a {
-  color: var(--t-wait);
+  color: var(--sw-fg);
+  text-decoration: underline;
+  text-decoration-color: rgba(0, 0, 0, 0.4);
 }
 
 .d-notice[data-tone="error"] {
-  border-color: var(--t-no-line);
-  background: var(--t-no-tint);
+  border-color: var(--sw-accent);
+  background: #fff;
+  color: var(--sw-accent);
+}
+
+.d-notice[data-tone="error"] a {
+  color: var(--sw-accent);
 }
 
 .d-setup {
   display: grid;
-  gap: 0.5rem;
+  gap: 0.55rem;
 }
 
 .d-input {
   font: inherit;
-  font-family: var(--t-mono);
-  font-size: 0.77rem;
-  padding: 0.48rem 0.58rem;
+  font-family: var(--sw-mono);
+  font-size: 0.78rem;
+  padding: 0.55rem 0.65rem;
   width: 100%;
-  background: var(--t-inset);
-  color: var(--t-fg);
-  border: 1px solid var(--t-line-strong);
-  border-radius: var(--t-r-sm);
-  box-shadow: var(--t-shadow-inset);
-  transition: border-color var(--t-t) var(--t-ease);
+  background: var(--sw-bg);
+  color: var(--sw-fg);
+  border: 1.5px solid rgba(0, 0, 0, 0.35);
+  transition: border-color 150ms var(--sw-ease);
 }
 
 .d-input:focus {
-  border-color: var(--t-fg-3);
+  border-color: var(--sw-accent);
   outline: none;
 }
 
 .d-inline {
   display: flex;
-  gap: 0.45rem;
+  gap: 0.5rem;
   align-items: center;
 }
 
 /* ------------------------------------------------------------- goal picker */
-
-/*
- * Interaction adapted from the Beautiful UI prompt bar. The one detail carried
- * over deliberately is `.gp-glide`: a single highlight that animates its `top`
- * to the active row, rather than each row toggling its own background. The
- * first reads as a cursor moving down a list; the second reads as blinking.
- */
 
 .gp {
   position: relative;
@@ -928,51 +957,50 @@
 .gp-field {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 0.6rem;
-  border: 1px solid var(--t-line-strong);
-  border-radius: var(--t-r-sm);
-  background: var(--t-inset);
-  box-shadow: var(--t-shadow-inset);
-  transition: border-color var(--t-t) var(--t-ease);
+  gap: 0.55rem;
+  padding: 0.6rem 0.7rem;
+  border: 1.5px solid rgba(0, 0, 0, 0.35);
+  background: var(--sw-bg);
+  transition: border-color 150ms var(--sw-ease);
 }
 
 .gp-field[data-open],
 .gp-field:focus-within {
-  border-color: var(--t-fg-3);
+  border-color: var(--sw-fg);
 }
 
 .gp-icon {
-  color: var(--t-fg-4);
+  color: rgba(0, 0, 0, 0.4);
   flex-shrink: 0;
 }
 
 .gp-input {
   font: inherit;
-  font-size: 0.82rem;
+  font-size: 0.83rem;
   flex: 1;
   min-width: 0;
   border: none;
   outline: none;
   background: transparent;
-  color: var(--t-fg);
+  color: var(--sw-fg);
 }
 
 .gp-input::placeholder {
-  color: var(--t-fg-3);
+  color: rgba(0, 0, 0, 0.35);
 }
 
 .gp-price {
-  font-family: var(--t-mono);
+  font-family: var(--sw-mono);
   font-size: 0.68rem;
-  color: var(--t-fg-3);
+  font-weight: 700;
+  color: rgba(0, 0, 0, 0.5);
   white-space: nowrap;
 }
 
 .gp-chevron {
-  color: var(--t-fg-4);
+  color: rgba(0, 0, 0, 0.4);
   flex-shrink: 0;
-  transition: transform var(--t-t) var(--t-ease);
+  transition: transform 150ms var(--sw-ease);
 }
 
 .gp-chevron[data-open] {
@@ -982,27 +1010,26 @@
 .gp-menu {
   position: absolute;
   inset-inline: 0;
-  top: calc(100% + 0.4rem);
+  top: calc(100% + 2px);
   z-index: 15;
-  padding: 0.25rem;
-  border-radius: var(--t-r);
-  background: var(--t-raised-2);
-  box-shadow: var(--t-shadow-raised), 0 12px 32px rgba(0, 0, 0, 0.5);
-  animation: t-pop-in 170ms var(--t-ease) both;
+  padding: 0;
+  background: var(--sw-bg);
+  border: var(--sw-b) solid var(--sw-fg);
+  animation: sw-pop-in 130ms var(--sw-ease) both;
   transform-origin: top center;
 }
 
-/* The gliding highlight. Sits under the rows; only `top`/`height` animate. */
+/* The gliding highlight — kept from the original interaction, restyled as a
+   flat black-outline cursor rather than a soft translucent wash. */
 .gp-glide {
   position: absolute;
-  inset-inline: 0.25rem;
-  border-radius: var(--t-r-sm);
-  background: rgba(255, 255, 255, 0.06);
+  inset-inline: 2px;
+  border: 1.5px solid var(--sw-fg);
   pointer-events: none;
   transition:
-    top 200ms var(--t-ease),
-    height 200ms var(--t-ease),
-    opacity 140ms ease;
+    top 180ms var(--sw-ease),
+    height 180ms var(--sw-ease),
+    opacity 120ms ease;
 }
 
 .gp-row {
@@ -1010,11 +1037,11 @@
   z-index: 1;
   display: flex;
   align-items: center;
-  gap: 0.6rem;
+  gap: 0.65rem;
   width: 100%;
-  padding: 0.5rem 0.55rem;
+  padding: 0.65rem 0.75rem;
   border: none;
-  border-radius: var(--t-r-sm);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
   background: transparent;
   color: inherit;
   font: inherit;
@@ -1023,109 +1050,105 @@
 }
 
 .gp-row-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
+  width: 8px;
+  height: 8px;
   flex-shrink: 0;
-  background: var(--t-ok);
+  background: var(--sw-fg);
 }
 
-.gp-row[data-kind="malicious"] .gp-row-dot {
-  background: var(--t-no);
+.gp-row[data-kind="malicious"] .gp-row-dot,
+.gp-row[data-kind="overcharge"] .gp-row-dot {
+  background: var(--sw-accent);
 }
 
 .gp-row-text {
   display: grid;
-  gap: 0.05rem;
+  gap: 0.08rem;
   min-width: 0;
   flex: 1;
 }
 
 .gp-row-name {
-  font-size: 0.82rem;
-  color: var(--t-fg);
+  font-size: 0.83rem;
+  font-weight: 600;
 }
 
 .gp-row-blurb {
   font-size: 0.72rem;
-  color: var(--t-fg-3);
+  color: rgba(0, 0, 0, 0.45);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .gp-row-price {
-  font-family: var(--t-mono);
+  font-family: var(--sw-mono);
   font-size: 0.72rem;
-  color: var(--t-fg-2);
+  font-weight: 700;
+  color: var(--sw-fg);
   font-variant-numeric: tabular-nums;
   flex-shrink: 0;
 }
 
 .gp-row-tag {
-  font-family: var(--t-mono);
+  font-family: var(--sw-mono);
   font-size: 0.6rem;
-  letter-spacing: 0.08em;
+  font-weight: 700;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--t-fg-4);
+  color: rgba(0, 0, 0, 0.4);
   flex-shrink: 0;
   min-width: 5.5rem;
   text-align: right;
 }
 
-.gp-row[data-kind="malicious"] .gp-row-tag {
-  color: var(--t-no);
+.gp-row[data-kind="malicious"] .gp-row-tag,
+.gp-row[data-kind="overcharge"] .gp-row-tag {
+  color: var(--sw-accent);
 }
 
 .gp-empty,
 .gp-foot {
   margin: 0;
-  padding: 0.5rem 0.55rem;
+  padding: 0.6rem 0.75rem;
   font-size: 0.71rem;
-  color: var(--t-fg-4);
+  color: rgba(0, 0, 0, 0.45);
 }
 
 .gp-foot {
-  border-top: 1px solid var(--t-line);
-  margin-top: 0.25rem;
+  border-top: 1px solid rgba(0, 0, 0, 0.12);
 }
 
 /* --------------------------------------------------------------- model input */
 
-/*
- * The vendor's text drawn as a selection, with a pill bar anchored beneath its
- * last line. Adapted from the Beautiful UI selection-actions pattern.
- *
- * `box-decoration-clone` is what makes the highlight read as one continuous
- * selection across wrapped lines instead of as a stack of separate boxes with
- * rounded ends mid-sentence.
- */
-
 .mi-host {
   position: relative;
-  padding-bottom: 3.25rem;
+  padding-bottom: 3.5rem;
+  -webkit-user-select: none;
   user-select: none;
 }
 
 .mi-prose {
   margin: 0;
-  font-size: 0.86rem;
+  font-size: 0.87rem;
   line-height: 1.75;
-  color: var(--t-fg-2);
+  color: rgba(0, 0, 0, 0.65);
 }
 
 .mi-lead {
-  color: var(--t-fg-4);
+  color: rgba(0, 0, 0, 0.4);
 }
 
+/* The attacker's text, drawn as a selection in the accent — the one place a
+   coloured highlight is earned: this is the exact span the model reads. */
 .mi-selection {
   -webkit-box-decoration-break: clone;
   box-decoration-break: clone;
-  border-radius: 3px;
-  padding: 0.1em 0.15em;
-  background: var(--t-no-tint);
-  box-shadow: inset 0 0 0 1px var(--t-no-line);
-  color: var(--t-fg);
+  padding: 0.1em 0.2em;
+  background: rgba(255, 48, 0, 0.12);
+  box-shadow: inset 0 0 0 1.5px var(--sw-accent);
+  color: var(--sw-fg);
+  font-weight: 600;
 }
 
 .mi-anchor {
@@ -1134,34 +1157,33 @@
   left: 0;
   z-index: 5;
   transition:
-    transform 320ms cubic-bezier(0.77, 0, 0.175, 1),
-    opacity 180ms ease-out;
+    transform 260ms var(--sw-ease),
+    opacity 150ms ease-out;
   will-change: transform;
 }
 
 .mi-bar {
   display: flex;
   align-items: center;
-  gap: 0.3rem;
-  height: 2rem;
+  gap: 0.35rem;
+  height: 2.1rem;
   width: max-content;
   max-width: calc(100vw - 3rem);
-  padding: 0.25rem 0.3rem;
+  padding: 0.25rem 0.35rem;
   overflow: hidden;
-  border-radius: 999px;
-  background: var(--t-raised-2);
-  box-shadow: var(--t-shadow-raised), 0 8px 22px rgba(0, 0, 0, 0.45);
-  animation: t-pop-in 220ms var(--t-ease) both;
+  background: var(--sw-fg);
+  animation: sw-pop-in 180ms var(--sw-ease) both;
 }
 
 .mi-busy {
   display: inline-flex;
   align-items: center;
-  gap: 0.45rem;
-  padding: 0 0.55rem;
+  gap: 0.5rem;
+  padding: 0 0.6rem;
   white-space: nowrap;
   font-size: 0.75rem;
-  color: var(--t-fg-2);
+  font-weight: 600;
+  color: var(--sw-bg);
 }
 
 .mi-spinner {
@@ -1169,60 +1191,63 @@
   height: 11px;
   flex-shrink: 0;
   border-radius: 50%;
-  border: 1.5px solid var(--t-line-strong);
-  border-top-color: var(--t-fg-2);
-  animation: t-spin 700ms linear infinite;
+  border: 1.5px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #fff;
+  animation: sw-spin 700ms linear infinite;
 }
 
 .mi-verdict {
-  padding: 0 0.2rem 0 0.55rem;
+  padding: 0 0.25rem 0 0.6rem;
   font-size: 0.75rem;
+  font-weight: 700;
   white-space: nowrap;
-  color: var(--t-fg);
+  color: var(--sw-bg);
 }
 
-/* Complied is the interesting outcome, and it is not a success. */
+/* Complied is the interesting outcome, and it is not a success — flagged in
+   the accent even though it sits on the inverted black bar. */
 .mi-verdict[data-complied] {
-  color: var(--t-no);
+  color: #ff6a45;
 }
 
 .mi-source {
-  font-family: var(--t-mono);
+  font-family: var(--sw-mono);
   font-size: 0.6rem;
-  letter-spacing: 0.08em;
+  font-weight: 600;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--t-fg-4);
+  color: rgba(255, 255, 255, 0.55);
   white-space: nowrap;
 }
 
 .mi-sep {
   width: 1px;
-  height: 0.9rem;
+  height: 1rem;
   flex-shrink: 0;
-  background: var(--t-line);
-  margin-inline: 0.15rem;
+  background: rgba(255, 255, 255, 0.25);
+  margin-inline: 0.2rem;
 }
 
 .mi-toggle {
   display: inline-flex;
   align-items: center;
-  gap: 0.3rem;
-  height: 1.55rem;
-  padding: 0 0.6rem;
+  gap: 0.35rem;
+  height: 1.6rem;
+  padding: 0 0.65rem;
   border: none;
-  border-radius: 999px;
   background: transparent;
-  color: var(--t-fg-2);
+  color: rgba(255, 255, 255, 0.75);
   font: inherit;
   font-size: 0.73rem;
+  font-weight: 600;
   white-space: nowrap;
   cursor: pointer;
-  transition: all var(--t-t) var(--t-ease);
+  transition: all 150ms var(--sw-ease);
 }
 
 .mi-toggle:hover {
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--t-fg);
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
 }
 
 .mi-toggle:active {
@@ -1231,62 +1256,118 @@
 
 .mi-structured {
   display: grid;
-  gap: 0.35rem;
-  margin-top: 0.2rem;
-  animation: t-fade-up 240ms var(--t-ease) both;
+  gap: 0.4rem;
+  margin-top: 0.3rem;
+  animation: sw-fade-up 200ms var(--sw-ease) both;
 }
 
 .mi-structured .d-label {
-  color: var(--t-ok);
+  color: var(--sw-fg);
+  font-weight: 700;
 }
 
 .mi-structured .d-code {
-  border-inline-start: 2px solid var(--t-ok-line);
+  border-inline-start: 3px solid var(--sw-fg);
 }
 
 /* -------------------------------------------------------------- budget input */
 
 .d-budget {
-  padding: 0.7rem 0.75rem;
-  border-radius: var(--t-r-sm);
-  background: var(--t-raised-2);
-  box-shadow: var(--t-ring);
+  padding: 0.8rem 0.85rem;
+  background: var(--sw-muted);
 }
 
 .d-budget .d-caption {
-  margin-top: 0.5rem;
+  margin-top: 0.55rem;
 }
 
 .d-budget-unit {
-  font-family: var(--t-mono);
+  font-family: var(--sw-mono);
   font-size: 0.7rem;
-  color: var(--t-fg-3);
+  font-weight: 700;
+  color: rgba(0, 0, 0, 0.5);
   flex-shrink: 0;
 }
 
-/* What the selected resource is expected to do, before it is run. */
 .d-expectation {
-  margin: 0.6rem 0 0;
-  padding: 0.6rem 0.7rem;
-  border-radius: var(--t-r-sm);
-  border-inline-start: 2px solid var(--t-line-strong);
-  background: var(--t-raised-2);
-  font-size: 0.78rem;
-  color: var(--t-fg-2);
-  animation: t-fade-up 220ms var(--t-ease) both;
+  margin: 0.65rem 0 0;
+  padding: 0.65rem 0.75rem;
+  border-inline-start: 3px solid rgba(0, 0, 0, 0.3);
+  background: var(--sw-muted);
+  font-size: 0.79rem;
+  color: rgba(0, 0, 0, 0.65);
+  animation: sw-fade-up 180ms var(--sw-ease) both;
 }
 
-.d-expectation[data-kind="malicious"] {
-  border-inline-start-color: var(--t-no);
+.d-expectation[data-kind="malicious"],
+.d-expectation[data-kind="overcharge"] {
+  border-inline-start-color: var(--sw-accent);
 }
 
 .d-expectation[data-kind="honest"] {
-  border-inline-start-color: var(--t-ok);
+  border-inline-start-color: var(--sw-fg);
 }
 
-/* An advanced escape hatch, visually demoted below the primary path. */
 .d-advanced {
-  margin-top: 0.45rem;
-  padding-top: 0.7rem;
-  border-top: 1px dashed var(--t-line);
+  margin-top: 0.5rem;
+  padding-top: 0.75rem;
+  border-top: 1px dashed rgba(0, 0, 0, 0.25);
+}
+
+/* ------------------------------------------------------------------ motion */
+
+@keyframes sw-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes sw-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes sw-pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes sw-shimmer {
+  from {
+    background-position: 150% center;
+  }
+  to {
+    background-position: -50% center;
+  }
+}
+
+@keyframes sw-spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dash *,
+  .dash *::before,
+  .dash *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
 }

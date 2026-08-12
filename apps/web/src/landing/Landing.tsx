@@ -13,9 +13,8 @@
 
 import { useEffect, useRef } from "react";
 
-import { BlockStream } from "./BlockStream.js";
 import { Flow } from "./Flow.js";
-import { TotemHero, TotemMark } from "../brand/Totem.js";
+import type { ConnectPhase } from "../Root.js";
 import {
   CapIcon,
   ClockIcon,
@@ -90,8 +89,16 @@ const METRICS = [
 
 const TIMELINE = ["requestSpend committed", "Confidential evaluation", "Payment settled"];
 
-export function Landing({ onConnect }: { onConnect: () => void }) {
+export function Landing({
+  onConnect,
+  phase = "idle",
+}: {
+  onConnect: () => void;
+  /** Reported by the shell so the CTA can show what the wallet is doing. */
+  phase?: ConnectPhase;
+}) {
   const root = useRef<HTMLDivElement>(null);
+  const connecting = phase === "connecting";
 
   /*
    * Scroll reveal.
@@ -134,8 +141,7 @@ export function Landing({ onConnect }: { onConnect: () => void }) {
       <nav className="lp-nav">
         <div className="lp-nav-inner">
           <span className="lp-nav-brand">
-            <TotemMark size={19} />
-            <span className="lp-nav-name">Totem</span>
+            <span className="lp-nav-name">LedgerLighthouse</span>
           </span>
           <span className="lp-nav-links">
             <a href="#flow">Flow</a>
@@ -150,35 +156,55 @@ export function Landing({ onConnect }: { onConnect: () => void }) {
 
       {/* 1 — HERO */}
       <header className="lp-hero">
+        {/* Decorative: the page states everything this image states, in words,
+            immediately beside it. */}
+        <div className="lp-hero-bg" aria-hidden="true" />
+        <div className="lp-hero-scrim" aria-hidden="true" />
+
         <div className="lp-hero-copy">
-          <p className="lp-eyebrow">Confidential Agentic Payments</p>
-          <h1 className="lp-headline">
-            Autonomous AI payments
+          <p className="lp-eyebrow lp-in" style={{ animationDelay: "60ms" }}>
+            <span className="lp-num">00</span>
+            Confidential Agentic Payments
+          </p>
+          <h1 className="lp-headline lp-in" style={{ animationDelay: "140ms" }}>
+            Pay APIs.
             <br />
-            without giving the AI your wallet.
+            Don&apos;t <em>trust the AI.</em>
           </h1>
-          <p className="lp-sub">
+          <p className="lp-sub lp-in" style={{ animationDelay: "240ms" }}>
             Encrypted budgets, prompt-injection-resistant authorization, and independently capped
             execution on Base Sepolia.
           </p>
-          <div className="lp-actions">
-            <button type="button" className="lp-btn" onClick={onConnect}>
-              Connect with MetaMask
+          <div className="lp-actions lp-in" style={{ animationDelay: "340ms" }}>
+            <button
+              type="button"
+              className="lp-btn"
+              onClick={onConnect}
+              disabled={connecting}
+              data-connecting={connecting ? "true" : undefined}
+            >
+              {connecting ? "Waiting for MetaMask" : "Connect with MetaMask"}
             </button>
             <a className="lp-btn lp-btn-ghost" href="#flow">
               See the flow
             </a>
           </div>
-        </div>
-        <div className="lp-hero-visual">
-          <TotemHero />
-          <BlockStream />
+          {/* Only ever rendered after a real refusal, so it cannot read as a
+              warning to someone who has not tried yet. */}
+          {phase === "declined" ? (
+            <p className="lp-connect-note" role="status">
+              Connection declined — nothing was sent. Try again when ready.
+            </p>
+          ) : null}
         </div>
       </header>
 
       {/* 2 — WORKFLOW */}
       <section className="lp-section lp-reveal" id="flow">
-        <p className="lp-eyebrow">The path of a single payment</p>
+        <p className="lp-eyebrow">
+          <span className="lp-num">01</span>
+          The path of a single payment
+        </p>
         <h2 className="lp-h2">Seven steps, one of which can be compromised safely.</h2>
         <Flow />
       </section>
@@ -193,8 +219,11 @@ export function Landing({ onConnect }: { onConnect: () => void }) {
       </section>
 
       {/* 4 — FEATURES */}
-      <section className="lp-section lp-reveal" id="guarantees">
-        <p className="lp-eyebrow">What the system guarantees</p>
+      <section className="lp-section lp-reveal sw-dots" id="guarantees">
+        <p className="lp-eyebrow">
+          <span className="lp-num">02</span>
+          What the system guarantees
+        </p>
         <h2 className="lp-h2">Bounds, not promises.</h2>
         <div className="lp-grid">
           {FEATURES.map(({ Icon, title, body }) => (
@@ -211,7 +240,10 @@ export function Landing({ onConnect }: { onConnect: () => void }) {
 
       {/* 5 — COMPARISON */}
       <section className="lp-section lp-reveal">
-        <p className="lp-eyebrow">Why this is different</p>
+        <p className="lp-eyebrow">
+          <span className="lp-num">03</span>
+          Why this is different
+        </p>
         <h2 className="lp-h2">The authority never reaches the model.</h2>
         <div className="lp-compare">
           <div className="lp-col">
@@ -241,7 +273,10 @@ export function Landing({ onConnect }: { onConnect: () => void }) {
 
       {/* 6 — EXECUTION PREVIEW */}
       <section className="lp-section lp-reveal">
-        <p className="lp-eyebrow">Live execution</p>
+        <p className="lp-eyebrow">
+          <span className="lp-num">04</span>
+          Live execution
+        </p>
         <h2 className="lp-h2">What the console shows while it runs.</h2>
         {/* Static illustration of the console. Not interactive, and labelled as
             a preview so it is never mistaken for live state. */}
@@ -270,8 +305,11 @@ export function Landing({ onConnect }: { onConnect: () => void }) {
       </section>
 
       {/* 7 — SECURITY */}
-      <section className="lp-section lp-reveal" id="security">
-        <p className="lp-eyebrow">Security model</p>
+      <section className="lp-section lp-reveal sw-diagonal" id="security">
+        <p className="lp-eyebrow">
+          <span className="lp-num">05</span>
+          Security model
+        </p>
         <h2 className="lp-h2">Bounded autonomous execution</h2>
         <div className="lp-prose">
           <p>The browser encrypts the budget before it ever reaches the chain.</p>
@@ -282,10 +320,14 @@ export function Landing({ onConnect }: { onConnect: () => void }) {
 
       {/* 8 — FINAL CTA */}
       <section className="lp-cta lp-reveal">
+        <p className="lp-eyebrow">
+          <span className="lp-num">06</span>
+          Get started
+        </p>
         <h2 className="lp-cta-title">
           Let agents pay APIs.
           <br />
-          Keep the authority cryptographically bounded.
+          Keep the authority <em>cryptographically bounded.</em>
         </h2>
         <button type="button" className="lp-btn" onClick={onConnect}>
           Connect with MetaMask
@@ -314,10 +356,7 @@ export function Landing({ onConnect }: { onConnect: () => void }) {
             BaseScan
           </a>
         </nav>
-        <p className="lp-footer-note">
-          <TotemMark size={13} />
-          Built with Inco
-        </p>
+        <p className="lp-footer-note">Built with Inco</p>
       </footer>
     </div>
   );

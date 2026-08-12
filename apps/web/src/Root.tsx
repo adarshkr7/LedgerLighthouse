@@ -2,14 +2,21 @@
  * Chooses between the public landing page and the execution console.
  *
  * This exists so `App.tsx` — the console — needs no change at all. There is no
- * router in this app and a router would be a new dependency for two routes, so the split is
- * a single piece of state rather than a route. If routing is wanted later, this
- * is the one file that has to learn about it.
+ * router in this app and a router would be a new dependency for two routes, so
+ * the split is a single piece of state rather than a route.
  *
- * The landing's CTA says "Connect with MetaMask", so it does exactly that
- * before handing over. A rejected or missing wallet still opens the console:
- * step 1 there is the connect step, which is a better place to recover than a
- * dead end on the marketing page.
+ * ## Why there is no timeout here
+ *
+ * An earlier version raced `connectAsync` against a 2.5s timer, to survive the
+ * case where no injected provider exists and the promise therefore never
+ * settles. That conflated two very different situations — "there is no wallet"
+ * and "the human has not decided yet" — and approving a MetaMask prompt
+ * routinely takes longer than 2.5 seconds. The timer would win and the console
+ * would open behind the still-open popup.
+ *
+ * So provider *presence* is now checked directly, and the connection itself is
+ * awaited with no deadline. A person reading the permission dialog is not a
+ * timeout, and treating them as one is how a wallet app loses trust.
  */
 
 import { useState } from "react";
@@ -19,28 +26,41 @@ import { injected } from "wagmi/connectors";
 import App from "./App.js";
 import { Landing } from "./landing/Landing.js";
 
+export type ConnectPhase = "idle" | "connecting" | "declined";
+
+/**
+ * True when something has injected an EIP-1193 provider. Deliberately a
+ * presence check rather than a capability probe: any answer at all means a
+ * prompt will appear, and the prompt is what we are waiting on.
+ */
+function hasInjectedProvider(): boolean {
+  return typeof window !== "undefined" && "ethereum" in window;
+}
+
 export default function Root() {
   const [entered, setEntered] = useState(false);
+  const [phase, setPhase] = useState<ConnectPhase>("idle");
   const { connectAsync } = useConnect();
 
-  async function enter() {
-    try {
-      // Bounded, because "no injected wallet" is not always an error. With no
-      // provider to answer the EIP-6963 announcement, `connectAsync` can simply
-      // never settle — and an awaited promise that never settles means the CTA
-      // does nothing, forever, with no feedback. A viewer without MetaMask
-      // installed is exactly the person most likely to click it.
-      await Promise.race([
-        connectAsync({ connector: injected() }),
-        new Promise((resolve) => setTimeout(resolve, 2500)),
-      ]);
-    } catch {
-      // Declined. Not fatal — the console's first step is the connect prompt,
-      // and it reports the reason properly.
+  async function enter(): Promise<void> {
+    if (!hasInjectedProvider()) {
+      // Nothing to prompt. The console's first step explains what to install,
+      // which is a better place to recover than a dead end on the landing page.
+      setEntered(true);
+      return;
     }
-    setEntered(true);
+
+    setPhase("connecting");
+    try {
+      await connectAsync({ connector: injected() });
+      setEntered(true);
+    } catch {
+      // Declined, or dismissed. Stay put and say so — silently advancing into
+      // the console would imply a connection that does not exist.
+      setPhase("declined");
+    }
   }
 
   if (entered) return <App />;
-  return <Landing onConnect={() => void enter()} />;
+  return <Landing onConnect={() => void enter()} phase={phase} />;
 }
