@@ -1,82 +1,48 @@
 /*
- * Totem — global design tokens.
+ * LedgerLighthouse — global design tokens.
  *
- * Chrome is neutral and colour is semantic. Surfaces are separated by hairline
- * rings and small, tight shadows rather than by glow, blur or gradient — the
- * layout should read as machined panels, not as lit glass. Nothing on either
- * surface glows, and nothing has a backdrop-filter.
+ * What remains here is deliberately small. Both pages this app renders are
+ * now self-contained Swiss International stylesheets (`.landing`, `.dash`),
+ * each declaring its own five-token palette rather than reading a shared
+ * theme — a decision recorded in each of those files. This block is what is
+ * left *outside* that split: the handful of tokens the brand mark's inline
+ * SVG fills still reach for directly, and the couple of shared motion
+ * utilities (`.t-shimmer`, `.t-eq`, `.t-pixels`) both pages still use.
  *
- * Colour appears only where a state is being reported:
- *
- *   --t-ok      green    approved, attested, settled
- *   --t-wait    amber    committed but not yet knowable
- *   --t-no      red      attacker-controlled, refused, rejected
- *   --t-cipher  violet   encrypted material — a substance, never a status
- *
- * The brand mark is brass, and brass is used for nothing else. It is a metal,
- * not an accent, which is why it is a gradient on the mark rather than a token
- * anything else can reach for.
+ * None of these are a second theme to keep in sync with Swiss. They are load-
+ * bearing plumbing, and every one is referenced by name below so a future
+ * cleanup can grep for it before assuming it is dead.
  */
 
 :root {
-  /* ---- substrate. Warm neutral, not blue-black.
-     The page sits a real step below the panels: at a 4% lightness difference a
-     card and its background are indistinguishable once a screen is anything
-     but ideal, and this layout is read on a projector. */
-  --t-void: #0e0f11;
-  --t-raised: #1a1c1f;
-  --t-raised-2: #232629;
-  --t-inset: #08090a;
+  /* Read by brand/Lighthouse.tsx's inline SVG `fill` attributes. The mark is
+     always enclosed in `.mark-chip` (styles.css), a solid black square, so
+     these values are chosen to read against black — not against whichever
+     page happens to be mounted around it. */
+  --t-inset: #000105;
+  --t-line: #232c44;
+  --t-fg: #eef2ff;
+  --t-fg-4: #545e7e;
+  --t-ok: #3dff9e;
+  --t-wait: #ffc531;
+  --t-no: #ff3d8a;
+  --t-cipher: #22e0ff;
+  --t-brass: #ffcc55;
 
-  --t-line: #303338;
-  --t-line-strong: #43474d;
+  /* The scrollbar thumb, further down this file — the one piece of chrome
+     neither `.landing` nor `.dash` restyles per-page. */
+  --t-line-strong: #9a9a9a;
 
-  /* ---- type ramp, contrast-checked against --t-raised
-     fg 14.6:1 · fg-2 6.4:1 · fg-3 4.6:1. Nothing below fg-3 ever carries
-     characters a reader has to make out. */
-  --t-fg: #f2f3f4;
-  --t-fg-2: #a5a8ad;
-  --t-fg-3: #82858b;
-  --t-fg-4: #5c6066;
-
-  /* ---- semantic states. Product colours, deliberately not neon. */
-  --t-ok: #4bb26b;
-  --t-ok-tint: rgba(75, 178, 107, 0.13);
-  --t-ok-line: rgba(75, 178, 107, 0.35);
-
-  --t-wait: #d3a03f;
-  --t-wait-tint: rgba(211, 160, 63, 0.13);
-  --t-wait-line: rgba(211, 160, 63, 0.35);
-
-  --t-no: #e0575c;
-  --t-no-tint: rgba(224, 87, 92, 0.13);
-  --t-no-line: rgba(224, 87, 92, 0.35);
-
-  --t-cipher: #8b83d9;
-  --t-cipher-tint: rgba(139, 131, 217, 0.13);
-
-  --t-brass: #c9a24a;
-
-  /* ---- type */
+  /* Read by `code {}` below, and available as a fallback for anything that
+     has not opted into a page-scoped `--sw-mono`. */
   --t-sans: "Inter", "Inter Fallback", ui-sans-serif, system-ui, "Segoe UI",
     Helvetica, Arial, sans-serif;
-  --t-mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  --t-mono: "JetBrains Mono", ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
 
-  /* ---- elevation. Hairline ring first, then a tight shadow. No glow. */
-  --t-ring: 0 0 0 1px var(--t-line);
-  --t-shadow-card: 0 0 0 1px var(--t-line), 0 1px 2px rgba(0, 0, 0, 0.3),
-    0 2px 6px rgba(0, 0, 0, 0.18);
-  --t-shadow-raised: 0 0 0 1px var(--t-line), 0 2px 10px rgba(0, 0, 0, 0.32);
-  --t-shadow-btn: 0 0 0 1px var(--t-line-strong), 0 1px 2px rgba(0, 0, 0, 0.35);
-  --t-shadow-inset: inset 0 1px 2px rgba(0, 0, 0, 0.4);
-
-  /* ---- geometry & motion */
-  --t-r: 10px;
-  --t-r-sm: 6px;
-  --t-t: 150ms;
+  /* Read by the `.t-eq` / `.t-pixels` keyframed loaders, shared by both pages. */
   --t-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
 
-  color-scheme: dark;
+  color-scheme: light;
 }
 
 * {
@@ -89,13 +55,33 @@ body {
   padding: 0;
 }
 
+/*
+ * Both pages this app renders — `.landing` and `.dash` — are now Swiss
+ * International: white canvas, black structure, red signal. Neither wants a
+ * body colour of its own, a CRT scanline overlay, or a coloured selection —
+ * those belonged to the pixel/neon register this project has fully retired.
+ * `body` is therefore Swiss by default rather than by override; there is no
+ * second theme left for a page-scoped `:has()` to switch away from.
+ */
 body {
-  background: var(--t-void);
-  color: var(--t-fg);
-  font-family: var(--t-sans);
+  background: #fff;
+  color: #000;
+  font-family: "Inter", "Inter Fallback", ui-sans-serif, system-ui, "Segoe UI", Helvetica, Arial,
+    sans-serif;
   font-size: 14px;
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: #ff3000;
+  color: #fff;
+}
+
+/* Images and canvases keep their pixels sharp when scaled. */
+img,
+canvas {
+  image-rendering: pixelated;
 }
 
 a {
@@ -106,11 +92,6 @@ a {
 code {
   font-family: var(--t-mono);
   font-size: 0.85em;
-}
-
-::selection {
-  background: rgba(201, 162, 74, 0.3);
-  color: #fff;
 }
 
 * {
@@ -130,6 +111,24 @@ code {
 
 *::-webkit-scrollbar-track {
   background: transparent;
+}
+
+/*
+ * Shared between `.landing` and `.dash` — deliberately not scoped under
+ * either, since it is used inside both. The brand mark's own fills assume a
+ * dark surface; enclosed in a solid square, it reads as a lit window
+ * regardless of the page around it, and it is the "icon inside a geometric
+ * shape" signature both pages otherwise carry. `var(--sw-fg, #000)` resolves
+ * against whichever page-scoped token set the element is actually nested in —
+ * both currently agree it is black, so the fallback is only ever a safety net.
+ */
+.mark-chip {
+  display: grid;
+  place-items: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  flex-shrink: 0;
+  background: var(--sw-fg, #000);
 }
 
 /* ==========================================================================

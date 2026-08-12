@@ -3,10 +3,28 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Totem — confidential agentic payments</title>
+    <title>LedgerLighthouse — confidential agentic payments</title>
     <meta
       name="description"
-      content="An autonomous AI agent that pays for APIs over x402, with the spending policy enforced by confidential computation on Inco rather than by the agent itself."
+      content="An autonomous AI agent that pays for APIs over x402, with the spending policy enforced by confidential computation in a TEE rather than by the agent itself."
+    />
+    <meta name="theme-color" content="#04050a" />
+
+    <!--
+      Two pages, two type systems, on purpose.
+
+      The console (App.tsx) is pixel/neon and speaks in JetBrains Mono
+      throughout. The landing page is Swiss International Style and speaks in
+      Inter alone, at heavy weights (400/500/700/900) doing all the work that
+      a second typeface would otherwise do — Swiss typography is explicitly a
+      closed system, one grotesque family, no display face. Both are loaded
+      here since either page can be the first one a visitor lands on.
+    -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800;900&family=JetBrains+Mono:wght@300;400;500;700&display=swap"
+      rel="stylesheet"
     />
   </head>
   <body>
