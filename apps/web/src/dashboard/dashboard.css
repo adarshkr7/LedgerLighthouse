@@ -1124,6 +1124,7 @@
 .mi-host {
   position: relative;
   padding-bottom: 3.5rem;
+  -webkit-user-select: none;
   user-select: none;
 }
 
