@@ -57,3 +57,8 @@ jobs:
         working-directory: contracts
       - run: forge test
         working-directory: contracts
+      # Runs here rather than in the `ts` job because the generated ABI is
+      # compared against contracts/out/, which only exists once forge build has
+      # run. Without this, a PolicyVault.sol change that nobody re-synced would
+      # leave CI green while `pnpm verify` failed locally.
+      - run: node scripts/sync-abi.mjs --check

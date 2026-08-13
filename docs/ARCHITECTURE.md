@@ -385,8 +385,11 @@ rather than cryptographic.
 ### 8.1 Format
 
 ```
-step_hash = H(prior_hash || step_type || H(inputs) || H(outputs) || timestamp)
+step_hash = H(prior_hash || step_type || H(inputs) || H(outputs) || timestamp || H(attestation))
 ```
+
+The attestation term is present on every step, not only the attested ones: a step without one hashes
+a fixed `"no-attestation"` marker, so absent and present-but-empty cannot collide.
 
 Payment steps carry three independently verifiable extras:
 
