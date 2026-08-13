@@ -1,6 +1,6 @@
 # LedgerLighthouse — Project Tree
 
-Every tracked file in the repository, annotated. 144 files across nine top-level directories.
+Every tracked file in the repository, annotated. 144 files across eight top-level directories.
 
 **Companions:** [`ARCHITECTURE.md`](ARCHITECTURE.md) for the design and its guarantees ·
 [`IMPLEMENTATION.md`](IMPLEMENTATION.md) for how things are tested · [`PRIMER.md`](PRIMER.md) for the
@@ -222,11 +222,7 @@ NTU_x402/
 │   ├── PROJECT_TREE.md                     This file
 │   └── lighthouse.webp                     README banner
 │
-├── pitch/
-│   ├── DEVPOST_STAGE1_SUBMISSION.md        Submission copy and readiness checklist
-│   └── LEDGERLIGHTHOUSE_NTU_INNOVATEX_DECK.md   Presentation deck source
-│
-├── .github/workflows/ci.yml                Typecheck, tests, boundary check, contracts
+├── .github/workflows/ci.yml                Typecheck, tests, boundary check, contracts, ABI sync
 ├── .githooks/pre-push                      Runs pnpm verify before a push
 ├── .claude/launch.json                     Dev-server definition for the preview tooling
 │
@@ -236,6 +232,7 @@ NTU_x402/
 ├── tsconfig.base.json                      Shared compiler options
 ├── .env.example                            Every variable, annotated with why it exists
 ├── .gitignore
+├── LICENSE                                 MIT — matches the SPDX headers in contracts/src
 └── README.md
 ```
 
