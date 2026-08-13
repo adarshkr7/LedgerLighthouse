@@ -20,10 +20,25 @@ import { verifyTrace } from "./verify.js";
 loadDotEnv();
 
 const args = process.argv.slice(2);
-const file = args.find((a) => !a.startsWith("--"));
 const offline = args.includes("--offline");
-const rpcFlag = args[args.indexOf("--rpc") + 1];
-const rpcUrl = offline ? undefined : (rpcFlag && !rpcFlag.startsWith("--") ? rpcFlag : optional("BASE_SEPOLIA_RPC_URL"));
+
+// `indexOf` returns -1 when the flag is absent, so `args[indexOf + 1]` would be
+// args[0] — the trace path — and viem would then try to POST eth_chainId to a
+// file path. Whether that happened depended on whether the shell's pnpm passed
+// `--` through, so the documented command worked in bash and crashed in
+// PowerShell. Check for the flag before reading its value.
+const rpcIdx = args.indexOf("--rpc");
+const rpcValueIdx = rpcIdx === -1 ? -1 : rpcIdx + 1;
+const rpcFlag = rpcIdx === -1 ? undefined : args[rpcValueIdx];
+
+// The file is the first argument that is neither a flag nor a flag's value.
+const file = args.find((a, i) => !a.startsWith("--") && i !== rpcValueIdx);
+
+const rpcUrl = offline
+  ? undefined
+  : rpcFlag && !rpcFlag.startsWith("--")
+    ? rpcFlag
+    : optional("BASE_SEPOLIA_RPC_URL");
 
 if (!file) {
   console.error("usage: verify <trace.json> [--rpc <url>] [--offline]");

@@ -1,6 +1,7 @@
 node_modules/
 dist/
 build/
+pitch/
 *.tsbuildinfo
 
 # Foundry
@@ -29,6 +30,19 @@ services/signer/.keys/
 # unable to find any project at all.
 *keystore*.json
 *.keystore
+
+# Submission working directory — everything here is transient and safe to delete
+# wholesale before the final commit. It also holds identity documents for the
+# Student Group category, which must never reach the repository, so this rule
+# has to exist BEFORE those files are created rather than after.
+submission/
+
+
+# Execution traces are run records: prompts, vendor relationships, amounts. They
+# are meant to be handed to an auditor deliberately, not committed by accident.
+# Scoped by name — a blanket *.json would swallow every package.json here.
+trace.json
+*.trace.json
 
 # editor / OS
 .DS_Store
