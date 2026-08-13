@@ -1,4 +1,10 @@
 <p align="center">
+  This repository contains the submission for the <strong>NTU InnovateX Hackathon 2026</strong>
+  — Track 2, co-organised by NTU CCTF &amp; SNZ — from
+  <strong>Adarsh Kumar</strong> (IIT Patna) and <strong>Krishan Pratap Sharma</strong> (IIT Bombay).
+</p>
+
+<p align="center">
   <img src="docs/lighthouse.webp" alt="LedgerLighthouse — confidential agentic payments" width="100%" />
 </p>
 
@@ -236,8 +242,9 @@ flowchart LR
 Everything inside **Untrusted Plane** may lie, be compromised, or be attacker-authored. Everything
 right of the approval record acts only on verified on-chain state.
 
-`TraceAnchor` is deployed and tested but not yet called from the runtime — traces are verified
-against `PolicyVault` today, and root anchoring is the next step. Drawn dotted for that reason.
+`TraceAnchor` is written and tested but neither deployed nor called from the runtime — traces are
+verified against `PolicyVault` today, and root anchoring is the next step. Drawn dotted for that
+reason.
 
 ### Repository Layout
 
@@ -303,8 +310,8 @@ the signer in-process, every other guarantee here is decorative.
 
 ## Inco Lightning Integration (Detailed)
 
-Inco is the decision authority in Perennia's runtime sense — it is not a thin encryption helper
-bolted onto a plaintext policy.
+Inco is the decision authority at runtime — it is not a thin encryption helper bolted onto a
+plaintext policy.
 
 ### 1) Client-Side Encryption and Handle Binding
 

@@ -1,7 +1,7 @@
 /**
  * The trace step and its hash chain (ARCHITECTURE.md §8.1):
  *
- *     step_hash = H(prior_hash || step_type || H(inputs) || H(outputs) || timestamp)
+ *     step_hash = H(prior_hash || step_type || H(inputs) || H(outputs) || timestamp || H(attestation))
  *
  * Each step commits to the one before it, so a trace cannot be reordered,
  * truncated from the front, or have a step edited without every later hash
