@@ -23,6 +23,24 @@ allowBuilds:
   protobufjs: false
   utf-8-validate: false
 
+# The same "should this dependency build?" question, but for the git-hosted
+# @safe-global/safe-smart-account, and allowBuilds cannot answer it. pnpm wants to
+# run that package's `prepare` (a hardhat + typechain compile) before packing it,
+# and its check is `if (!allowBuild(depPath)) throw` — so `false` is not "install
+# the raw checkout", it is the error. Only `true` gets past it, and `true` means a
+# full nested install plus solc compile of an upstream repo on every fresh clone.
+#
+# We consume that package purely as Solidity source, through the
+# `safe-smart-account/=…/contracts/` line in contracts/remappings.txt; the JS it
+# would emit has no consumer here. ignoreScripts short-circuits the prepare check
+# entirely and leaves the raw checkout on disk, which is exactly what forge reads.
+# It also has to live in config rather than on the command line: `pnpm dev`
+# auto-installs when the lockfile moves, and that implicit install takes no flags.
+#
+# No workspace package defines preinstall/install/postinstall/prepare, so this
+# turns nothing else off.
+ignoreScripts: true
+
 # @inco/lightning depends on ds-test via git (Foundry's forge-std/ds-test are conventionally
 # consumed via git, not npm registry publishes). pnpm's default blockExoticSubdeps flags that as
 # a supply-chain risk when it shows up as a *sub*dependency. Both forge-std and ds-test are
