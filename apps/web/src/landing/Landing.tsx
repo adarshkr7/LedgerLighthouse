@@ -338,11 +338,11 @@ export function Landing({
       {/* 9 — FOOTER */}
       <footer className="lp-footer">
         <nav className="lp-footer-links" aria-label="Resources">
-          <a href="https://github.com/adarshkr7/NTU_x402" target="_blank" rel="noreferrer">
+          <a href="https://github.com/adarshkr7/LedgerLighthouse" target="_blank" rel="noreferrer">
             GitHub
           </a>
           <a
-            href="https://github.com/adarshkr7/NTU_x402/blob/main/README.md"
+            href="https://github.com/adarshkr7/LedgerLighthouse/blob/main/README.md"
             target="_blank"
             rel="noreferrer"
           >

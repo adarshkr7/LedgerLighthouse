@@ -10,7 +10,7 @@
 
 name: totem-authorization-signer
 version: 0.1.0
-repository: https://github.com/adarshkr7/NTU_x402
+repository: https://github.com/adarshkr7/LedgerLighthouse
 license: MIT
 tee: tdx
 kind: containers
