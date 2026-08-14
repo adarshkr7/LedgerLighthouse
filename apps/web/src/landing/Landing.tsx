@@ -14,6 +14,7 @@
 import { useEffect, useRef } from "react";
 
 import { Flow } from "./Flow.js";
+import { useSmoothScroll } from "./useSmoothScroll.js";
 import type { ConnectPhase } from "../Root.js";
 import {
   CapIcon,
@@ -89,6 +90,27 @@ const METRICS = [
 
 const TIMELINE = ["requestSpend committed", "Confidential evaluation", "Payment settled"];
 
+/*
+ * In-page nav targets, as `[id, label]`.
+ *
+ * These render as buttons rather than `<a href="#id">`. A fragment link makes
+ * the browser own the jump: it writes `#guarantees` into the address bar,
+ * pushes a history entry, and — since the whole point of Lenis is that the
+ * page is being scrolled by script — arrives instantly, undercutting the
+ * smoothing everywhere it is used. A button hands the scroll to Lenis and
+ * leaves the URL alone, which is what you want on camera and what you want in
+ * a share link.
+ *
+ * The cost is real and accepted: these are no longer deep-linkable, and no
+ * longer open in a new tab. The ids stay on the sections, so an external
+ * `/#security` still works; only the in-page controls change.
+ */
+const NAV_LINKS: ReadonlyArray<readonly [id: string, label: string]> = [
+  ["flow", "Flow"],
+  ["guarantees", "Guarantees"],
+  ["security", "Security"],
+];
+
 export function Landing({
   onConnect,
   phase = "idle",
@@ -99,6 +121,9 @@ export function Landing({
 }) {
   const root = useRef<HTMLDivElement>(null);
   const connecting = phase === "connecting";
+  // Smooths the wheel for as long as this page is mounted, and gives the
+  // in-page controls something to scroll with.
+  const scrollToId = useSmoothScroll();
 
   /*
    * Scroll reveal.
@@ -144,9 +169,11 @@ export function Landing({
             <span className="lp-nav-name">LedgerLighthouse</span>
           </span>
           <span className="lp-nav-links">
-            <a href="#flow">Flow</a>
-            <a href="#guarantees">Guarantees</a>
-            <a href="#security">Security</a>
+            {NAV_LINKS.map(([id, label]) => (
+              <button key={id} type="button" className="lp-nav-link" onClick={() => scrollToId(id)}>
+                {label}
+              </button>
+            ))}
           </span>
           <button type="button" className="lp-btn lp-btn-ghost" onClick={onConnect}>
             Launch console
@@ -185,9 +212,15 @@ export function Landing({
             >
               {connecting ? "Waiting for MetaMask" : "Connect with MetaMask"}
             </button>
-            <a className="lp-btn lp-btn-ghost" href="#flow">
+            {/* Same reasoning as the nav: a button, so the hero CTA glides
+                into section 01 instead of teleporting and dirtying the URL. */}
+            <button
+              type="button"
+              className="lp-btn lp-btn-ghost"
+              onClick={() => scrollToId("flow")}
+            >
               See the flow
-            </a>
+            </button>
           </div>
           {/* Only ever rendered after a real refusal, so it cannot read as a
               warning to someone who has not tried yet. */}

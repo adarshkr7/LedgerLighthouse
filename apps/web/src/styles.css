@@ -18,10 +18,6 @@
   --t-fg: #eef2ff;
   --t-fg-4: #545e7e;
 
-  /* The scrollbar thumb, further down this file — the one piece of chrome
-     neither `.landing` nor `.dash` restyles per-page. */
-  --t-line-strong: #9a9a9a;
-
   /* Read by `code {}` below. */
   --t-mono: "JetBrains Mono", ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
 
@@ -80,23 +76,31 @@ code {
   font-size: 0.85em;
 }
 
+/*
+ * No scrollbars anywhere.
+ *
+ * A 9px grey track down the right edge is a piece of OS chrome sitting inside
+ * an otherwise edge-to-edge composition — it dates a screen recording, and it
+ * fights a page whose whole visual argument is flat black rule on white. With
+ * the wheel smoothed by Lenis, the bar was also lagging its own page.
+ *
+ * Nothing about scrolling changes: wheel, trackpad, touch, keyboard, Home/End
+ * and programmatic scrolls all behave exactly as before. Only the indicator is
+ * gone. The two properties are the same instruction to different engines —
+ * `scrollbar-width` is the standard one (Firefox), `::-webkit-scrollbar` is
+ * what Chrome and Safari read — and both are needed.
+ *
+ * The cost, stated plainly: scroll *position* is no longer indicated, and a
+ * horizontally scrollable region no longer advertises that it scrolls. Both
+ * places this app has one — `.d-rail` and `.deck-track` — already hid their
+ * bar for the same reason and carry their own affordance.
+ */
 * {
-  scrollbar-width: thin;
-  scrollbar-color: var(--t-line-strong) transparent;
+  scrollbar-width: none;
 }
 
 *::-webkit-scrollbar {
-  width: 9px;
-  height: 9px;
-}
-
-*::-webkit-scrollbar-thumb {
-  background: var(--t-line-strong);
-  border-radius: 99px;
-}
-
-*::-webkit-scrollbar-track {
-  background: transparent;
+  display: none;
 }
 
 /* ==========================================================================

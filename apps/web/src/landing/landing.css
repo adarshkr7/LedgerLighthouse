@@ -33,6 +33,11 @@
   --sw-max: 90rem;
   --sw-pad: 2rem;
   --sw-b: 3px;
+  /* Height of the sticky nav's inner row — its --sw-b border sits below that,
+     so the full occluded strip is `--sw-nav + --sw-b`. Declared once because
+     three unrelated things measure from it: the nav itself, the hero's fill
+     height, and every section's scroll clearance. */
+  --sw-nav: 4.5rem;
 
   position: relative;
   background: var(--sw-bg);
@@ -166,7 +171,7 @@
   max-width: var(--sw-max);
   margin: 0 auto;
   padding: 0 var(--sw-pad);
-  height: 4.5rem;
+  height: var(--sw-nav);
   display: flex;
   align-items: center;
   gap: 1.5rem;
@@ -191,22 +196,33 @@
   gap: 0.25rem;
 }
 
-.lp-nav-links a {
+/*
+ * These are `<button>`s, not anchors — the jump is handed to Lenis so it can
+ * be smoothed, and a fragment href would both bypass that and rewrite the URL
+ * (see NAV_LINKS in Landing.tsx). Hence the button reset on the first three
+ * lines; everything after it is the link styling they had as anchors.
+ */
+.lp-nav-link {
+  appearance: none;
+  border: 0;
+  background: none;
   position: relative;
   display: inline-block;
   padding: 0.6rem 0.9rem;
+  font-family: var(--sw-font);
   font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--sw-fg);
   text-decoration: none;
+  cursor: pointer;
   transition: color 150ms var(--sw-ease);
 }
 
 /* A drawn underline that snaps in from the left rather than fading — motion
    with mechanical intent, matching "instant, geometric" from the brief. */
-.lp-nav-links a::after {
+.lp-nav-link::after {
   content: "";
   position: absolute;
   left: 0.9rem;
@@ -219,11 +235,11 @@
   transition: transform 150ms var(--sw-ease);
 }
 
-.lp-nav-links a:hover {
+.lp-nav-link:hover {
   color: var(--sw-accent);
 }
 
-.lp-nav-links a:hover::after {
+.lp-nav-link:hover::after {
   transform: scaleX(1);
 }
 
@@ -294,7 +310,7 @@
 }
 
 .lp-btn:focus-visible,
-.lp-nav-links a:focus-visible,
+.lp-nav-link:focus-visible,
 .lp-footer-links a:focus-visible,
 .deck-num:focus-visible {
   outline: 2px solid var(--sw-accent);
@@ -343,10 +359,12 @@
   margin: 0 auto;
   padding: 6rem var(--sw-pad);
   border-bottom: 1px solid var(--sw-fg);
-  /* The nav is sticky at 4.5rem tall. Without this, jumping to #flow,
-     #guarantees or #security — from the nav links, or from any external deep
-     link — lands the heading half-hidden underneath it. */
-  scroll-margin-top: 4.5rem;
+  /* The nav is sticky, so without this, arriving at #flow, #guarantees or
+     #security lands the heading half-hidden underneath it. This is the only
+     declaration of that clearance: the platform applies it to external deep
+     links, and useSmoothScroll reads it back off the element to offset Lenis,
+     which does not honour it on its own. */
+  scroll-margin-top: calc(var(--sw-nav) + var(--sw-b));
 }
 
 @media (max-width: 52rem) {
@@ -360,11 +378,29 @@
 
 /* -------------------------------------------------------------------- hero */
 
+/*
+ * Full-bleed and full-height: the photograph is the first frame of the page,
+ * so it fills everything the nav is not covering rather than sizing itself to
+ * the copy. Height came from padding alone before, which meant a fixed ~680px
+ * band and a strip of the next section showing under it on any display taller
+ * than a laptop.
+ *
+ * `svh` is the *small* viewport height — mobile browsers measure it with the
+ * URL bar expanded, so the hero does not grow and reflow as that bar retracts.
+ * The `vh` line above it is the fallback for engines that do not know `svh`.
+ *
+ * The padding stays as a floor: on a short viewport the copy outgrows the
+ * min-height and the hero simply gets taller, which is the correct failure.
+ */
 .lp-hero {
   position: relative;
   isolation: isolate;
   overflow: hidden;
+  display: flex;
+  align-items: center;
   width: 100%;
+  min-height: calc(100vh - var(--sw-nav) - var(--sw-b));
+  min-height: calc(100svh - var(--sw-nav) - var(--sw-b));
   margin: 0;
   padding: 5rem 0 6rem;
   border-bottom: var(--sw-b) solid var(--sw-border);
@@ -400,9 +436,12 @@
   );
 }
 
+/* `width: 100%` because a flex item shrink-to-fits by default, which would
+   collapse this to the headline's width and strand it left of centre. */
 .lp-hero-copy {
   position: relative;
   z-index: 2;
+  width: 100%;
   max-width: calc(var(--sw-max) - (var(--sw-pad) * 2));
   margin: 0 auto;
   padding: 0 var(--sw-pad);

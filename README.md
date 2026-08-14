@@ -9,6 +9,7 @@
 </p>
 
 <p align="center">
+  <a href="https://youtu.be/jCm6Ps4TSdg"><img alt="Watch the demo" src="https://img.shields.io/badge/demo-watch-ff3000" /></a>
   <a href="https://github.com/adarshkr7/LedgerLighthouse/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/adarshkr7/LedgerLighthouse/actions/workflows/ci.yml/badge.svg" /></a>
   <a href="https://github.com/adarshkr7/LedgerLighthouse/actions/workflows/ci.yml"><img alt="234 tests passing" src="https://img.shields.io/badge/tests-234%20passing-2f5c4a" /></a>
   <a href="https://sepolia.basescan.org/address/0x0C759D06a1c14F43852D7b078Db2f8C342F15921"><img alt="Live on Base Sepolia" src="https://img.shields.io/badge/live-Base%20Sepolia-0052ff" /></a>
@@ -20,6 +21,8 @@
 # LedgerLighthouse
 
 **Confidential spending-policy infrastructure for autonomous AI agents, built on Inco Lightning.**
+
+**[Watch the demo →](https://youtu.be/jCm6Ps4TSdg)**
 
 LedgerLighthouse is a full-stack agentic payment system that lets an LLM agent buy API resources over
 x402 without ever holding spending authority. The protocol evaluates every spend against a budget
