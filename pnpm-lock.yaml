@@ -108,6 +108,10 @@ importers:
         version: 4.1.10(@types/node@26.2.0)(vite@8.2.1(@types/node@26.2.0)(esbuild@0.28.1)(tsx@4.23.11))
 
   packages/shared:
+    dependencies:
+      viem:
+        specifier: ^2.55.11
+        version: 2.55.11(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)(zod@4.4.3)
     devDependencies:
       '@types/node':
         specifier: ^26.2.0

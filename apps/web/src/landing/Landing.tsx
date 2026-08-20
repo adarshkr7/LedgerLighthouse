@@ -4,18 +4,42 @@
  * Copy discipline matters more than layout here. This product's whole claim is
  * about bounds, so the page states the bound rather than the superlative: the
  * agent *reads* attacker text and *cannot* spend, the budget is confidential,
- * the payer is capped. Nothing on this page claims the AI is safe, because that
- * is not the claim the system supports.
+ * the payer is capped. Nothing on this page claims the AI is safe, because
+ * that is not the claim the system supports. That rule survived the visual
+ * rebuild unchanged, and the stats band is where it shows most — the three
+ * numbers are 3, 7 and 0, because those are the true ones.
+ *
+ * ## Layout
+ *
+ * Editorial agency layout: a 12-column grid with a 1–2rem margin, sections
+ * that alternate between ink (#141314) and bone (#eee), fluid display type
+ * clamped between 375px and 1600px viewports, and mono for every label,
+ * index and tag. Nothing has a shadow. The only radius on the page is on the
+ * pill buttons.
+ *
+ * Motion is carried by five components in `./fx`, each one an idea borrowed
+ * from Canvas UI and re-implemented against Canvas 2D or the DOM rather than
+ * WebGL — the reasoning for that is in each file. The page owns none of it
+ * beyond deciding where an effect earns its place.
  *
  * Presentational only. It renders no chain state, holds no key, and its single
  * outward action is asking the shell to connect a wallet.
  */
 
-import { useEffect, useRef } from "react";
-
 import { Flow } from "./Flow.js";
+import { Process } from "./Process.js";
 import { useSmoothScroll } from "./useSmoothScroll.js";
 import type { ConnectPhase } from "../Root.js";
+import { Accordion, type AccordionItem } from "./fx/Accordion.js";
+import { AsciiObject } from "./fx/AsciiObject.js";
+import { DecryptText } from "./fx/DecryptText.js";
+import { GlyphRain } from "./fx/GlyphRain.js";
+import { Marquee } from "./fx/Marquee.js";
+import { Odometer } from "./fx/Odometer.js";
+import { RippleField } from "./fx/RippleField.js";
+import { SplitLines } from "./fx/SplitLines.js";
+import { SplitText } from "./fx/SplitText.js";
+import { useHeaderTone } from "./fx/useHeaderTone.js";
 import {
   CapIcon,
   ClockIcon,
@@ -26,12 +50,44 @@ import {
 } from "./icons.js";
 import "./landing.css";
 
-const TRUST = [
-  "Inco confidential compute",
-  "Base Sepolia",
-  "EIP-3009",
-  "x402",
-  "End-to-end verifiable",
+/*
+ * In-page nav targets, as `[id, label]`.
+ *
+ * These render as buttons rather than `<a href="#id">`. A fragment link makes
+ * the browser own the jump: it writes `#guarantees` into the address bar,
+ * pushes a history entry, and — since the whole point of Lenis is that the
+ * page is being scrolled by script — arrives instantly, undercutting the
+ * smoothing everywhere it is used. A button hands the scroll to Lenis and
+ * leaves the URL alone, which is what you want on camera and what you want in
+ * a share link.
+ *
+ * The cost is real and accepted: these are no longer deep-linkable, and no
+ * longer open in a new tab. The ids stay on the sections, so an external
+ * `/#security` still works; only the in-page controls change.
+ */
+const NAV_LINKS: ReadonlyArray<readonly [id: string, label: string]> = [
+  ["process", "Process"],
+  ["flow", "Path"],
+  ["guarantees", "Guarantees"],
+  ["questions", "Questions"],
+];
+
+/** The stack, as bare wordmarks. No logo files, so the type is the mark. */
+const STACK = ["INCO", "BASE", "X402", "EIP-3009", "METAMASK", "VIEM"];
+
+/**
+ * The three numbers, and only numbers the system can defend. "3" is the
+ * signature count, "7" is the stage count, "0" is the number of keys the model
+ * is ever handed. A fourth stat would have had to be invented.
+ */
+const STATS: ReadonlyArray<{
+  readonly value: string;
+  readonly suffix?: string;
+  readonly label: string;
+}> = [
+  { value: "03", label: "Wallet signatures per run" },
+  { value: "07", label: "Stages in the payment path" },
+  { value: "00", label: "Keys the model ever holds" },
 ];
 
 const FEATURES = [
@@ -65,50 +121,33 @@ const FEATURES = [
     title: "On-chain verification",
     body: "Every decision is attested, handle-matched, and checkable by anyone with an RPC.",
   },
-];
+] as const;
 
-const TYPICAL = [
-  "AI holds spending authority",
-  "Public budgets",
-  "Prompt can influence payment",
-  "Single point of failure",
-];
-
-const OURS = [
-  "AI never controls the wallet",
-  "Budget stays confidential",
-  "Authorization ignores attacker text",
-  "Multiple independent safety bounds",
-];
-
-const METRICS = [
-  ["Budget", "0.20"],
-  ["Agent", "Structured only"],
-  ["Policy", "Confidential"],
-  ["Settlement", "Confirmed"],
-];
-
-const TIMELINE = ["requestSpend committed", "Confidential evaluation", "Payment settled"];
-
-/*
- * In-page nav targets, as `[id, label]`.
- *
- * These render as buttons rather than `<a href="#id">`. A fragment link makes
- * the browser own the jump: it writes `#guarantees` into the address bar,
- * pushes a history entry, and — since the whole point of Lenis is that the
- * page is being scrolled by script — arrives instantly, undercutting the
- * smoothing everywhere it is used. A button hands the scroll to Lenis and
- * leaves the URL alone, which is what you want on camera and what you want in
- * a share link.
- *
- * The cost is real and accepted: these are no longer deep-linkable, and no
- * longer open in a new tab. The ids stay on the sections, so an external
- * `/#security` still works; only the in-page controls change.
- */
-const NAV_LINKS: ReadonlyArray<readonly [id: string, label: string]> = [
-  ["flow", "Flow"],
-  ["guarantees", "Guarantees"],
-  ["security", "Security"],
+const QUESTIONS: readonly AccordionItem[] = [
+  {
+    q: "What stops the agent from spending more than I allowed?",
+    a: "It never holds spending authority. The budget is enforced by a confidential policy evaluated inside a TEE, and the payer key is derived in an enclave that only signs against a finalized on-chain record. Convincing the model achieves nothing, because the model is not the thing being asked.",
+  },
+  {
+    q: "Can prompt injection reach the payment?",
+    a: "It can reach the agent, which is the point of the design. The agent reads vendor text and can be fully persuaded by it — and still cannot move funds, because the component holding the payer key never reads that text and never takes instructions from it.",
+  },
+  {
+    q: "If the budget is encrypted, how is it enforced?",
+    a: "Inco evaluates the comparison confidentially and commits the debit before the answer is knowable. You cannot branch on a secret, so the debit is unconditional and the outcome is what gets revealed — not the balance.",
+  },
+  {
+    q: "What happens if a settlement is interrupted halfway?",
+    a: "Nonces are deterministic, so the retry produces the identical authorization rather than a second one. An interrupted run resumes; it does not double-pay.",
+  },
+  {
+    q: "Which chain and which token?",
+    a: "Base Sepolia, settled in USDC over x402 using EIP-3009 transfer authorizations. Settlement is gasless for the payer and single-use per authorization.",
+  },
+  {
+    q: "Can I verify a run without trusting this interface?",
+    a: "Yes. Every decision is attested on chain and matched against the handle the contract stored, not one the caller supplied. An RPC endpoint and a block explorer are enough to check the whole run independently.",
+  },
 ];
 
 export function Landing({
@@ -119,277 +158,281 @@ export function Landing({
   /** Reported by the shell so the CTA can show what the wallet is doing. */
   phase?: ConnectPhase;
 }) {
-  const root = useRef<HTMLDivElement>(null);
   const connecting = phase === "connecting";
+  // The header floats over sections that alternate ink and bone, so it has to
+  // recolour itself as they pass underneath.
+  const tone = useHeaderTone();
   // Smooths the wheel for as long as this page is mounted, and gives the
   // in-page controls something to scroll with.
   const scrollToId = useSmoothScroll();
 
-  /*
-   * Scroll reveal.
-   *
-   * The `js-reveal` class is added *by this effect*, so the hidden initial
-   * state only ever exists when there is something running that can undo it.
-   * Setting it in the stylesheet instead would leave the whole page blank if
-   * the script failed to load.
-   *
-   * Sections are unobserved once seen — this is an entrance, not a scrubber,
-   * and re-animating on scroll-back is the thing that makes reveals annoying.
-   */
-  useEffect(() => {
-    const el = root.current;
-    if (!el) return;
-
-    const targets = el.querySelectorAll<HTMLElement>(".lp-reveal");
-    if (!("IntersectionObserver" in window)) return;
-
-    el.classList.add("js-reveal");
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (!entry.isIntersecting) continue;
-          entry.target.setAttribute("data-seen", "");
-          observer.unobserve(entry.target);
-        }
-      },
-      { rootMargin: "0px 0px -12% 0px", threshold: 0.06 },
-    );
-
-    for (const target of targets) observer.observe(target);
-    return () => observer.disconnect();
-  }, []);
-
   return (
-    <div className="landing" ref={root}>
-      {/* 0 — NAV */}
-      <nav className="lp-nav">
-        <div className="lp-nav-inner">
-          <span className="lp-nav-brand">
-            <span className="lp-nav-name">LedgerLighthouse</span>
-          </span>
-          <span className="lp-nav-links">
+    <div className="gf">
+      {/* ---------------------------------------------------------- header */}
+      <header className="gf-header" data-tone={tone}>
+        <div className="gf-container gf-header-in">
+          <button type="button" className="gf-brand" onClick={() => scrollToId("top")}>
+            LedgerLighthouse
+          </button>
+
+          <nav className="gf-nav" aria-label="Sections">
             {NAV_LINKS.map(([id, label]) => (
-              <button key={id} type="button" className="lp-nav-link" onClick={() => scrollToId(id)}>
+              <button key={id} type="button" className="gf-nav-link" onClick={() => scrollToId(id)}>
                 {label}
               </button>
             ))}
-          </span>
-          <button type="button" className="lp-btn lp-btn-ghost" onClick={onConnect}>
+          </nav>
+
+          <button type="button" className="gf-pill gf-pill-sm" onClick={onConnect}>
             Launch console
           </button>
         </div>
-      </nav>
-
-      {/* 1 — HERO */}
-      <header className="lp-hero">
-        {/* Decorative: the page states everything this image states, in words,
-            immediately beside it. */}
-        <div className="lp-hero-bg" aria-hidden="true" />
-        <div className="lp-hero-scrim" aria-hidden="true" />
-
-        <div className="lp-hero-copy">
-          <p className="lp-eyebrow lp-in" style={{ animationDelay: "60ms" }}>
-            <span className="lp-num">00</span>
-            Confidential Agentic Payments
-          </p>
-          <h1 className="lp-headline lp-in" style={{ animationDelay: "140ms" }}>
-            Pay APIs.
-            <br />
-            Don&apos;t <em>trust the AI.</em>
-          </h1>
-          <p className="lp-sub lp-in" style={{ animationDelay: "240ms" }}>
-            Encrypted budgets, prompt-injection-resistant authorization, and independently capped
-            execution on Base Sepolia.
-          </p>
-          <div className="lp-actions lp-in" style={{ animationDelay: "340ms" }}>
-            <button
-              type="button"
-              className="lp-btn"
-              onClick={onConnect}
-              disabled={connecting}
-              data-connecting={connecting ? "true" : undefined}
-            >
-              {connecting ? "Waiting for MetaMask" : "Connect with MetaMask"}
-            </button>
-            {/* Same reasoning as the nav: a button, so the hero CTA glides
-                into section 01 instead of teleporting and dirtying the URL. */}
-            <button
-              type="button"
-              className="lp-btn lp-btn-ghost"
-              onClick={() => scrollToId("flow")}
-            >
-              See the flow
-            </button>
-          </div>
-          {/* Only ever rendered after a real refusal, so it cannot read as a
-              warning to someone who has not tried yet. */}
-          {phase === "declined" ? (
-            <p className="lp-connect-note" role="status">
-              Connection declined — nothing was sent. Try again when ready.
-            </p>
-          ) : null}
-        </div>
       </header>
 
-      {/* 2 — WORKFLOW */}
-      <section className="lp-section lp-reveal" id="flow">
-        <p className="lp-eyebrow">
-          <span className="lp-num">01</span>
-          The path of a single payment
-        </p>
-        <h2 className="lp-h2">Seven steps, one of which can be compromised safely.</h2>
-        <Flow />
-      </section>
+      {/* ------------------------------------------------------------ hero */}
+      <section className="gf-sec gf-ink gf-hero" id="top">
+        <div className="gf-container gf-hero-in">
+          <div className="gf-grid gf-hero-grid">
+            <div className="gf-hero-copy">
+              <SplitLines
+                as="h1"
+                className="gf-display"
+                lines={["Pay APIs. ", "Don't trust ", "the AI."]}
+                delay={120}
+                stagger={110}
+              />
 
-      {/* 3 — TRUST STRIP */}
-      <section className="lp-trust lp-reveal" aria-label="Built on">
-        {TRUST.map((item) => (
-          <span key={item} className="lp-trust-item">
-            {item}
-          </span>
-        ))}
-      </section>
+              <SplitText
+                className="gf-hero-sub"
+                text="Encrypted budgets, prompt-injection-resistant authorization, and independently capped execution on Base Sepolia."
+                delay={520}
+              />
 
-      {/* 4 — FEATURES */}
-      <section className="lp-section lp-reveal sw-dots" id="guarantees">
-        <p className="lp-eyebrow">
-          <span className="lp-num">02</span>
-          What the system guarantees
-        </p>
-        <h2 className="lp-h2">Bounds, not promises.</h2>
-        <div className="lp-grid">
-          {FEATURES.map(({ Icon, title, body }) => (
-            <article key={title} className="lp-card">
-              <span className="lp-card-icon">
-                <Icon />
-              </span>
-              <h3 className="lp-card-title">{title}</h3>
-              <p className="lp-card-body">{body}</p>
-            </article>
-          ))}
-        </div>
-      </section>
+              <div className="gf-hero-actions">
+                <button
+                  type="button"
+                  className="gf-pill"
+                  onClick={onConnect}
+                  disabled={connecting}
+                  data-busy={connecting ? "" : undefined}
+                >
+                  {connecting ? "Waiting for MetaMask" : "Connect with MetaMask"}
+                </button>
+                {/* Same reasoning as the nav: a button, so the hero CTA glides
+                    into the path section instead of teleporting. */}
+                <button type="button" className="gf-text-link" onClick={() => scrollToId("flow")}>
+                  See the path
+                </button>
+              </div>
 
-      {/* 5 — COMPARISON */}
-      <section className="lp-section lp-reveal">
-        <p className="lp-eyebrow">
-          <span className="lp-num">03</span>
-          Why this is different
-        </p>
-        <h2 className="lp-h2">The authority never reaches the model.</h2>
-        <div className="lp-compare">
-          <div className="lp-col">
-            <h3 className="lp-col-title">Typical AI wallet</h3>
-            <ul className="lp-list">
-              {TYPICAL.map((item) => (
-                <li key={item} className="lp-list-item">
-                  <span className="lp-mark" aria-hidden="true" />
-                  {item}
-                </li>
+              {/* Only ever rendered after a real refusal, so it cannot read as
+                  a warning to someone who has not tried yet. */}
+              {phase === "declined" ? (
+                <p className="gf-note" role="status">
+                  Connection declined — nothing was sent. Try again when ready.
+                </p>
+              ) : null}
+            </div>
+
+            <div className="gf-hero-object">
+              {/*
+                The x402 wordmark, resolved to characters.
+
+                `invert` because the mark is black art on nothing — without it
+                the ramp would draw the empty ground and leave the letterforms
+                blank. `cell` is finer than the default: a wordmark is judged
+                on whether the stroke joins resolve, and at 9px they do not.
+                `trim` costs one downscaled scan on load and makes the mark
+                fill its box whatever margins the source file was exported
+                with.
+
+                Decorative, and labelled nowhere: "x402" already appears in
+                the stack row directly below this, in text.
+              */}
+              <AsciiObject src="/x402.svg" invert cell={6} trim />
+            </div>
+          </div>
+
+          <div className="gf-hero-stack">
+            <span className="gf-mono gf-dim">Built on</span>
+            <span className="gf-stack-marks">
+              {STACK.slice(0, 4).map((mark) => (
+                <span className="gf-mark" key={mark}>
+                  {mark}
+                </span>
               ))}
-            </ul>
-          </div>
-          <div className="lp-col lp-col-emphasis">
-            <h3 className="lp-col-title">This system</h3>
-            <ul className="lp-list">
-              {OURS.map((item) => (
-                <li key={item} className="lp-list-item">
-                  <span className="lp-mark lp-mark-on" aria-hidden="true" />
-                  {item}
-                </li>
-              ))}
-            </ul>
+              <span className="gf-mono gf-dim">+ many more</span>
+            </span>
           </div>
         </div>
+
+        <div className="gf-hero-rule" aria-hidden="true" />
       </section>
 
-      {/* 6 — EXECUTION PREVIEW */}
-      <section className="lp-section lp-reveal">
-        <p className="lp-eyebrow">
-          <span className="lp-num">04</span>
-          Live execution
-        </p>
-        <h2 className="lp-h2">What the console shows while it runs.</h2>
-        {/* Static illustration of the console. Not interactive, and labelled as
-            a preview so it is never mistaken for live state. */}
-        <div className="lp-preview" role="img" aria-label="Preview of the execution console after a completed honest request">
-          <div className="lp-preview-head">
-            <span className="lp-status">Success</span>
-            <span className="lp-preview-title">Honest request completed</span>
-            <span className="lp-preview-sub">0.01 USDC settled on Base Sepolia</span>
-          </div>
-          <dl className="lp-metrics">
-            {METRICS.map(([label, value]) => (
-              <div key={label} className="lp-metric">
-                <dt>{label}</dt>
-                <dd>{value}</dd>
+      {/* ----------------------------------------------------------- stats */}
+      <section className="gf-sec gf-bone gf-stats" aria-label="By the numbers">
+        <div className="gf-container">
+          <div className="gf-grid gf-stats-grid">
+            {STATS.map((stat) => (
+              <div className="gf-stat" key={stat.label}>
+                <Odometer className="gf-stat-n" value={stat.value} suffix={stat.suffix} />
+                <span className="gf-stat-label gf-mono">{stat.label}</span>
               </div>
             ))}
-          </dl>
-          <ol className="lp-timeline">
-            {TIMELINE.map((item) => (
-              <li key={item} className="lp-timeline-item">
-                {item}
+          </div>
+        </div>
+      </section>
+
+      {/* --------------------------------------------------------- process */}
+      <section className="gf-sec gf-bone" id="process">
+        <div className="gf-container">
+          <div className="gf-grid gf-head">
+            <SplitLines as="h2" className="gf-h2 gf-head-title" lines={["How it works."]} />
+            <p className="gf-mono gf-dim gf-head-tag">
+              <DecryptText text="// PROCESS" />
+            </p>
+          </div>
+
+          <Process />
+        </div>
+      </section>
+
+      {/* ------------------------------------------------------------ path */}
+      <section className="gf-sec gf-ink" id="flow">
+        <div className="gf-container">
+          <div className="gf-grid gf-head">
+            <SplitLines as="h2" className="gf-h2 gf-head-title" lines={["The payment path."]} />
+            <p className="gf-mono gf-dim gf-head-tag">
+              <DecryptText text="// SEVEN STAGES" />
+            </p>
+          </div>
+          <p className="gf-lede">
+            Seven stages, one of which can be compromised safely. Hover any stage for the line that
+            makes it matter.
+          </p>
+          <Flow />
+        </div>
+      </section>
+
+      {/* ------------------------------------------------------ guarantees */}
+      <section className="gf-sec gf-bone" id="guarantees">
+        <div className="gf-container">
+          <div className="gf-grid gf-head">
+            <SplitLines
+              as="h2"
+              className="gf-h2 gf-head-title"
+              lines={["What's in a ", "bound."]}
+            />
+            <p className="gf-mono gf-dim gf-head-tag">
+              <DecryptText text="// THE GUARANTEES" />
+            </p>
+          </div>
+
+          <p className="gf-rule-label gf-mono">Bounds, not promises.</p>
+
+          <ul className="gf-bounds">
+            {FEATURES.map(({ Icon, title, body }) => (
+              <li className="gf-bound" key={title}>
+                <span className="gf-bound-icon" aria-hidden="true">
+                  <Icon />
+                </span>
+                <h3 className="gf-bound-title">
+                  <DecryptText text={title.toUpperCase()} />
+                </h3>
+                <p className="gf-bound-body">{body}</p>
               </li>
             ))}
-          </ol>
+          </ul>
         </div>
       </section>
 
-      {/* 7 — SECURITY */}
-      <section className="lp-section lp-reveal sw-diagonal" id="security">
-        <p className="lp-eyebrow">
-          <span className="lp-num">05</span>
-          Security model
-        </p>
-        <h2 className="lp-h2">Bounded autonomous execution</h2>
-        <div className="lp-prose">
-          <p>The browser encrypts the budget before it ever reaches the chain.</p>
-          <p>The policy is evaluated confidentially, and the debit commits before the answer is knowable.</p>
-          <p>Payments are signed only from finalized on-chain records, never from caller input.</p>
+      {/* ------------------------------------------------------- questions */}
+      <section className="gf-sec gf-ink gf-questions" id="questions">
+        {/* Sits behind the section at low alpha. The copy on top keeps full
+            contrast because the canvas never paints over it. */}
+        <GlyphRain />
+        <div className="gf-container gf-questions-in">
+          <div className="gf-grid gf-head">
+            <SplitLines as="h2" className="gf-h2 gf-head-title" lines={["Common ", "questions"]} />
+            <p className="gf-mono gf-dim gf-head-tag">
+              <DecryptText text="// FAQ" />
+            </p>
+          </div>
+          <Accordion items={QUESTIONS} />
         </div>
       </section>
 
-      {/* 8 — FINAL CTA */}
-      <section className="lp-cta lp-reveal">
-        <p className="lp-eyebrow">
-          <span className="lp-num">06</span>
-          Get started
-        </p>
-        <h2 className="lp-cta-title">
-          Let agents pay APIs.
-          <br />
-          Keep the authority <em>cryptographically bounded.</em>
-        </h2>
-        <button type="button" className="lp-btn" onClick={onConnect}>
-          Connect with MetaMask
-        </button>
-        <p className="lp-cta-note">No backend changes required to preview the flow.</p>
-      </section>
+      {/* ------------------------------------------------------------- cta */}
+      <RippleField className="gf-sec gf-bone gf-cta">
+        <div className="gf-container">
+          <div className="gf-grid gf-cta-grid">
+            <SplitLines as="h2" className="gf-display gf-cta-title" lines={["Start a ", "run."]} />
+            <div className="gf-cta-side">
+              <p className="gf-cta-lede">
+                Connect a wallet, or read the source. Every claim on this page is checkable without
+                trusting this interface.
+              </p>
+              <div className="gf-hero-actions">
+                <button type="button" className="gf-pill" onClick={onConnect} disabled={connecting}>
+                  {connecting ? "Waiting for MetaMask" : "Connect with MetaMask"}
+                </button>
+                <a
+                  className="gf-text-link"
+                  href="https://github.com/adarshkr7/LedgerLighthouse"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Read the source
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </RippleField>
 
-      {/* 9 — FOOTER */}
-      <footer className="lp-footer">
-        <nav className="lp-footer-links" aria-label="Resources">
-          <a href="https://github.com/adarshkr7/LedgerLighthouse" target="_blank" rel="noreferrer">
-            GitHub
-          </a>
-          <a
-            href="https://github.com/adarshkr7/LedgerLighthouse/blob/main/README.md"
-            target="_blank"
-            rel="noreferrer"
-          >
-            Docs
-          </a>
-          <a
-            href="https://sepolia.basescan.org/address/0x0C759D06a1c14F43852D7b078Db2f8C342F15921"
-            target="_blank"
-            rel="noreferrer"
-          >
-            BaseScan
-          </a>
-        </nav>
-        <p className="lp-footer-note">Built with Inco</p>
+      {/* ---------------------------------------------------------- footer */}
+      <footer className="gf-sec gf-ink gf-footer">
+        <div className="gf-container gf-footer-in">
+          <Marquee
+            className="gf-footer-marquee"
+            items={STACK.map((mark) => (
+              <span className="gf-mark">{mark}</span>
+            ))}
+          />
+
+          <div className="gf-grid gf-footer-grid">
+            <SplitLines
+              as="p"
+              className="gf-display gf-footer-statement"
+              lines={["The authority ", "never reaches ", "the model."]}
+            />
+
+            <nav className="gf-footer-links" aria-label="Resources">
+              <a href="https://github.com/adarshkr7/LedgerLighthouse" target="_blank" rel="noreferrer">
+                GitHub
+              </a>
+              <a
+                href="https://github.com/adarshkr7/LedgerLighthouse/blob/main/README.md"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Docs
+              </a>
+              <a
+                href="https://sepolia.basescan.org/address/0x0C759D06a1c14F43852D7b078Db2f8C342F15921"
+                target="_blank"
+                rel="noreferrer"
+              >
+                BaseScan
+              </a>
+            </nav>
+          </div>
+
+          <div className="gf-footer-base gf-mono gf-dim">
+            <span>Built with Inco</span>
+            <span>Base Sepolia</span>
+          </div>
+        </div>
       </footer>
     </div>
   );

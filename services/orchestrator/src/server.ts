@@ -11,17 +11,21 @@
  *   GET  /health
  *   GET  /config          addresses and modes the UI needs to render honestly
  *   POST /runs            { goalId, mode } -> SSE stream of PaymentEvents
+ *   POST /sweeps          { goalId } -> returns the payer balance to the owner
  *   GET  /traces/:goalId  the trace built from the last run for that goal
  */
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 
-import { TraceBuilder, type Trace } from "@ntux402/trace";
+import { TraceBuilder } from "@ntux402/trace";
 import { DEMO_GOAL_KEYS, findDemoGoal } from "@ntux402/shared";
+import { RateLimiter, corsHeaders, rejected } from "@ntux402/shared/node";
 import type { Address } from "viem";
 
 import type { PaymentEvent, PaymentLoop, PaymentResult } from "./pay/payment-loop.js";
 import type { VaultRelay } from "./pay/relay.js";
+import { TraceStore } from "./trace-store.js";
+import { sweepGoal } from "./pay/sweep.js";
 
 export interface OrchestratorServerOptions {
   readonly loop: PaymentLoop;
@@ -33,27 +37,34 @@ export interface OrchestratorServerOptions {
   readonly signerUrl: string;
   readonly facilitatorUrl: string | undefined;
   readonly agentSource: "llm" | "scripted";
+  /** Where completed traces are written. Defaults to `.traces`. */
+  readonly traceDir?: string | undefined;
   readonly log?: (line: string) => void;
 }
 
-/**
- * Dev-only, and permissive because it is. The orchestrator is the untrusted
- * component by design — it holds a gas key and can start runs against goals
- * that already exist, both of which the vault already bounds. Anything a
- * cross-origin caller could do here, the orchestrator could already do.
+/*
+ * The orchestrator is the untrusted component by design — it holds a gas key,
+ * and the vault bounds what it can do. But "bounded" is not "free": a run burns
+ * relay gas, consumes one of the goal's `callsRemaining`, and debits the
+ * confidential budget. An open `POST /runs` therefore lets anyone who learns a
+ * goal id exhaust a goal that someone is about to demo.
+ *
+ * So: loopback bind, origin allowlist, optional token, and a limiter sized to
+ * a human driving a UI rather than a script.
  */
-const CORS = {
-  "access-control-allow-origin": "*",
-  "access-control-allow-methods": "GET, POST, OPTIONS",
-  "access-control-allow-headers": "content-type",
-} as const;
+const RUN_LIMIT = new RateLimiter({ windowMs: 60_000, max: 20 });
 
-function send(res: ServerResponse, status: number, body: unknown): void {
+function send(
+  res: ServerResponse,
+  status: number,
+  body: unknown,
+  cors: Record<string, string> = {},
+): void {
   const payload = JSON.stringify(body, (_k, v: unknown) =>
     typeof v === "bigint" ? v.toString() : v,
   );
   res.writeHead(status, {
-    ...CORS,
+    ...cors,
     "content-type": "application/json",
     "content-length": Buffer.byteLength(payload),
   });
@@ -69,23 +80,27 @@ async function readJson(req: IncomingMessage): Promise<unknown> {
 
 export function createOrchestratorServer(options: OrchestratorServerOptions): Server {
   const log = options.log ?? (() => {});
-  const traces = new Map<string, Trace>();
+  // Durable and bounded. See trace-store.ts for why this is a directory.
+  const traces = new TraceStore(options.traceDir ?? ".traces");
 
   return createServer((req, res) => {
     void (async () => {
       const path = (req.url ?? "/").split("?")[0] ?? "/";
+      const cors = corsHeaders(req);
 
       if (req.method === "OPTIONS") {
-        res.writeHead(204, CORS);
+        res.writeHead(204, cors);
         res.end();
         return;
       }
 
       if (req.method === "GET" && path === "/health") {
-        send(res, 200, { ok: true, service: "orchestrator" });
+        send(res, 200, { ok: true, service: "orchestrator" }, cors);
         return;
       }
 
+      // Open like /health: the UI needs these addresses to render honestly, and
+      // every one of them is already public on chain.
       if (req.method === "GET" && path === "/config") {
         send(res, 200, {
           vaultAddress: options.vaultAddress,
@@ -105,19 +120,52 @@ export function createOrchestratorServer(options: OrchestratorServerOptions): Se
         const goalId = path.slice("/traces/".length);
         const trace = traces.get(goalId);
         if (!trace) {
-          send(res, 404, { error: `no trace recorded for goal ${goalId}` });
+          send(res, 404, { error: `no trace recorded for goal ${goalId}` }, cors);
           return;
         }
-        send(res, 200, trace);
+        send(res, 200, trace, cors);
         return;
       }
 
-      if (req.method === "POST" && path === "/runs") {
+      if (req.method === "POST" && path === "/sweeps") {
+        if (rejected(req, res, { limiter: RUN_LIMIT })) return;
         let body: unknown;
         try {
           body = await readJson(req);
         } catch {
-          send(res, 400, { error: "body: not valid JSON" });
+          send(res, 400, { error: "body: not valid JSON" }, cors);
+          return;
+        }
+        const { goalId } = (body ?? {}) as { goalId?: unknown };
+        if (typeof goalId !== "string" || !/^[0-9]{1,32}$/.test(goalId)) {
+          send(res, 400, { error: "goalId: expected a decimal string" }, cors);
+          return;
+        }
+
+        const outcome = await sweepGoal(goalId, {
+          signerUrl: options.signerUrl,
+          facilitatorUrl: options.facilitatorUrl,
+          usdcAddress: options.usdcAddress,
+        });
+        log(`POST /sweeps goal=${goalId} -> ${outcome.kind}`);
+
+        if (outcome.kind === "settled") {
+          send(res, 200, outcome, cors);
+        } else if (outcome.kind === "refused") {
+          send(res, outcome.status, { error: outcome.reason }, cors);
+        } else {
+          send(res, 502, { error: outcome.reason }, cors);
+        }
+        return;
+      }
+
+      if (req.method === "POST" && path === "/runs") {
+        if (rejected(req, res, { limiter: RUN_LIMIT })) return;
+        let body: unknown;
+        try {
+          body = await readJson(req);
+        } catch {
+          send(res, 400, { error: "body: not valid JSON" }, cors);
           return;
         }
 
@@ -127,14 +175,14 @@ export function createOrchestratorServer(options: OrchestratorServerOptions): Se
           priceAtomic?: unknown;
         };
         if (typeof goalId !== "string" || !/^[0-9]+$/.test(goalId)) {
-          send(res, 400, { error: "goalId: expected a decimal string" });
+          send(res, 400, { error: "goalId: expected a decimal string" }, cors);
           return;
         }
         // Validated against the shared catalog rather than a literal union, so
         // adding a resource is a catalog edit and not a change here. Anything
         // outside the catalog is rejected — this value becomes a URL path.
         if (typeof mode !== "string" || findDemoGoal(mode) === undefined) {
-          send(res, 400, { error: `mode: expected one of ${DEMO_GOAL_KEYS.join(", ")}` });
+          send(res, 400, { error: `mode: expected one of ${DEMO_GOAL_KEYS.join(", ")}` }, cors);
           return;
         }
 
@@ -142,12 +190,13 @@ export function createOrchestratorServer(options: OrchestratorServerOptions): Se
         // nothing else. It never reaches the policy: the amount the vault sees
         // comes from the 402 the vendor returns, parsed and re-derived there.
         if (priceAtomic !== undefined && !/^[0-9]{1,18}$/.test(String(priceAtomic))) {
-          send(res, 400, { error: "priceAtomic: expected a decimal string" });
+          send(res, 400, { error: "priceAtomic: expected a decimal string" }, cors);
           return;
         }
 
         await streamRun(res, {
           ...options,
+          cors,
           goalId: BigInt(goalId),
           mode,
           ...(priceAtomic === undefined ? {} : { priceAtomic: String(priceAtomic) }),
@@ -157,7 +206,7 @@ export function createOrchestratorServer(options: OrchestratorServerOptions): Se
         return;
       }
 
-      send(res, 404, { error: "not found" });
+      send(res, 404, { error: "not found" }, cors);
     })().catch((e: unknown) => {
       if (!res.headersSent) send(res, 500, { error: e instanceof Error ? e.message : String(e) });
       else res.end();
@@ -168,17 +217,18 @@ export function createOrchestratorServer(options: OrchestratorServerOptions): Se
 async function streamRun(
   res: ServerResponse,
   ctx: OrchestratorServerOptions & {
+    cors: Record<string, string>;
     goalId: bigint;
     /** A key from the shared demo catalog; also the resource path segment. */
     mode: string;
     /** Demo-only price override, forwarded to the mock vendor. */
     priceAtomic?: string;
-    traces: Map<string, Trace>;
+    traces: TraceStore;
     log: (line: string) => void;
   },
 ): Promise<void> {
   res.writeHead(200, {
-    ...CORS,
+    ...ctx.cors,
     "content-type": "text/event-stream",
     "cache-control": "no-cache",
     connection: "keep-alive",
@@ -209,20 +259,20 @@ async function streamRun(
   const url = `${ctx.mockApiUrl}/resource/${ctx.mode}${query}`;
   ctx.log(`POST /runs goal=${ctx.goalId} mode=${ctx.mode}${query}`);
 
-  const unsubscribe = ctx.loop.subscribe(forward);
+  // Scoped to this run, not registered on the shared loop. `subscribe()` is
+  // process-wide, so two concurrent runs would each receive the other's events
+  // and each trace would record both goals.
   let result: PaymentResult;
   try {
-    result = await ctx.loop.fetchPaid(url, ctx.goalId);
+    result = await ctx.loop.fetchPaid(url, ctx.goalId, { onEvent: forward });
   } catch (e) {
     emit("error", { message: e instanceof Error ? e.message : String(e) });
     res.end();
     return;
-  } finally {
-    unsubscribe();
   }
 
   const trace = builder.build();
-  ctx.traces.set(ctx.goalId.toString(), trace);
+  ctx.traces.save(ctx.goalId.toString(), trace);
 
   emit("result", result);
   emit("trace", trace);

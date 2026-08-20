@@ -1,48 +1,96 @@
 /*
- * The execution console — Swiss International Style.
+ * LedgerLighthouse — console surface.
  *
- * Scoped under `.dash`, self-contained exactly like `.landing`: its own five
- * tokens, no shared dependency on the pixel/neon system that used to live in
- * styles.css. The two pages are now one design system, applied twice.
+ * Same design system as the landing page: one neo-grotesque and one monospace,
+ * brand orange as the only accent, flat borders, no shadows, and a full radius
+ * on pills and nothing else. The eases are the landing page eases, so a control
+ * here decelerates exactly like a control there.
  *
- * ## Mapping four live states onto a one-colour palette
+ * Ink, not bone. The landing page alternates the two by section; a console
+ * cannot, because it is one frame that never scrolls, so it has to choose. It
+ * chooses the tone the landing page opens and closes on, and the one that suits
+ * a surface watched in a dim room while something is running -- a full screen
+ * of #eee is a lamp pointed at the viewer.
  *
- * The console has to distinguish four things a marketing page never has to:
- * approved, rejected, pending, and encrypted, sometimes all visible at once.
- * The source brief allows exactly one signal colour, so collapsing all four
- * into red would destroy the one distinction this whole product exists to
- * demonstrate — "settled" and "refused" would look identical.
+ * ## Why the tokens are declared again
  *
- * The resolution is the brief's own logic taken further than its examples:
- * colour is not the only way to encode a state. Pattern and weight are too.
+ * `landing.css` scopes its tokens to `.gf`, and `.dash` is a sibling of that
+ * element, never a descendant — the two pages are alternatives, not nested. So
+ * inheriting is not available without hoisting the block to `:root`, and the
+ * project's stated architecture (see `styles.css`) is that each page surface
+ * is a self-contained stylesheet. The values below are therefore duplicated on
+ * purpose. If they ever need to move, they move together to `:root` and both
+ * files consume them; splitting the difference is what would rot.
  *
- *   done / approved   solid black fill      "certainty needs no colour"
- *   rejected          Swiss red             the one legitimate warning
- *   active / pending  diagonal stripe       committed, not yet knowable
- *   encrypted         monospace + dot chip  a substance, not a status
+ * ## One frame
  *
- * No blur, no glow, no radius, no soft shadow — borders and fills only.
+ * The console is exactly one viewport tall and the page never scrolls. That is
+ * a hard constraint, not a preference: this is an operational surface watched
+ * live while a run is in flight, and a viewer who has to scroll to see whether
+ * the payment settled is a viewer who misses it happening.
+ *
+ * What that costs is space, and the cost is paid two ways. Each pane owns its
+ * own `overflow`, so a long timeline scrolls inside its column instead of
+ * pushing the goal state off screen. And everything that is real content but
+ * not live — setup, goal detail, guarantees, evidence — moved into `<dialog>`.
+ * They are one click away and they are the only scrolling regions here.
  */
 
 .dash {
-  --sw-bg: #ffffff;
-  --sw-fg: #000000;
-  --sw-muted: #f2f2f2;
-  --sw-accent: #ff3000;
-  --sw-border: #000000;
-  --sw-font: "Inter", "Inter Fallback", ui-sans-serif, system-ui, Helvetica, Arial, sans-serif;
-  --sw-mono: "JetBrains Mono", ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
-  --sw-ease: cubic-bezier(0, 0, 0.2, 1);
-  --sw-b: 2px;
+  /* ---- palette: ink, matching the dark sections of the landing page ----- */
+  --d-bg: #141314;
+  --d-fg: #eeeeee;
+  /* Panes sit a step *above* the page rather than below it: on a dark surface
+     the raised plane is the lighter one, and the frame gutters then read as
+     the ground between the panes. */
+  --d-bg-muted: #1b1a1b;
+  --d-fg-muted: #818081;
+  --d-brand: #fd551d;
+  --d-border: rgba(238, 238, 238, 0.16);
+  --d-border-muted: rgba(238, 238, 238, 0.08);
+  --d-surface: #333333;
 
-  position: relative;
-  min-height: 100vh;
-  background: var(--sw-bg);
-  color: var(--sw-fg);
-  font-family: var(--sw-font);
-  font-size: 14px;
-  line-height: 1.5;
+  /* The topbar, one step darker again so it reads as chrome, not content. */
+  --d-ink: #0e0d0e;
+  --d-ink-fg: #eeeeee;
+  --d-ink-muted: #818081;
+  --d-ink-border: rgba(238, 238, 238, 0.14);
+
+  /* ---- type ------------------------------------------------------------ */
+  --d-sans: "Geist", "Inter", ui-sans-serif, system-ui, Helvetica, Arial, sans-serif;
+  --d-mono: "Geist Mono", "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  /*
+   * Flatter than the landing page's scale on purpose. That page is read once
+   * at arm's length and its display sizes run to 128px; this one is scanned
+   * repeatedly at a glance while something is happening, so the range is
+   * compressed into four steps and none of them is fluid. A headline that
+   * resized with the window would move the timeline under the reader's eye.
+   */
+  --d-t-title: 15px;
+  --d-t-body: 13px;
+  --d-t-label: 11px;
+  --d-t-figure: 34px;
+
+  /* ---- motion: the landing page's curves, unchanged --------------------- */
+  --d-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --d-ease-quart: cubic-bezier(0.25, 1, 0.5, 1);
+
+  --d-gutter: 10px;
+  --d-top-h: 52px;
+
+  height: 100svh;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+  background: var(--d-bg);
+  color: var(--d-fg);
+  font-family: var(--d-sans);
+  font-size: var(--d-t-body);
+  line-height: 1.45;
   -webkit-font-smoothing: antialiased;
+  /* Native form controls, scrollbars and the dialog backdrop all read this. */
+  color-scheme: dark;
 }
 
 .dash * {
@@ -50,16 +98,16 @@
 }
 
 .dash ::selection {
-  background: var(--sw-accent);
-  color: #fff;
+  background: var(--d-brand);
+  color: #eeeeee;
 }
 
-.dash :focus-visible {
-  outline: 2px solid var(--sw-accent);
+.dash :is(button, a, input):focus-visible {
+  outline: 2px solid var(--d-brand);
   outline-offset: 2px;
-  border-radius: 0;
 }
 
+/* Screen-reader-only, for the rail's per-step state. */
 .d-sr {
   position: absolute;
   width: 1px;
@@ -69,886 +117,961 @@
   overflow: hidden;
   clip-path: inset(50%);
   white-space: nowrap;
-  border: 0;
 }
 
-/* ------------------------------------------------------------------- brand */
+/* ==========================================================================
+ * Topbar — ink, so the frame below reads as the working surface
+ * ========================================================================== */
 
-.lh-mark {
-  display: block;
-  flex-shrink: 0;
+.d-top {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  height: var(--d-top-h);
+  padding-inline: var(--d-gutter);
+  background: var(--d-ink);
+  color: var(--d-ink-fg);
+  font-family: var(--d-mono);
+  font-size: var(--d-t-label);
+  letter-spacing: -0.01em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
 }
 
-.lh-mark[data-spin] {
-  transform-origin: 50% 97%;
-  animation: lh-wobble 2.4s var(--sw-ease) infinite;
+.d-top-brand {
+  font-weight: 500;
+  letter-spacing: -0.03em;
 }
 
-@keyframes lh-wobble {
+.d-top-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--d-ink-muted);
+}
+
+.d-top-meta {
+  display: flex;
+  gap: 18px;
+  margin-left: auto;
+  overflow: hidden;
+}
+
+.d-top-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--d-ink-fg);
+}
+
+.d-top-item i {
+  font-style: normal;
+  color: var(--d-ink-muted);
+}
+
+.d-top-actions {
+  display: flex;
+  gap: 6px;
+}
+
+/* Ink-tone buttons, only inside the topbar. */
+.d-top .d-btn {
+  border-color: var(--d-ink-border);
+  background: transparent;
+  color: var(--d-ink-fg);
+}
+
+.d-top .d-btn:hover:not(:disabled) {
+  background: var(--d-ink-fg);
+  border-color: var(--d-ink-fg);
+  color: var(--d-ink);
+}
+
+.d-top .d-btn:disabled {
+  color: var(--d-ink-muted);
+  opacity: 1;
+}
+
+.d-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--d-ink-muted);
+}
+
+.d-dot[data-tone="live"] {
+  background: var(--d-brand);
+  animation: d-pulse 2s var(--d-ease-out) infinite;
+}
+
+@keyframes d-pulse {
   0%,
   100% {
-    transform: rotate(-6deg);
+    opacity: 1;
   }
   50% {
-    transform: rotate(6deg);
+    opacity: 0.35;
   }
 }
 
-.d-brand {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  padding-inline-end: 0.9rem;
-  margin-inline-end: 0.5rem;
-  border-inline-end: var(--sw-b) solid var(--sw-border);
-}
-
-.d-brand-name {
-  font-size: 0.82rem;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-/* --------------------------------------------------------------- status bar */
-
-.d-topbar {
-  position: sticky;
-  top: 0;
-  z-index: 20;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.7rem 1.5rem;
-  padding: 0.9rem clamp(1rem, 3vw, 2rem);
-  background: var(--sw-bg);
-  border-bottom: var(--sw-b) solid var(--sw-border);
-}
-
-.d-topbar-group {
-  display: flex;
-  align-items: center;
-  gap: 0.45rem;
-  font-family: var(--sw-mono);
-  font-size: 0.66rem;
-  letter-spacing: 0.05em;
-  color: rgba(0, 0, 0, 0.5);
-  text-transform: uppercase;
-}
-
-.d-topbar-group strong {
-  font-weight: 700;
-  color: var(--sw-fg);
-  text-transform: none;
-  letter-spacing: 0.01em;
-}
-
-.d-spacer {
-  margin-inline-start: auto;
-}
-
-/* A live/idle status square rather than a soft glowing dot — pattern instead
-   of a second colour: live is solid, idle is hollow. */
-.d-dot {
-  width: 7px;
-  height: 7px;
-  flex-shrink: 0;
-  background: var(--sw-fg);
-}
-
-.d-dot[data-tone="idle"] {
-  background: transparent;
-  border: 1.5px solid rgba(0, 0, 0, 0.35);
-}
-
-/* ------------------------------------------------------------ progress rail */
+/* ---- progress rail --------------------------------------------------------
+ *
+ * Five labelled tracks that fill. The circled numbers and their checkmark are
+ * gone: a tick is a badge, it says only "past", and five in a row is the visual
+ * language of a signup checklist rather than of a machine doing work.
+ *
+ * A bar says three things with one shape. Filled is done. Empty is blocked. And
+ * the step you can actually act on runs an indeterminate sweep -- the same
+ * claim the pixel loader in the timeline makes: something is possible here, and
+ * no promise is being made about how far along it is.
+ * -------------------------------------------------------------------------- */
 
 .d-rail {
   display: flex;
   align-items: center;
+  gap: 10px;
+  flex: 1;
+  max-width: 460px;
+  margin: 0;
+  padding: 0;
   list-style: none;
-  margin: 0 auto;
-  padding: 0.9rem clamp(1rem, 3vw, 2rem) 0;
-  max-width: 96rem;
-  overflow-x: auto;
-  scrollbar-width: none;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.12);
-}
-
-.d-rail::-webkit-scrollbar {
-  display: none;
+  overflow: hidden;
 }
 
 .d-rail-step {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 0.55rem;
-  flex-shrink: 0;
-  padding-bottom: 0.9rem;
-}
-
-.d-rail-num {
+  flex: 1;
+  min-width: 0;
   display: grid;
-  place-items: center;
-  width: 22px;
-  height: 22px;
-  border: 1.5px solid rgba(0, 0, 0, 0.25);
-  font-family: var(--sw-mono);
-  font-size: 0.62rem;
-  font-weight: 700;
-  color: rgba(0, 0, 0, 0.4);
-  background: var(--sw-bg);
-  transition: all 150ms var(--sw-ease);
+  gap: 4px;
+  color: var(--d-ink-muted);
+  transition: color 0.4s var(--d-ease-out);
 }
 
 .d-rail-label {
-  font-family: var(--sw-mono);
-  font-size: 0.66rem;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: rgba(0, 0, 0, 0.3);
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
-  transition: color 150ms var(--sw-ease);
+  font-size: 9px;
 }
 
-.d-rail-link {
-  width: clamp(1rem, 3vw, 2.4rem);
-  height: 1px;
-  background: rgba(0, 0, 0, 0.15);
-  margin-inline: 0.7rem;
-  flex-shrink: 0;
-}
-
-.d-rail-step[data-state="done"] .d-rail-num {
-  background: var(--sw-fg);
-  border-color: var(--sw-fg);
-  color: var(--sw-bg);
-}
-
-.d-rail-step[data-state="done"] .d-rail-label {
-  color: var(--sw-fg);
-}
-
-.d-rail-step[data-state="ready"] .d-rail-num {
-  border-color: var(--sw-accent);
-  color: var(--sw-accent);
-}
-
-.d-rail-step[data-state="ready"] .d-rail-label {
-  color: var(--sw-fg);
-}
-
-.d-rail-step[data-state="blocked"] {
-  opacity: 0.35;
-}
-
-/* ----------------------------------------------------------------- columns */
-
-.d-main {
-  display: grid;
-  grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.3fr) minmax(0, 0.95fr);
-  gap: 1px;
-  align-items: start;
-  padding: 0;
-  max-width: 96rem;
-  margin: 0 auto;
-  background: rgba(0, 0, 0, 0.12);
-}
-
-.d-col {
-  display: grid;
-  gap: 1px;
-  min-width: 0;
-  background: rgba(0, 0, 0, 0.12);
-  align-content: start;
-}
-
-@media (max-width: 82rem) {
-  .d-main {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  }
-  .d-col:nth-child(3) {
-    grid-column: 1 / -1;
-  }
-}
-
-@media (max-width: 56rem) {
-  .d-main {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .d-col:nth-child(3) {
-    grid-column: auto;
-  }
-}
-
-/* ------------------------------------------------------------------- cards */
-
-.d-card {
+.d-rail-bar {
   position: relative;
-  padding: 1.3rem 1.3rem;
-  background: var(--sw-bg);
-  animation: sw-fade-up 220ms var(--sw-ease) both;
+  display: block;
+  height: 2px;
+  background: var(--d-ink-border);
+  overflow: hidden;
 }
 
-.d-card-head {
+.d-rail-bar i {
+  position: absolute;
+  inset-block: 0;
+  left: 0;
+  width: 0;
+  background: currentColor;
+  transition: width 0.7s var(--d-ease-quart);
+}
+
+.d-rail-step[data-state="ready"] {
+  color: var(--d-ink-fg);
+}
+
+/* Indeterminate: a short segment crossing the track, looping. The width is
+   fixed and only `left` animates, so it stays on the compositor. */
+.d-rail-step[data-state="ready"] .d-rail-bar i {
+  width: 38%;
+  animation: d-sweep 1.6s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+}
+
+.d-rail-step[data-state="done"] {
+  color: var(--d-brand);
+}
+
+.d-rail-step[data-state="done"] .d-rail-bar i {
+  width: 100%;
+}
+
+@keyframes d-sweep {
+  0% {
+    left: -38%;
+  }
+  100% {
+    left: 100%;
+  }
+}
+
+/* ==========================================================================
+ * Frame — three panes, none of which scroll the page
+ * ========================================================================== */
+
+.d-frame {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: var(--d-gutter);
+  min-height: 0;
+  padding: var(--d-gutter);
+  overflow: hidden;
+}
+
+.d-pane {
+  grid-column: span 3;
+  display: flex;
+  flex-direction: column;
+  /* Without this a flex/grid child refuses to shrink below its content, and
+     the pane pushes the frame taller than the viewport instead of scrolling
+     its own body. It is the single line the whole layout depends on. */
+  min-height: 0;
+  border: 1px solid var(--d-border);
+  background: var(--d-bg-muted);
+}
+
+.d-pane-main {
+  grid-column: span 6;
+}
+
+.d-pane-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
-  margin-bottom: 1rem;
-  padding-bottom: 0.8rem;
-  border-bottom: var(--sw-b) solid var(--sw-border);
+  gap: 12px;
+  flex: none;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--d-border);
 }
 
-.d-card-title {
-  font-size: 0.68rem;
-  font-weight: 800;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+.d-pane-head h2 {
   margin: 0;
+  font-family: var(--d-mono);
+  font-size: var(--d-t-label);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  text-transform: uppercase;
 }
+
+.d-pane-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.d-running {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--d-mono);
+  font-size: var(--d-t-label);
+  text-transform: uppercase;
+  color: var(--d-brand);
+}
+
+/* ==========================================================================
+ * Text primitives
+ * ========================================================================== */
 
 .d-label {
-  display: block;
-  font-family: var(--sw-mono);
-  font-size: 0.6rem;
-  font-weight: 500;
-  letter-spacing: 0.1em;
+  font-family: var(--d-mono);
+  font-size: var(--d-t-label);
+  letter-spacing: -0.01em;
   text-transform: uppercase;
-  color: rgba(0, 0, 0, 0.45);
+  color: var(--d-fg-muted);
 }
 
 .d-value {
-  display: block;
-  font-size: 0.86rem;
-  font-weight: 500;
-  color: var(--sw-fg);
-  word-break: break-word;
-}
-
-.d-field {
-  display: grid;
-  gap: 0.22rem;
-  padding: 0.55rem 0;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
-}
-
-.d-field:last-child {
-  border-bottom: none;
+  font-size: var(--d-t-body);
 }
 
 .d-caption {
-  font-size: 0.75rem;
-  color: rgba(0, 0, 0, 0.55);
-  margin: 0.5rem 0 0;
+  margin: 0;
+  font-size: var(--d-t-label);
+  line-height: 1.5;
+  color: var(--d-fg-muted);
+}
+
+.d-centre {
+  text-align: center;
+}
+
+.d-hint {
+  margin: 0;
+  font-family: var(--d-mono);
+  font-size: var(--d-t-label);
+  text-transform: uppercase;
+  color: var(--d-fg-muted);
 }
 
 .d-muted {
-  color: rgba(0, 0, 0, 0.35);
+  color: var(--d-fg-muted);
+}
+
+/* A hint that is a caution rather than an instruction. */
+.d-hint[data-tone="warn"] {
+  color: var(--d-brand);
 }
 
 .d-mono {
-  font-family: var(--sw-mono);
-  font-size: 0.76rem;
+  font-family: var(--d-mono);
+  font-size: 0.95em;
 }
 
-/* Encrypted values: monospace on a muted chip, never a colour — a substance,
-   not a status. */
 .d-cipher {
-  font-family: var(--sw-mono);
-  font-size: 0.68rem;
-  font-weight: 700;
-  letter-spacing: 0.03em;
+  font-family: var(--d-mono);
+  font-size: var(--d-t-label);
   text-transform: uppercase;
-  padding: 0.12rem 0.4rem;
-  background: var(--sw-muted);
-  color: rgba(0, 0, 0, 0.6);
+  color: var(--d-brand);
 }
 
-/* ---------------------------------------------------------------- copyable */
+.d-field {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding-block: 7px;
+  border-bottom: 1px solid var(--d-border-muted);
+}
+
+.d-field:last-child {
+  border-bottom: 0;
+}
+
+.d-code {
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  border: 1px solid var(--d-border-muted);
+  background: var(--d-bg);
+  font-family: var(--d-mono);
+  font-size: var(--d-t-label);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-x: auto;
+}
+
+.d-notice {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--d-border);
+  background: var(--d-bg);
+  font-size: var(--d-t-label);
+  line-height: 1.5;
+}
+
+.d-notice[data-tone="error"] {
+  border-color: var(--d-brand);
+  color: var(--d-brand);
+}
+
+.d-notice strong {
+  display: block;
+  font-family: var(--d-mono);
+  font-weight: 500;
+  text-transform: uppercase;
+}
+
+.d-notice p {
+  margin: 5px 0 0;
+  color: var(--d-fg-muted);
+}
+
+.d-notice code {
+  font-family: var(--d-mono);
+  color: var(--d-fg);
+}
+
+/* The raw failure, kept but demoted -- it is for whoever is debugging, not for
+   whoever is just trying to start the demo. */
+.d-notice-detail {
+  font-family: var(--d-mono);
+  font-size: 10px;
+  opacity: 0.7;
+}
+
+/* The confirmation that money came back. Stated, not celebrated. */
+.d-returned {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  border: 1px solid var(--d-brand);
+  background: rgba(253, 85, 29, 0.08);
+}
+
+.d-returned strong {
+  font-size: 18px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+
+.d-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: auto 0;
+  text-align: center;
+}
+
+.d-empty-lead {
+  margin: 0;
+  font-size: var(--d-t-title);
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+
+/* ==========================================================================
+ * Controls
+ * ========================================================================== */
+
+.d-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border: 1px solid var(--d-fg);
+  border-radius: 9999px;
+  background: var(--d-fg);
+  color: var(--d-bg);
+  font-family: var(--d-mono);
+  font-size: var(--d-t-label);
+  letter-spacing: -0.01em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background 0.3s var(--d-ease-out),
+    border-color 0.3s var(--d-ease-out),
+    color 0.3s var(--d-ease-out);
+}
+
+.d-btn:hover:not(:disabled) {
+  background: var(--d-brand);
+  border-color: var(--d-brand);
+  color: #eeeeee;
+}
+
+.d-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.d-btn-ghost,
+.d-btn[data-kind="ghost"],
+.d-btn[data-kind="outline"] {
+  background: transparent;
+  color: var(--d-fg);
+  border-color: var(--d-border);
+}
+
+.d-btn-block {
+  width: 100%;
+}
+
+.d-btn-busy {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* A quieter control than a pill, for opening a dialog from a pane header. */
+.d-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--d-fg-muted);
+  font-family: var(--d-mono);
+  font-size: var(--d-t-label);
+  text-transform: uppercase;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: var(--d-border);
+  cursor: pointer;
+  transition: color 0.3s var(--d-ease-out);
+}
+
+.d-link:hover {
+  color: var(--d-brand);
+}
+
+.d-input {
+  width: 100%;
+  padding: 7px 10px;
+  border: 1px solid var(--d-border);
+  background: var(--d-bg);
+  color: var(--d-fg);
+  font-family: var(--d-mono);
+  font-size: var(--d-t-body);
+}
+
+.d-input::placeholder {
+  color: var(--d-fg-muted);
+}
+
+.d-inline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.d-budget-unit {
+  font-family: var(--d-mono);
+  font-size: var(--d-t-label);
+  color: var(--d-fg-muted);
+}
+
+.d-controls {
+  display: flex;
+  gap: 8px;
+}
+
+.d-controls .d-btn:first-child {
+  flex: 1;
+}
+
+.d-launch {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--d-border);
+}
+
+.d-expectation {
+  margin: 0;
+  padding-left: 10px;
+  border-left: 2px solid var(--d-border);
+  font-size: var(--d-t-label);
+  line-height: 1.5;
+  color: var(--d-fg-muted);
+}
+
+.d-expectation[data-kind="malicious"] {
+  border-left-color: var(--d-brand);
+  color: var(--d-brand);
+}
 
 .d-copyable {
   display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  min-width: 0;
+  align-items: baseline;
+  gap: 6px;
 }
 
 .d-copyable a {
-  color: var(--sw-fg);
-  text-decoration: none;
-  border-bottom: 1.5px solid rgba(0, 0, 0, 0.3);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  transition: border-color 150ms var(--sw-ease);
-}
-
-.d-copyable a:hover {
-  border-bottom-color: var(--sw-accent);
-  color: var(--sw-accent);
+  color: inherit;
+  text-underline-offset: 3px;
 }
 
 .d-copy-btn {
-  font-family: var(--sw-mono);
-  font-size: 0.56rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
+  padding: 1px 5px;
+  border: 1px solid var(--d-border-muted);
+  background: transparent;
+  color: var(--d-fg-muted);
+  font-family: var(--d-mono);
+  font-size: 9px;
   text-transform: uppercase;
-  color: rgba(0, 0, 0, 0.5);
-  background: var(--sw-bg);
-  border: 1.5px solid rgba(0, 0, 0, 0.3);
-  padding: 0.12rem 0.4rem;
   cursor: pointer;
-  transition: all 150ms var(--sw-ease);
-  flex-shrink: 0;
+  transition:
+    color 0.25s var(--d-ease-out),
+    border-color 0.25s var(--d-ease-out);
 }
 
 .d-copy-btn:hover {
-  color: #fff;
-  background: var(--sw-fg);
-  border-color: var(--sw-fg);
+  color: var(--d-brand);
+  border-color: var(--d-brand);
 }
 
-/* -------------------------------------------------------------------- ring */
+.d-setup,
+.d-advanced {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.d-advanced {
+  padding-top: 12px;
+  border-top: 1px solid var(--d-border);
+}
+
+.d-spin {
+  animation: d-spin 0.9s linear infinite;
+}
+
+@keyframes d-spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+/* ==========================================================================
+ * Ring — share of the funded payer balance already spent
+ * ========================================================================== */
 
 .d-ring {
   position: relative;
   display: grid;
   place-items: center;
-  justify-self: center;
-  margin: 0.5rem 0 0.6rem;
+  margin-inline: auto;
 }
 
 .d-ring svg {
   transform: rotate(-90deg);
 }
 
-.d-ring-track,
+.d-ring-track {
+  fill: none;
+  stroke: var(--d-surface);
+  stroke-width: 6;
+}
+
 .d-ring-value {
   fill: none;
-  stroke-width: 3.5;
-}
-
-.d-ring-track {
-  stroke: rgba(0, 0, 0, 0.12);
-}
-
-.d-ring-value {
-  stroke: var(--sw-fg);
+  stroke: var(--d-brand);
+  stroke-width: 6;
   stroke-linecap: butt;
-  transition: stroke-dashoffset 500ms var(--sw-ease);
+  transition: stroke-dashoffset 0.9s var(--d-ease-quart);
 }
 
 .d-ring-centre {
   position: absolute;
   display: grid;
-  place-items: center;
-  text-align: center;
+  justify-items: center;
+  gap: 1px;
 }
 
 .d-ring-figure {
-  font-size: 1.5rem;
-  font-weight: 800;
+  font-size: var(--d-t-figure);
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: -0.04em;
   font-variant-numeric: tabular-nums;
-  letter-spacing: -0.02em;
 }
 
 .d-ring-unit {
-  font-family: var(--sw-mono);
-  font-size: 0.54rem;
-  font-weight: 600;
-  letter-spacing: 0.1em;
+  font-family: var(--d-mono);
+  font-size: 9px;
   text-transform: uppercase;
-  color: rgba(0, 0, 0, 0.4);
+  color: var(--d-fg-muted);
 }
 
-/* ----------------------------------------------------------------- buttons */
-
-.d-btn {
-  font-family: var(--sw-font);
-  font-size: 0.76rem;
-  font-weight: 800;
-  letter-spacing: 0.02em;
-  padding: 0.65rem 1rem;
-  cursor: pointer;
-  border: var(--sw-b) solid var(--sw-fg);
-  background: var(--sw-fg);
-  color: var(--sw-bg);
-  text-transform: uppercase;
-  transition: background 150ms linear, color 150ms linear, border-color 150ms linear;
-}
-
-.d-btn:hover:not(:disabled) {
-  background: var(--sw-accent);
-  border-color: var(--sw-accent);
-  color: #fff;
-}
-
-.d-btn[data-kind="outline"] {
-  background: var(--sw-bg);
-  color: var(--sw-fg);
-}
-
-.d-btn[data-kind="outline"]:hover:not(:disabled) {
-  background: var(--sw-fg);
-  border-color: var(--sw-fg);
-  color: var(--sw-bg);
-}
-
-.d-btn[data-kind="ghost"] {
-  background: transparent;
-  color: rgba(0, 0, 0, 0.55);
-  border-color: transparent;
-}
-
-.d-btn[data-kind="ghost"]:hover:not(:disabled) {
-  color: var(--sw-fg);
-  background: var(--sw-muted);
-  border-color: transparent;
-}
-
-.d-btn:disabled {
-  cursor: not-allowed;
-  opacity: 0.32;
-}
-
-.d-controls {
-  display: grid;
-  gap: 0.5rem;
-}
-
-.d-hint {
-  display: flex;
-  align-items: baseline;
-  gap: 0.4rem;
-  font-family: var(--sw-mono);
-  font-size: 0.66rem;
-  font-weight: 600;
-  color: var(--sw-accent);
-  margin: 0.25rem 0 0;
-  animation: sw-fade-in 150ms var(--sw-ease) both;
-}
-
-.d-hint::before {
-  content: "→";
-}
-
-/* ---------------------------------------------------------------- timeline */
-
-.d-timeline {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.d-tl-item {
-  position: relative;
-  display: grid;
-  grid-template-columns: 1.4rem minmax(0, 1fr) auto auto;
-  align-items: baseline;
-  gap: 0.55rem;
-  padding: 0.55rem 0;
-  color: rgba(0, 0, 0, 0.32);
-  transition: color 150ms var(--sw-ease);
-}
-
-.d-tl-marker {
-  grid-column: 1;
-  width: 9px;
-  height: 9px;
-  border: 1.5px solid rgba(0, 0, 0, 0.3);
-  margin-inline-start: 1px;
-  transform: translateY(-1px);
-  transition: all 150ms var(--sw-ease);
-}
-
-.d-tl-item:not(:last-child)::after {
-  content: "";
-  position: absolute;
-  inset-inline-start: 5px;
-  top: calc(0.55rem + 10px);
-  height: calc(100% - 10px);
-  width: 1px;
-  background: rgba(0, 0, 0, 0.12);
-}
-
-.d-tl-label {
-  font-size: 0.82rem;
-  font-weight: 500;
-}
-
-.d-tl-detail {
-  font-family: var(--sw-mono);
-  font-size: 0.64rem;
-  color: rgba(0, 0, 0, 0.4);
-}
-
-.d-tl-time {
-  font-family: var(--sw-mono);
-  font-size: 0.64rem;
-  color: rgba(0, 0, 0, 0.4);
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-  min-width: 3rem;
-}
-
-/* Done — solid black. Certainty needs no colour. */
-.d-tl-item[data-status="done"] {
-  color: var(--sw-fg);
-}
-.d-tl-item[data-status="done"] .d-tl-marker {
-  background: var(--sw-fg);
-  border-color: var(--sw-fg);
-}
-.d-tl-item[data-status="done"] .d-tl-detail {
-  color: var(--sw-fg);
-  font-weight: 700;
-}
-.d-tl-item[data-status="done"]:not(:last-child)::after {
-  background: var(--sw-fg);
-}
-
-/* Active — committed, not yet knowable. Diagonal stripes stand in for a third
-   colour: pattern encodes "in flight" the way the brief's own sidebar texture
-   encodes "supplementary". */
-.d-tl-item[data-status="active"] {
-  color: var(--sw-fg);
-}
-.d-tl-item[data-status="active"] .d-tl-marker {
-  border-color: var(--sw-fg);
-  background-image: repeating-linear-gradient(
-    45deg,
-    var(--sw-fg) 0 2px,
-    transparent 2px 4px
-  );
-}
-.d-tl-item[data-status="active"] .d-tl-label {
-  background: linear-gradient(
-    90deg,
-    rgba(0, 0, 0, 0.35) 0%,
-    rgba(0, 0, 0, 0.35) 35%,
-    var(--sw-fg) 50%,
-    rgba(0, 0, 0, 0.35) 65%,
-    rgba(0, 0, 0, 0.35) 100%
-  );
-  background-size: 220% auto;
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  animation: sw-shimmer 1.6s linear infinite;
-}
-
-/* Skipped — deliberately not run. */
-.d-tl-item[data-status="skipped"] {
-  color: rgba(0, 0, 0, 0.28);
-  opacity: 0.7;
-}
-.d-tl-item[data-status="skipped"] .d-tl-label {
-  text-decoration: line-through;
-  text-decoration-color: rgba(0, 0, 0, 0.3);
-}
-
-/* Failed — refused. The one state that earns the accent. */
-.d-tl-item[data-status="failed"] {
-  color: var(--sw-accent);
-}
-.d-tl-item[data-status="failed"] .d-tl-marker {
-  border-color: var(--sw-accent);
-  background: var(--sw-accent);
-}
-.d-tl-item[data-status="failed"] .d-tl-detail {
-  color: var(--sw-accent);
-  font-weight: 700;
-}
-
-.d-timeline[data-idle] .d-tl-item {
-  opacity: 0.4;
-}
-
-.d-tl-legend {
-  margin: 0.9rem 0 0;
-  padding-top: 0.75rem;
-  border-top: 1px solid rgba(0, 0, 0, 0.12);
-  font-size: 0.75rem;
-  color: rgba(0, 0, 0, 0.5);
-}
-
-.d-tl-time .t-pixels {
-  justify-content: flex-end;
-  margin-inline-start: auto;
-  color: var(--sw-fg);
-}
-
-.d-btn-busy {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-}
-
-.d-spin {
-  animation: sw-spin 750ms linear infinite;
-}
-
-.d-running {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-family: var(--sw-mono);
-  font-size: 0.64rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--sw-accent);
-}
-
-/* ----------------------------------------------------------------- outcome */
+/* ==========================================================================
+ * Outcome — the verdict
+ * ========================================================================== */
 
 .d-outcome {
-  display: grid;
-  gap: 0.32rem;
-  padding: 1rem 1.1rem;
-  margin-bottom: 1rem;
-  border: var(--sw-b) solid var(--sw-border);
-  background: var(--sw-bg);
-  animation: sw-pop-in 200ms var(--sw-ease) both;
-}
-
-.d-outcome-head {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 0.72rem;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.d-outcome-body {
-  margin: 0;
-  font-size: 0.85rem;
-  line-height: 1.55;
-  color: rgba(0, 0, 0, 0.6);
-}
-
-.d-outcome[data-tone="ok"] {
-  background: var(--sw-fg);
-}
-.d-outcome[data-tone="ok"] .d-outcome-head,
-.d-outcome[data-tone="ok"] .d-outcome-body {
-  color: var(--sw-bg);
-}
-.d-outcome[data-tone="ok"] .d-outcome-body {
-  color: rgba(255, 255, 255, 0.75);
+  flex: none;
+  padding: 12px;
+  border: 1px solid var(--d-fg);
+  background: var(--d-fg);
+  color: var(--d-bg);
+  animation: d-rise 0.5s var(--d-ease-quart) both;
 }
 
 .d-outcome[data-tone="no"] {
-  border-color: var(--sw-accent);
-}
-.d-outcome[data-tone="no"] .d-outcome-head {
-  color: var(--sw-accent);
+  border-color: var(--d-brand);
+  background: rgba(253, 85, 29, 0.1);
+  color: var(--d-brand);
 }
 
 .d-outcome[data-tone="wait"] {
-  background-image: repeating-linear-gradient(
-    45deg,
-    rgba(0, 0, 0, 0.06) 0 1px,
-    transparent 1px 9px
-  );
-}
-.d-outcome[data-tone="wait"] .d-outcome-head {
-  color: var(--sw-fg);
+  border-color: var(--d-border);
+  background: transparent;
+  color: var(--d-fg);
 }
 
-/* ------------------------------------------------------------------- split */
-
-.d-split {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 1px;
-  background: rgba(0, 0, 0, 0.12);
+.d-outcome-head {
+  display: block;
+  font-family: var(--d-mono);
+  font-size: var(--d-t-label);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
 }
 
-.d-split-pane {
-  display: grid;
-  gap: 0.42rem;
-  min-width: 0;
-  padding: 0.9rem;
-  background: var(--sw-bg);
-  animation: sw-fade-up 240ms var(--sw-ease) both;
+.d-outcome-body {
+  margin: 6px 0 0;
+  font-size: var(--d-t-body);
+  line-height: 1.5;
 }
 
-.d-split-pane:nth-child(2) {
-  animation-delay: 60ms;
-}
-
-.d-code {
-  font-family: var(--sw-mono);
-  font-size: 0.68rem;
-  line-height: 1.6;
-  margin: 0;
-  padding: 0.7rem 0.8rem;
-  border: 1.5px solid rgba(0, 0, 0, 0.18);
-  background: var(--sw-muted);
-  color: rgba(0, 0, 0, 0.7);
-  max-height: 12rem;
-  overflow: auto;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-/* The structured pane is what the policy acts on; the hostile pane is what
-   the attacker writes. Black versus red is the page's whole argument. */
-.d-split-pane[data-tone="safe"] .d-code {
-  border-inline-start: 3px solid var(--sw-fg);
-}
-.d-split-pane[data-tone="safe"] .d-label {
-  color: var(--sw-fg);
-  font-weight: 700;
-}
-
-.d-split-pane[data-tone="hostile"] .d-code {
-  border-inline-start: 3px solid var(--sw-accent);
-}
-.d-split-pane[data-tone="hostile"] .d-label {
-  color: var(--sw-accent);
-  font-weight: 700;
-}
-
-@media (min-width: 60rem) {
-  .d-split {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+/* The landing page's entrance, at console scale: short, and only on arrival. */
+@keyframes d-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 
-/* -------------------------------------------------------------- guarantees */
+/* ==========================================================================
+ * Timeline
+ * ========================================================================== */
 
-.d-guarantees {
-  list-style: none;
+.d-timeline {
   margin: 0;
   padding: 0;
+  list-style: none;
+  transition: opacity 0.4s var(--d-ease-out);
+}
+
+.d-timeline[data-idle] {
+  opacity: 0.45;
+}
+
+.d-tl-item {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: 14px minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 0 10px;
+  padding-block: 6px;
+  position: relative;
+}
+
+/* The connector. Drawn from the marker down to the next row, so the column
+   reads as one line rather than nine unrelated dots. */
+.d-tl-item::before {
+  content: "";
+  position: absolute;
+  left: 6px;
+  top: 16px;
+  bottom: -6px;
+  width: 1px;
+  background: var(--d-border-muted);
+}
+
+.d-tl-item:last-child::before {
+  display: none;
+}
+
+.d-tl-marker {
+  width: 7px;
+  height: 7px;
+  margin-left: 2px;
+  align-self: center;
+  border: 1px solid var(--d-fg-muted);
+  background: transparent;
+  transition:
+    background 0.35s var(--d-ease-out),
+    border-color 0.35s var(--d-ease-out);
+}
+
+.d-tl-item[data-status="done"] .d-tl-marker {
+  background: var(--d-fg);
+  border-color: var(--d-fg);
+}
+
+.d-tl-item[data-status="active"] .d-tl-marker {
+  background: var(--d-brand);
+  border-color: var(--d-brand);
+}
+
+.d-tl-item[data-status="failed"] .d-tl-marker {
+  background: transparent;
+  border-color: var(--d-brand);
+}
+
+.d-tl-item[data-status="pending"] {
+  color: var(--d-fg-muted);
+}
+
+.d-tl-label {
+  font-size: var(--d-t-body);
+}
+
+.d-tl-item[data-status="failed"] .d-tl-label {
+  color: var(--d-brand);
+}
+
+.d-tl-detail {
+  grid-column: 2;
+  font-family: var(--d-mono);
+  font-size: var(--d-t-label);
+  color: var(--d-fg-muted);
+}
+
+.d-tl-time {
+  font-family: var(--d-mono);
+  font-size: var(--d-t-label);
+  color: var(--d-fg-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.d-tl-legend {
+  margin: 0;
+  font-size: var(--d-t-label);
+  line-height: 1.5;
+  color: var(--d-fg-muted);
+}
+
+/* ==========================================================================
+ * Guarantees
+ * ========================================================================== */
+
+.d-guarantees {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 1px;
-  background: rgba(0, 0, 0, 0.12);
-  border: 1.5px solid rgba(0, 0, 0, 0.18);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  background: var(--d-border-muted);
+  border: 1px solid var(--d-border-muted);
 }
 
 .d-guarantee {
-  background: var(--sw-bg);
-  padding: 0.8rem 0.85rem;
-  display: grid;
-  gap: 0.15rem;
-  transition: background 150ms var(--sw-ease);
-}
-
-.d-guarantee:hover {
-  background: var(--sw-muted);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px;
+  background: var(--d-bg);
 }
 
 .d-guarantee-title {
-  font-size: 0.78rem;
-  font-weight: 700;
+  font-family: var(--d-mono);
+  font-size: var(--d-t-label);
+  font-weight: 500;
+  text-transform: uppercase;
 }
 
-.d-guarantee .d-caption {
-  margin: 0;
-  font-size: 0.68rem;
+/* ==========================================================================
+ * Dialog
+ *
+ * `@starting-style` plus `transition-behavior: allow-discrete` is what lets a
+ * `display: none` element animate in *and* out without JavaScript holding it
+ * open through the exit. Browsers without it get an instant open, which for a
+ * control surface is a perfectly good outcome.
+ * ========================================================================== */
+
+.d-modal {
+  width: min(560px, calc(100vw - 32px));
+  max-height: min(680px, calc(100svh - 64px));
+  padding: 0;
+  border: 1px solid var(--d-fg);
+  background: var(--d-bg);
+  color: var(--d-fg);
+  font-family: var(--d-sans);
+  font-size: var(--d-t-body);
+  overflow: hidden;
+
+  opacity: 0;
+  transform: translateY(8px);
+  transition:
+    opacity 0.3s var(--d-ease-out),
+    transform 0.4s var(--d-ease-quart),
+    overlay 0.4s allow-discrete,
+    display 0.4s allow-discrete;
 }
 
-@media (max-width: 34rem) {
-  .d-guarantees {
-    grid-template-columns: minmax(0, 1fr);
+.d-modal-wide {
+  width: min(720px, calc(100vw - 32px));
+}
+
+.d-modal[open] {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+@starting-style {
+  .d-modal[open] {
+    opacity: 0;
+    transform: translateY(8px);
   }
 }
 
-/* ------------------------------------------------------------------ drawer */
+.d-modal::backdrop {
+  /* Heavier than it would need to be over a light page: the console behind it
+     is already dark, so a 55% ink veil barely separated the two. */
+  background: rgba(0, 0, 0, 0.72);
+  opacity: 0;
+  transition:
+    opacity 0.3s var(--d-ease-out),
+    overlay 0.4s allow-discrete,
+    display 0.4s allow-discrete;
+}
 
-.d-drawer-toggle {
+.d-modal[open]::backdrop {
+  opacity: 1;
+}
+
+@starting-style {
+  .d-modal[open]::backdrop {
+    opacity: 0;
+  }
+}
+
+.d-modal-panel {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  max-height: inherit;
+}
+
+.d-modal-head {
+  display: flex;
+  align-items: flex-start;
   justify-content: space-between;
-  width: 100%;
-  gap: 1rem;
-  background: transparent;
-  border: none;
-  padding: 0;
-  cursor: pointer;
-  font: inherit;
-  color: inherit;
-  text-align: start;
+  gap: 16px;
+  flex: none;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--d-border);
 }
 
-.d-drawer-toggle .d-caption {
+.d-modal-tag {
+  margin: 0 0 3px;
+  font-family: var(--d-mono);
+  font-size: var(--d-t-label);
+  text-transform: uppercase;
+  color: var(--d-fg-muted);
+}
+
+.d-modal-title {
   margin: 0;
-}
-
-.d-drawer-body {
-  margin-top: 1rem;
-  padding-top: 0.4rem;
-  border-top: 1px solid rgba(0, 0, 0, 0.12);
-  animation: sw-fade-up 180ms var(--sw-ease) both;
-}
-
-/* ----------------------------------------------------------------- notices */
-
-.d-notice {
-  font-size: 0.79rem;
+  font-size: 22px;
   font-weight: 500;
-  padding: 0.65rem 0.8rem;
-  border: 1.5px solid var(--sw-fg);
-  background: var(--sw-muted);
-  color: var(--sw-fg);
-  margin: 0 0 0.75rem;
-  animation: sw-fade-up 200ms var(--sw-ease) both;
+  line-height: 1.15;
+  letter-spacing: -0.03em;
 }
 
-.d-notice a {
-  color: var(--sw-fg);
-  text-decoration: underline;
-  text-decoration-color: rgba(0, 0, 0, 0.4);
-}
-
-.d-notice[data-tone="error"] {
-  border-color: var(--sw-accent);
-  background: #fff;
-  color: var(--sw-accent);
-}
-
-.d-notice[data-tone="error"] a {
-  color: var(--sw-accent);
-}
-
-.d-setup {
+.d-modal-x {
   display: grid;
-  gap: 0.55rem;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  border: 1px solid var(--d-border);
+  border-radius: 9999px;
+  background: transparent;
+  color: var(--d-fg);
+  cursor: pointer;
+  transition:
+    background 0.3s var(--d-ease-out),
+    border-color 0.3s var(--d-ease-out),
+    color 0.3s var(--d-ease-out);
 }
 
-.d-input {
-  font: inherit;
-  font-family: var(--sw-mono);
-  font-size: 0.78rem;
-  padding: 0.55rem 0.65rem;
-  width: 100%;
-  background: var(--sw-bg);
-  color: var(--sw-fg);
-  border: 1.5px solid rgba(0, 0, 0, 0.35);
-  transition: border-color 150ms var(--sw-ease);
+.d-modal-x:hover {
+  background: var(--d-brand);
+  border-color: var(--d-brand);
+  color: #eeeeee;
 }
 
-.d-input:focus {
-  border-color: var(--sw-accent);
-  outline: none;
-}
-
-.d-inline {
+.d-modal-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px;
   display: flex;
-  gap: 0.5rem;
-  align-items: center;
+  flex-direction: column;
+  gap: 10px;
 }
 
-/* ------------------------------------------------------------- goal picker */
+/* ==========================================================================
+ * Resource picker
+ * ========================================================================== */
 
 .gp {
   position: relative;
@@ -957,417 +1080,323 @@
 .gp-field {
   display: flex;
   align-items: center;
-  gap: 0.55rem;
-  padding: 0.6rem 0.7rem;
-  border: 1.5px solid rgba(0, 0, 0, 0.35);
-  background: var(--sw-bg);
-  transition: border-color 150ms var(--sw-ease);
+  gap: 8px;
+  padding: 7px 10px;
+  border: 1px solid var(--d-border);
+  background: var(--d-bg);
+  transition: border-color 0.3s var(--d-ease-out);
 }
 
 .gp-field[data-open],
 .gp-field:focus-within {
-  border-color: var(--sw-fg);
+  border-color: var(--d-fg);
 }
 
 .gp-icon {
-  color: rgba(0, 0, 0, 0.4);
-  flex-shrink: 0;
+  flex: none;
+  color: var(--d-fg-muted);
 }
 
 .gp-input {
-  font: inherit;
-  font-size: 0.83rem;
   flex: 1;
   min-width: 0;
-  border: none;
+  border: 0;
+  background: none;
+  color: var(--d-fg);
+  font-family: var(--d-sans);
+  font-size: var(--d-t-body);
+}
+
+.gp-input:focus {
   outline: none;
-  background: transparent;
-  color: var(--sw-fg);
 }
 
 .gp-input::placeholder {
-  color: rgba(0, 0, 0, 0.35);
+  color: var(--d-fg-muted);
 }
 
 .gp-price {
-  font-family: var(--sw-mono);
-  font-size: 0.68rem;
-  font-weight: 700;
-  color: rgba(0, 0, 0, 0.5);
-  white-space: nowrap;
+  font-family: var(--d-mono);
+  font-size: var(--d-t-label);
+  color: var(--d-fg-muted);
 }
 
 .gp-chevron {
-  color: rgba(0, 0, 0, 0.4);
-  flex-shrink: 0;
-  transition: transform 150ms var(--sw-ease);
+  flex: none;
+  color: var(--d-fg-muted);
+  transition: transform 0.3s var(--d-ease-out);
 }
 
-.gp-chevron[data-open] {
+.gp-field[data-open] .gp-chevron {
   transform: rotate(180deg);
 }
 
 .gp-menu {
   position: absolute;
+  z-index: 20;
   inset-inline: 0;
-  top: calc(100% + 2px);
-  z-index: 15;
-  padding: 0;
-  background: var(--sw-bg);
-  border: var(--sw-b) solid var(--sw-fg);
-  animation: sw-pop-in 130ms var(--sw-ease) both;
-  transform-origin: top center;
+  top: calc(100% + 4px);
+  max-height: 320px;
+  overflow-y: auto;
+  border: 1px solid var(--d-fg);
+  background: var(--d-bg);
+  animation: d-rise 0.28s var(--d-ease-quart) both;
 }
 
-/* The gliding highlight — kept from the original interaction, restyled as a
-   flat black-outline cursor rather than a soft translucent wash. */
+/* The travelling highlight. Positioned from measured row geometry, so it
+   slides between rows rather than blinking on each one. */
 .gp-glide {
   position: absolute;
-  inset-inline: 2px;
-  border: 1.5px solid var(--sw-fg);
-  pointer-events: none;
+  inset-inline: 0;
+  background: var(--d-bg-muted);
   transition:
-    top 180ms var(--sw-ease),
-    height 180ms var(--sw-ease),
-    opacity 120ms ease;
+    top 0.28s var(--d-ease-quart),
+    height 0.28s var(--d-ease-quart),
+    opacity 0.2s linear;
+  pointer-events: none;
 }
 
 .gp-row {
   position: relative;
-  z-index: 1;
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
   align-items: center;
-  gap: 0.65rem;
+  gap: 10px;
   width: 100%;
-  padding: 0.65rem 0.75rem;
-  border: none;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+  padding: 9px 10px;
+  border: 0;
+  border-bottom: 1px solid var(--d-border-muted);
   background: transparent;
   color: inherit;
-  font: inherit;
-  text-align: start;
+  text-align: left;
   cursor: pointer;
 }
 
 .gp-row-dot {
-  width: 8px;
-  height: 8px;
-  flex-shrink: 0;
-  background: var(--sw-fg);
+  width: 6px;
+  height: 6px;
+  border: 1px solid var(--d-fg-muted);
 }
 
-.gp-row[data-kind="malicious"] .gp-row-dot,
-.gp-row[data-kind="overcharge"] .gp-row-dot {
-  background: var(--sw-accent);
+.gp-row[data-kind="malicious"] .gp-row-dot {
+  background: var(--d-brand);
+  border-color: var(--d-brand);
 }
 
 .gp-row-text {
   display: grid;
-  gap: 0.08rem;
+  gap: 1px;
   min-width: 0;
-  flex: 1;
 }
 
 .gp-row-name {
-  font-size: 0.83rem;
-  font-weight: 600;
+  font-size: var(--d-t-body);
+  font-weight: 500;
 }
 
 .gp-row-blurb {
-  font-size: 0.72rem;
-  color: rgba(0, 0, 0, 0.45);
+  font-size: var(--d-t-label);
+  color: var(--d-fg-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .gp-row-price {
-  font-family: var(--sw-mono);
-  font-size: 0.72rem;
-  font-weight: 700;
-  color: var(--sw-fg);
+  font-family: var(--d-mono);
+  font-size: var(--d-t-body);
   font-variant-numeric: tabular-nums;
-  flex-shrink: 0;
 }
 
 .gp-row-tag {
-  font-family: var(--sw-mono);
-  font-size: 0.6rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
+  font-family: var(--d-mono);
+  font-size: 9px;
   text-transform: uppercase;
-  color: rgba(0, 0, 0, 0.4);
-  flex-shrink: 0;
-  min-width: 5.5rem;
-  text-align: right;
+  color: var(--d-fg-muted);
 }
 
-.gp-row[data-kind="malicious"] .gp-row-tag,
-.gp-row[data-kind="overcharge"] .gp-row-tag {
-  color: var(--sw-accent);
+.gp-row[data-kind="malicious"] .gp-row-tag {
+  color: var(--d-brand);
 }
 
 .gp-empty,
 .gp-foot {
   margin: 0;
-  padding: 0.6rem 0.75rem;
-  font-size: 0.71rem;
-  color: rgba(0, 0, 0, 0.45);
+  padding: 10px;
+  font-size: var(--d-t-label);
+  color: var(--d-fg-muted);
 }
 
 .gp-foot {
-  border-top: 1px solid rgba(0, 0, 0, 0.12);
+  border-top: 1px solid var(--d-border-muted);
 }
 
-/* --------------------------------------------------------------- model input */
+/* ==========================================================================
+ * Model input — the vendor's words, and what the policy actually acts on
+ * ========================================================================== */
 
 .mi-host {
   position: relative;
-  padding-bottom: 3.5rem;
-  -webkit-user-select: none;
-  user-select: none;
 }
 
 .mi-prose {
   margin: 0;
-  font-size: 0.87rem;
-  line-height: 1.75;
-  color: rgba(0, 0, 0, 0.65);
+  font-size: var(--d-t-body);
+  line-height: 1.6;
 }
 
 .mi-lead {
-  color: rgba(0, 0, 0, 0.4);
+  color: var(--d-fg-muted);
 }
 
-/* The attacker's text, drawn as a selection in the accent — the one place a
-   coloured highlight is earned: this is the exact span the model reads. */
+/* The attacker's text, marked as quoted matter rather than as UI copy. */
 .mi-selection {
-  -webkit-box-decoration-break: clone;
-  box-decoration-break: clone;
-  padding: 0.1em 0.2em;
-  background: rgba(255, 48, 0, 0.12);
-  box-shadow: inset 0 0 0 1.5px var(--sw-accent);
-  color: var(--sw-fg);
-  font-weight: 600;
-}
-
-.mi-anchor {
-  position: absolute;
-  top: 0;
-  left: 0;
-  z-index: 5;
-  transition:
-    transform 260ms var(--sw-ease),
-    opacity 150ms ease-out;
-  will-change: transform;
+  background: rgba(253, 85, 29, 0.16);
+  box-shadow: 0 0 0 1px var(--d-brand);
+  padding: 1px 2px;
 }
 
 .mi-bar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 0.35rem;
-  height: 2.1rem;
-  width: max-content;
-  max-width: calc(100vw - 3rem);
-  padding: 0.25rem 0.35rem;
-  overflow: hidden;
-  background: var(--sw-fg);
-  animation: sw-pop-in 180ms var(--sw-ease) both;
-}
-
-.mi-busy {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0 0.6rem;
-  white-space: nowrap;
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--sw-bg);
-}
-
-.mi-spinner {
-  width: 11px;
-  height: 11px;
-  flex-shrink: 0;
-  border-radius: 50%;
-  border: 1.5px solid rgba(255, 255, 255, 0.3);
-  border-top-color: #fff;
-  animation: sw-spin 700ms linear infinite;
+  gap: 8px;
+  margin-top: 10px;
 }
 
 .mi-verdict {
-  padding: 0 0.25rem 0 0.6rem;
-  font-size: 0.75rem;
-  font-weight: 700;
-  white-space: nowrap;
-  color: var(--sw-bg);
-}
-
-/* Complied is the interesting outcome, and it is not a success — flagged in
-   the accent even though it sits on the inverted black bar. */
-.mi-verdict[data-complied] {
-  color: #ff6a45;
-}
-
-.mi-source {
-  font-family: var(--sw-mono);
-  font-size: 0.6rem;
-  font-weight: 600;
-  letter-spacing: 0.06em;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border: 1px solid var(--d-border);
+  font-family: var(--d-mono);
+  font-size: 9px;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.55);
-  white-space: nowrap;
+}
+
+.mi-verdict[data-complied="true"] {
+  border-color: var(--d-brand);
+  color: var(--d-brand);
 }
 
 .mi-sep {
-  width: 1px;
-  height: 1rem;
-  flex-shrink: 0;
-  background: rgba(255, 255, 255, 0.25);
-  margin-inline: 0.2rem;
+  color: var(--d-border);
+}
+
+.mi-source {
+  font-family: var(--d-mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  color: var(--d-fg-muted);
 }
 
 .mi-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  height: 1.6rem;
-  padding: 0 0.65rem;
-  border: none;
+  padding: 3px 8px;
+  border: 1px solid var(--d-border);
+  border-radius: 9999px;
   background: transparent;
-  color: rgba(255, 255, 255, 0.75);
-  font: inherit;
-  font-size: 0.73rem;
-  font-weight: 600;
-  white-space: nowrap;
+  color: var(--d-fg);
+  font-family: var(--d-mono);
+  font-size: 9px;
+  text-transform: uppercase;
   cursor: pointer;
-  transition: all 150ms var(--sw-ease);
+  transition:
+    background 0.3s var(--d-ease-out),
+    border-color 0.3s var(--d-ease-out),
+    color 0.3s var(--d-ease-out);
 }
 
 .mi-toggle:hover {
-  background: rgba(255, 255, 255, 0.14);
-  color: #fff;
-}
-
-.mi-toggle:active {
-  transform: scale(0.96);
+  background: var(--d-fg);
+  border-color: var(--d-fg);
+  color: var(--d-bg);
 }
 
 .mi-structured {
   display: grid;
-  gap: 0.4rem;
-  margin-top: 0.3rem;
-  animation: sw-fade-up 200ms var(--sw-ease) both;
+  gap: 4px;
+  animation: d-rise 0.3s var(--d-ease-quart) both;
 }
 
-.mi-structured .d-label {
-  color: var(--sw-fg);
-  font-weight: 700;
+.mi-anchor,
+.mi-busy,
+.mi-spinner {
+  color: var(--d-fg-muted);
 }
 
-.mi-structured .d-code {
-  border-inline-start: 3px solid var(--sw-fg);
-}
+/* ==========================================================================
+ * Narrow screens
+ *
+ * The single-frame rule is a desktop rule and cannot survive a phone: three
+ * panes, a rail and a topbar do not fit in 375x812 without type too small to
+ * read. Below the breakpoint the frame becomes one scrolling column — the
+ * honest fallback, and the panes keep every other property they had.
+ * ========================================================================== */
 
-/* -------------------------------------------------------------- budget input */
-
-.d-budget {
-  padding: 0.8rem 0.85rem;
-  background: var(--sw-muted);
-}
-
-.d-budget .d-caption {
-  margin-top: 0.55rem;
-}
-
-.d-budget-unit {
-  font-family: var(--sw-mono);
-  font-size: 0.7rem;
-  font-weight: 700;
-  color: rgba(0, 0, 0, 0.5);
-  flex-shrink: 0;
-}
-
-.d-expectation {
-  margin: 0.65rem 0 0;
-  padding: 0.65rem 0.75rem;
-  border-inline-start: 3px solid rgba(0, 0, 0, 0.3);
-  background: var(--sw-muted);
-  font-size: 0.79rem;
-  color: rgba(0, 0, 0, 0.65);
-  animation: sw-fade-up 180ms var(--sw-ease) both;
-}
-
-.d-expectation[data-kind="malicious"],
-.d-expectation[data-kind="overcharge"] {
-  border-inline-start-color: var(--sw-accent);
-}
-
-.d-expectation[data-kind="honest"] {
-  border-inline-start-color: var(--sw-fg);
-}
-
-.d-advanced {
-  margin-top: 0.5rem;
-  padding-top: 0.75rem;
-  border-top: 1px dashed rgba(0, 0, 0, 0.25);
-}
-
-/* ------------------------------------------------------------------ motion */
-
-@keyframes sw-fade-in {
-  from {
-    opacity: 0;
+@media (max-width: 1100px) {
+  .dash {
+    height: auto;
+    min-height: 100svh;
+    overflow: visible;
   }
-  to {
-    opacity: 1;
+
+  .d-top {
+    height: auto;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding-block: 10px;
+  }
+
+  .d-top-meta {
+    width: 100%;
+    margin-left: 0;
+    flex-wrap: wrap;
+  }
+
+  .d-frame {
+    grid-template-columns: minmax(0, 1fr);
+    overflow: visible;
+  }
+
+  .d-pane,
+  .d-pane-main {
+    grid-column: span 1;
+  }
+
+  .d-pane-body {
+    overflow: visible;
   }
 }
 
-@keyframes sw-fade-up {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes sw-pop-in {
-  from {
-    opacity: 0;
-    transform: scale(0.97);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
-@keyframes sw-shimmer {
-  from {
-    background-position: 150% center;
-  }
-  to {
-    background-position: -50% center;
-  }
-}
-
-@keyframes sw-spin {
-  to {
-    transform: rotate(1turn);
-  }
-}
+/* ==========================================================================
+ * Reduced motion
+ * ========================================================================== */
 
 @media (prefers-reduced-motion: reduce) {
-  .dash *,
-  .dash *::before,
-  .dash *::after {
-    transition-duration: 0.01ms !important;
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
+  .d-dot[data-tone="live"],
+  .d-spin {
+    animation: none;
+  }
+
+  .d-outcome,
+  .gp-menu,
+  .mi-structured {
+    animation: none;
+  }
+
+  /* The sweep is the only looping motion left in the topbar. Held at full
+     width, so "actionable" stays legible with nothing moving. */
+  .d-rail-step[data-state="ready"] .d-rail-bar i {
+    animation: none;
+    width: 100%;
+    opacity: 0.5;
+  }
+
+  .d-ring-value,
+  .gp-glide,
+  .d-modal,
+  .d-modal::backdrop {
+    transition: none;
   }
 }

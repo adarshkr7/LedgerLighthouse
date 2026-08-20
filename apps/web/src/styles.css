@@ -1,10 +1,10 @@
 /*
  * LedgerLighthouse — global design tokens.
  *
- * Both pages this app renders are self-contained Swiss International
- * stylesheets (`.landing`, `.dash`), each declaring its own five-token
- * palette rather than reading a shared theme — a decision recorded in each of
- * those files. What remains here is only what is genuinely shared: the couple
+ * Both pages this app renders are self-contained stylesheets (`.gf` for the
+ * landing page, `.dash` for the console), each declaring its own palette
+ * rather than reading a shared theme — a decision recorded in each of those
+ * files. What remains here is only what is genuinely shared: the couple
  * of motion utilities (`.t-shimmer`, `.t-eq`, `.t-pixels`) both pages still
  * use, and the monospace stack `code {}` falls back to.
  *
@@ -38,13 +38,21 @@ body {
 }
 
 /*
- * Both pages this app renders — `.landing` and `.dash` — are now Swiss
- * International: white canvas, black structure, red signal. Neither wants a
- * body colour of its own, a CRT scanline overlay, or a coloured selection —
- * those belonged to the pixel/neon register this project has fully retired.
- * `body` is therefore Swiss by default rather than by override; there is no
- * second theme left for a page-scoped `:has()` to switch away from.
+ * The console (`.dash`) is a white canvas with black structure and takes the
+ * default below untouched.
+ *
+ * The landing page (`.gf`) is not: it opens on an ink hero and closes on an
+ * ink footer, so a white `body` shows through at both ends of an overscroll
+ * bounce as a bright flash against the section it is bouncing away from. The
+ * `:has()` below paints the body to match the page's own top and bottom
+ * rather than the page's midpoint — which is the only reason this rule needs
+ * to exist at all. Everything else about the landing page's colour is scoped
+ * inside `landing.css`.
  */
+body:has(.gf) {
+  background: #141314;
+}
+
 body {
   background: #fff;
   color: #000;

@@ -62,6 +62,15 @@ export function renderEvent(event: PaymentEvent): string {
     case "decision-finalized":
       return `  tx  finalizeDecision  ${event.approved ? "APPROVED" : "REJECTED"}  ${event.txHash}`;
 
+    case "orphan-recovered":
+      return `  vault  recovered orphaned spend seq ${event.seq}  ${
+        event.approved ? "APPROVED" : "REJECTED"
+      }  ${event.txHash}`;
+
+    case "orphan-abandoned":
+      return `  vault  BLOCKED by unfinalized spend seq ${event.seq}
+${indent(event.reason)}`;
+
     case "signer-refused":
       return `  signer  REFUSED (${event.status})  ${event.reason}`;
 

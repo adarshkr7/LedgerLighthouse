@@ -124,3 +124,22 @@ export function parseSignRequest(raw: unknown): SchemaResult<SignRequest> {
 
   return { ok: true, value: { goalId: goalId.value, seq: seq.value } };
 }
+
+/**
+ * The sweep body: `{ goalId }` and nothing else.
+ *
+ * Separate from `parseSignRequest` rather than reusing it with an optional
+ * `seq`, so that "a sweep cannot carry a destination or an amount" is visible
+ * in the type rather than being a property of how the handler happens to read
+ * it.
+ */
+export function parseSweepRequest(raw: unknown): SchemaResult<{ goalId: bigint }> {
+  if (typeof raw !== "object" || raw === null) {
+    return { ok: false, error: "body: expected an object" };
+  }
+  const goalId = (raw as Record<string, unknown>)["goalId"];
+  if (typeof goalId !== "string" || !/^[0-9]{1,32}$/.test(goalId)) {
+    return { ok: false, error: "body.goalId: expected a decimal string" };
+  }
+  return { ok: true, value: { goalId: BigInt(goalId) } };
+}

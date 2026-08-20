@@ -13,7 +13,7 @@
  */
 
 import { loadDotEnv, optional, required, requiredAddress, requiredHexKey } from "@ntux402/shared/node";
-import { formatUsdc } from "@ntux402/shared";
+import { formatUsdc, rpcUrls } from "@ntux402/shared";
 import { Lightning } from "@inco/lightning-js/lite";
 
 import { X402Client } from "./x402/client.js";
@@ -43,7 +43,7 @@ const relay = new VaultRelay({
   chainId: Number(process.env["CHAIN_ID"] ?? 84532),
 });
 
-const zap = await Lightning.baseSepoliaTestnet({ hostChainRpcUrls: [rpcUrl] });
+const zap = await Lightning.baseSepoliaTestnet({ hostChainRpcUrls: [...rpcUrls(rpcUrl)] });
 
 const agent = await buildAgent({
   apiKey: optional("LLM_API_KEY"),

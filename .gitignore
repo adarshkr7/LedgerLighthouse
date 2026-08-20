@@ -51,3 +51,6 @@ trace.json
 
 # vite dev-server cache
 apps/web/.vite/
+
+# Durable trace store written by the orchestrator (TRACE_STORE_PATH).
+.traces/

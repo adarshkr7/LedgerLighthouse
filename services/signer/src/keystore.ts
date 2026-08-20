@@ -315,10 +315,35 @@ export function openKeyStore(options: {
   roflSocket?: string | undefined;
   roflIndexPath?: string | undefined;
   filePath?: string | undefined;
+  /**
+   * Refuse to start without an enclave.
+   *
+   * The fallback to `FileKeyStore` exists so the demo runs on a laptop, and it
+   * writes real private keys to disk — the `[ASSUMPTION]` that `RoflKeyStore`
+   * exists to retire. The danger is not that the fallback exists; it is that it
+   * was *silent*. A deployment whose ROFL socket path was wrong, or whose
+   * enclave had not come up yet, degraded to keys-on-disk and logged a line
+   * that looked like every other startup.
+   *
+   * With this set, a missing socket is a refusal to boot. That is the correct
+   * failure for anything holding money.
+   */
+  requireRofl?: boolean | undefined;
 }): KeyStore {
-  if (options.roflSocket !== undefined && options.roflSocket !== "") {
-    return new RoflKeyStore(new SocketRoflAppd(options.roflSocket), options.roflIndexPath);
+  const socket = options.roflSocket;
+  if (socket !== undefined && socket !== "") {
+    return new RoflKeyStore(new SocketRoflAppd(socket), options.roflIndexPath);
   }
+
+  if (options.requireRofl === true) {
+    throw new Error(
+      "SIGNER_REQUIRE_ROFL is set but SIGNER_ROFL_SOCKET is empty. Refusing to start: the " +
+        "fallback stores hold private keys in the process or on disk, which is exactly what " +
+        "requiring ROFL is meant to prevent. Set SIGNER_ROFL_SOCKET, or unset " +
+        "SIGNER_REQUIRE_ROFL to accept a local key store.",
+    );
+  }
+
   return options.filePath === undefined || options.filePath === ""
     ? new InMemoryKeyStore()
     : new FileKeyStore(options.filePath);

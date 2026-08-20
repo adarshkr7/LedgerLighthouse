@@ -54,6 +54,19 @@ export interface Terms {
 export interface PaymentRequired {
   readonly x402Version: number;
   readonly accepts: readonly Terms[];
+  /**
+   * Why the server is still asking, when it has already been told once.
+   *
+   * Optional because a *first* 402 has nothing to explain -- it is the normal
+   * opening move, not a rejection. It matters on the second one: at that point
+   * the payload has been settled (or has failed to settle) and this carries the
+   * facilitator reason verbatim, which is the difference between "the payer
+   * holds no USDC" and a caller staring at a generic refusal.
+   *
+   * The x402 spec does not define this field. It is read defensively and never
+   * required, so a server that omits it parses exactly as before.
+   */
+  readonly error?: string | undefined;
 }
 
 export type ParseResult<T> =
@@ -199,7 +212,22 @@ export function parsePaymentRequired(raw: unknown): ParseResult<PaymentRequired>
     }
 
     const parsed = accepts.map((entry, i) => parseTermsEntry(entry, `accepts[${i}]`));
-    return { ok: true, value: { x402Version: X402_VERSION, accepts: parsed } };
+
+    /*
+     * Carried through rather than validated. A malformed `error` is not grounds
+     * to reject an otherwise valid 402 -- the payment requirements are what
+     * this parser exists to guarantee, and a non-string diagnostic is simply
+     * dropped.
+     */
+    const error = raw["error"];
+    return {
+      ok: true,
+      value: {
+        x402Version: X402_VERSION,
+        accepts: parsed,
+        ...(typeof error === "string" && error !== "" ? { error } : {}),
+      },
+    };
   } catch (e) {
     if (e instanceof InvalidPayload) return { ok: false, error: e.message };
     throw e;

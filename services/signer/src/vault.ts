@@ -13,6 +13,7 @@
 import { createPublicClient, http, type Address, type Hex, type PublicClient } from "viem";
 import { baseSepolia } from "viem/chains";
 import { policyVaultAbi, usdcAbi } from "@ntux402/shared";
+import { rpcTransport } from "@ntux402/shared/viem";
 
 /** The goal record, as stored on chain. */
 export interface GoalRecord {
@@ -48,6 +49,8 @@ export interface VaultReader {
   tokenDomainSeparator(token: Address): Promise<Hex>;
   /** True once the token has consumed this authorization. */
   authorizationUsed(token: Address, authorizer: Address, nonce: Hex): Promise<boolean>;
+  /** ERC-20 balance, for sweeping a payer back to its owner. */
+  tokenBalance(token: Address, holder: Address): Promise<bigint>;
 }
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
@@ -61,7 +64,7 @@ export class OnChainVaultReader implements VaultReader {
       options.client ??
       (createPublicClient({
         chain: baseSepolia,
-        transport: http(options.rpcUrl),
+        transport: rpcTransport(options.rpcUrl),
       }) as PublicClient);
     this.#vault = options.vaultAddress;
   }
@@ -123,6 +126,15 @@ export class OnChainVaultReader implements VaultReader {
       finalized,
       approved,
     };
+  }
+
+  async tokenBalance(token: Address, holder: Address): Promise<bigint> {
+    return (await this.#client.readContract({
+      address: token,
+      abi: usdcAbi,
+      functionName: "balanceOf",
+      args: [holder],
+    })) as bigint;
   }
 
   async tokenDomainSeparator(token: Address): Promise<Hex> {

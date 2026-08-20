@@ -33,6 +33,7 @@ import { policyVaultAbi, usdcAbi } from "@ntux402/shared";
 
 import { merkleRoot } from "./merkle.js";
 import { GENESIS_HASH, computeStepHash, type Trace } from "./step.js";
+import { rpcTransport } from "@ntux402/shared/viem";
 
 export interface Finding {
   readonly severity: "error" | "warning";
@@ -131,7 +132,10 @@ export async function verifyTrace(
   const client =
     options.client ??
     (options.rpcUrl
-      ? (createPublicClient({ chain: baseSepolia, transport: http(options.rpcUrl) }) as PublicClient)
+      ? (createPublicClient({
+          chain: baseSepolia,
+          transport: rpcTransport(options.rpcUrl),
+        }) as PublicClient)
       : undefined);
 
   if (!client) {
