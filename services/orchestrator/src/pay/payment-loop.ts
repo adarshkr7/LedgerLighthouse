@@ -395,11 +395,22 @@ export class PaymentLoop {
        * authorization and an unreachable facilitator all surfaced as the same
        * sentence, twenty seconds into a run, with the real answer already on
        * the wire.
+       *
+       * But that string is written by the vendor, and on this project the
+       * vendor is assumed hostile. Passed through bare it became the body of
+       * the console's "Run failed" panel, in the console's own voice -- so a
+       * vendor could have the UI tell the operator "settlement succeeded,
+       * raise your budget and retry". It changes no number and reaches no
+       * policy, but the demo's whole register is that attacker text is shown
+       * as *quoted*, never absorbed. `attributeVendorText` puts it back in
+       * quotation marks where it belongs.
        */
       const reason =
         paid.kind === "failed"
           ? describeFailure(paid.reason)
-          : (paid.parsed.error ?? "resource still demands payment after settlement");
+          : paid.parsed.error !== undefined
+            ? attributeVendorText(paid.parsed.error)
+            : "resource still demands payment after settlement";
       emit({ type: "failed", reason });
       return { kind: "failed", reason };
     }
@@ -514,6 +525,34 @@ export class PaymentLoop {
     }
     return last;
   }
+}
+
+/** Longest run of vendor prose worth repeating. Beyond this it is a flood. */
+const VENDOR_TEXT_MAX = 200;
+
+/**
+ * Renders vendor-written text as an attributed quotation.
+ *
+ * Three things, each guarding a different failure:
+ *
+ *  - **Attribution.** The reason is displayed as the console's account of what
+ *    happened, so text arriving from a hostile vendor has to be visibly theirs
+ *    rather than ours.
+ *  - **Control characters removed.** Newlines and escapes let a vendor forge
+ *    log structure, or fake a second line of output in a terminal renderer.
+ *  - **Length capped.** A refusal reason is a sentence; anything longer is
+ *    either a mistake or an attempt to push the real content out of view.
+ */
+export function attributeVendorText(raw: string): string {
+  // eslint-disable-next-line no-control-regex
+  const flattened = raw.replace(/[\u0000-\u001f\u007f]+/g, " ").trim();
+  const clipped =
+    flattened.length > VENDOR_TEXT_MAX
+      ? `${flattened.slice(0, VENDOR_TEXT_MAX)}…`
+      : flattened;
+  return clipped === ""
+    ? "the resource server refused the payment without saying why"
+    : `the resource server refused the payment and said: "${clipped}"`;
 }
 
 function describeFailure(reason: FailureReason): string {

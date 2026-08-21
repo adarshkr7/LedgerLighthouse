@@ -79,9 +79,19 @@ export function createSignerServer(options: SignerServerOptions): Server {
   const log = options.log ?? (() => {});
 
   return createServer((req, res) => {
+    /*
+     * Computed once, out here rather than inside the async frame, so the
+     * `.catch()` below can reach it too. It could not before, and a crash
+     * therefore answered without CORS headers -- which the browser reports as
+     * an opaque "Failed to fetch" rather than the 500 and its message. That is
+     * precisely the failure this project spent an afternoon misdiagnosing: the
+     * service was up and answering, and the only thing wrong was that the
+     * answer was unreadable.
+     */
+    const cors = corsHeaders(req);
+
     void (async () => {
       const path = (req.url ?? "/").split("?")[0];
-      const cors = corsHeaders(req);
 
       if (req.method === "OPTIONS") {
         res.writeHead(204, cors);
@@ -168,7 +178,7 @@ export function createSignerServer(options: SignerServerOptions): Server {
 
       send(res, 404, { error: "not found" }, cors);
     })().catch((e: unknown) => {
-      send(res, 500, { error: e instanceof Error ? e.message : String(e) });
+      send(res, 500, { error: e instanceof Error ? e.message : String(e) }, cors);
     });
   });
 }

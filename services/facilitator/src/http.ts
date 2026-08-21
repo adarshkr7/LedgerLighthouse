@@ -72,9 +72,19 @@ export function createFacilitatorServer(options: FacilitatorServerOptions): Serv
   const log = options.log ?? (() => {});
 
   return createServer((req, res) => {
+    /*
+     * Computed once, out here rather than inside the async frame, so the
+     * `.catch()` below can reach it too. It could not before, and a crash
+     * therefore answered without CORS headers -- which the browser reports as
+     * an opaque "Failed to fetch" rather than the 500 and its message. That is
+     * precisely the failure this project spent an afternoon misdiagnosing: the
+     * service was up and answering, and the only thing wrong was that the
+     * answer was unreadable.
+     */
+    const cors = corsHeaders(req);
+
     void (async () => {
       const path = (req.url ?? "/").split("?")[0];
-      const cors = corsHeaders(req);
 
       if (req.method === "OPTIONS") {
         res.writeHead(204, cors);
@@ -144,10 +154,7 @@ export function createFacilitatorServer(options: FacilitatorServerOptions): Serv
       );
       send(res, result.success ? 200 : 402, result, cors);
     })().catch((e: unknown) => {
-      // Outside the async frame, so the per-request CORS headers are not in
-      // scope. A 500 with no CORS headers is correct anyway: the browser should
-      // not be reading the body of a crash it cannot interpret.
-      send(res, 500, { error: e instanceof Error ? e.message : String(e) });
+      send(res, 500, { error: e instanceof Error ? e.message : String(e) }, cors);
     });
   });
 }

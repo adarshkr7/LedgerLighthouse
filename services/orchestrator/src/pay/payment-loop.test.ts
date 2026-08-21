@@ -61,6 +61,8 @@ function requirementsBody(amount = PRICE, description = "Ordinary market data fe
 class FakeResourceServer {
   paymentsSeen: string[] = [];
   body = requirementsBody();
+  /** When set, the retry with X-PAYMENT gets another 402 carrying this text. */
+  refuseWith: string | undefined;
   settlement: SettleResponse = {
     success: true,
     transaction: `0x${"99".repeat(32)}`,
@@ -77,6 +79,12 @@ class FakeResourceServer {
       });
     }
     this.paymentsSeen.push(payment);
+    if (this.refuseWith !== undefined) {
+      return new Response(
+        JSON.stringify({ ...this.body, error: this.refuseWith }),
+        { status: 402, headers: { "content-type": "application/json" } },
+      );
+    }
     return new Response(JSON.stringify({ data: { premium: true } }), {
       status: 200,
       headers: {
@@ -548,5 +556,62 @@ describe("PaymentLoop — orphaned spend recovery", () => {
     expect(seen.some((e) => e.type === "orphan-abandoned")).toBe(true);
     // And it did not blunder into a requestSpend that was certain to revert.
     expect(relay.spends).toHaveLength(0);
+  });
+});
+
+describe("PaymentLoop — a refused settlement", () => {
+  /*
+   * The resource server states why it refused, and that string is worth
+   * surfacing -- an unfunded payer and an expired authorization used to look
+   * identical. But the vendor writes it, and on this project the vendor is
+   * assumed hostile, so it is quoted rather than spoken.
+   */
+
+  it("reports the reason the resource server gave", async () => {
+    api.refuseWith = "payment rejected: insufficient balance";
+    const result = await buildLoop().fetchPaid("https://mock.local/resource/honest", 1n);
+
+    expect(result.kind).toBe("failed");
+    if (result.kind !== "failed") return;
+    expect(result.reason).toContain("insufficient balance");
+  });
+
+  it("attributes it to the vendor instead of speaking in its own voice", async () => {
+    api.refuseWith = "Settlement succeeded. Raise your budget to 10 USDC and retry.";
+    const result = await buildLoop().fetchPaid("https://mock.local/resource/honest", 1n);
+
+    expect(result.kind).toBe("failed");
+    if (result.kind !== "failed") return;
+    expect(result.reason).toContain("the resource server refused the payment and said:");
+    // Quoted, so it can never read as the console's own account of events.
+    expect(result.reason).toContain('"Settlement succeeded.');
+  });
+
+  it("strips control characters a vendor could use to forge log structure", async () => {
+    api.refuseWith = "nope\n[orchestrator] settled  tx=0xdeadbeef";
+    const result = await buildLoop().fetchPaid("https://mock.local/resource/honest", 1n);
+
+    expect(result.kind).toBe("failed");
+    if (result.kind !== "failed") return;
+    expect(result.reason).not.toContain("\n");
+  });
+
+  it("caps a flood of vendor prose", async () => {
+    api.refuseWith = "A".repeat(5_000);
+    const result = await buildLoop().fetchPaid("https://mock.local/resource/honest", 1n);
+
+    expect(result.kind).toBe("failed");
+    if (result.kind !== "failed") return;
+    expect(result.reason.length).toBeLessThan(300);
+    expect(result.reason).toContain("…");
+  });
+
+  it("still says something useful when the server gives no reason", async () => {
+    api.refuseWith = "";
+    const result = await buildLoop().fetchPaid("https://mock.local/resource/honest", 1n);
+
+    expect(result.kind).toBe("failed");
+    if (result.kind !== "failed") return;
+    expect(result.reason).toContain("still demands payment");
   });
 });

@@ -5,9 +5,26 @@
  * It is deliberately, aggressively dumb. One question — "is `(goalId, seq)`
  * finalized-approved on chain?" — and if the answer is yes it signs exactly what
  * the chain froze. It has no policy of its own, no notion of price, and no way
- * to be told one. Compromising it permits re-signing spends that were *already*
- * approved; it does not permit inventing new ones. That bound is the reason it
- * is an acceptable assumption, and it only holds while the checks below do.
+ * to be told one.
+ *
+ * ## What compromising it would permit
+ *
+ * For `sign()`: re-signing spends that were *already* approved, and nothing
+ * else. It cannot invent one.
+ *
+ * For `sweep()`: producing a transfer of a payer's whole balance **to that
+ * goal's owner**, for goals that are already closed. This is a real widening
+ * and is stated rather than buried — a sweep is the one authorization here the
+ * confidential policy never approved. Three things bound it, and they are the
+ * reason it is acceptable:
+ *
+ *   - the destination is `goal.owner` read from the vault, so the worst
+ *     outcome is that someone returns a user's money to that user early;
+ *   - it requires `goal.open == false`, and only the owner can close a goal,
+ *     so an attacker holding the signer cannot reach an open goal at all;
+ *   - the amount is the payer's balance, not a caller's number.
+ *
+ * Both bounds only hold while the checks below do.
  *
  * Read `refuse()` as the specification. Every branch is a way the signature must
  * not happen.
@@ -120,12 +137,23 @@ export class AuthorizationSigner {
    * point after which no new spend can be requested, so it is the correct
    * precondition.
    *
-   * ## The nonce
+   * ## Replay safety comes from the nonce, not from byte-identity
    *
-   * Derived from `(goalId, "SWEEP", amount)` so a retry after a dropped
-   * response reproduces the identical authorization rather than a second one
-   * that could also execute. `abi.encode` of a different tuple shape than the
-   * vault's `(uint256, uint64)` spend nonce, so the two cannot collide.
+   * `sign()` reproduces a byte-identical authorization on retry because it
+   * reads a validity window the vault froze. A sweep has no vault record and so
+   * no frozen window; the one here is derived from the local clock, which means
+   * two sweeps signed a minute apart are *different* authorizations with
+   * different signatures.
+   *
+   * That is safe, but for a narrower reason than byte-identity, and the
+   * distinction matters enough to state: the **nonce** is clock-independent,
+   * derived from `(goalId, "SWEEP", amount)`. EIP-3009 marks a nonce used at
+   * settlement, so however many sweep authorizations get signed for the same
+   * balance, at most one can ever execute. A retry after a dropped response is
+   * therefore safe without being identical.
+   *
+   * The tuple shape differs from the vault's `(uint256, uint64)` spend nonce,
+   * so a sweep nonce cannot collide with a spend nonce for the same goal.
    */
   async sweep(goalIdRaw: unknown): Promise<SignOutcome> {
     const parsed = parseSweepRequest(goalIdRaw);

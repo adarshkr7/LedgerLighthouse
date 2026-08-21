@@ -11,7 +11,7 @@
 <p align="center">
   <a href="https://youtu.be/jCm6Ps4TSdg"><img alt="Watch the demo" src="https://img.shields.io/badge/demo-watch-ff3000" /></a>
   <a href="https://github.com/adarshkr7/LedgerLighthouse/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/adarshkr7/LedgerLighthouse/actions/workflows/ci.yml/badge.svg" /></a>
-  <a href="https://github.com/adarshkr7/LedgerLighthouse/actions/workflows/ci.yml"><img alt="234 tests passing" src="https://img.shields.io/badge/tests-234%20passing-2f5c4a" /></a>
+  <a href="https://github.com/adarshkr7/LedgerLighthouse/actions/workflows/ci.yml"><img alt="238 tests passing" src="https://img.shields.io/badge/tests-238%20passing-2f5c4a" /></a>
   <a href="https://sepolia.basescan.org/address/0x0C759D06a1c14F43852D7b078Db2f8C342F15921"><img alt="Live on Base Sepolia" src="https://img.shields.io/badge/live-Base%20Sepolia-0052ff" /></a>
   <img alt="x402 v1" src="https://img.shields.io/badge/x402-v1-16150f" />
   <img alt="Inco Lightning 1.0.2" src="https://img.shields.io/badge/Inco%20Lightning-1.0.2-7c382e" />
@@ -75,7 +75,7 @@ Running code, not a design document. Every item below is exercised by the test s
 ### Payment path — x402 v1
 
 - **Schema-first 402 parsing** — amount, payee and asset taken from structured fields; vendor prose routed only to the model
-- **LLM agent** on Anthropic, with a scripted offline fallback that reproduces injection compliance — [`services/orchestrator/src/agent/`](services/orchestrator/src/agent/)
+- **LLM agent** over an OpenAI-compatible gateway — any model it serves, no vendor SDK in the untrusted component — with a scripted offline fallback that reproduces injection compliance — [`services/orchestrator/src/agent/`](services/orchestrator/src/agent/)
 - **Nine-stage payment loop** in which a rejection is terminal and first-class, never retried — [`services/orchestrator/src/pay/payment-loop.ts`](services/orchestrator/src/pay/payment-loop.ts)
 - **Non-discretionary Authorization Signer** accepting `(goalId, seq)` and nothing else, with 8 specified refusal codes
 - **Self-hosted x402 facilitator** exposing `/verify`, `/settle`, `/supported` — [`services/facilitator/`](services/facilitator/)
@@ -527,8 +527,9 @@ cp .env.example .env
 | `SIGNER_KEY_STORE_PATH` | Local mode | Where per-goal payer keys live. Blank = in-memory. Ignored when ROFL is set |
 | `SIGNER_ROFL_SOCKET` | ROFL only | `/run/rofl-appd.sock` — set **only** inside a deployed enclave |
 | `SIGNER_ROFL_INDEX_PATH` | ROFL only | `address → key_id` map. Non-secret |
-| `LLM_API_KEY` | Optional | Anthropic key. Blank runs the scripted agent, reproducing injection-compliance offline |
-| `LLM_MODEL` | Pre-filled | `claude-sonnet-5` |
+| `AISA_INFERENCE_KEY` | Optional | Gateway key, **inference only**. Blank runs the scripted agent, reproducing injection-compliance offline |
+| `LLM_MODEL` | Optional | Gateway model id. No default — blank runs the scripted agent |
+| `AISA_API_BASE_URL` | Pre-filled | `https://api.aisa.one` |
 | `BASESCAN_API_KEY` | Optional | Contract verification only |
 
 Then generate and fund the two gas-only roles:

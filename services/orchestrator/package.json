@@ -15,7 +15,6 @@
     "@ntux402/shared": "workspace:*",
     "viem": "^2.55.11",
     "@inco/lightning-js": "^1.0.2",
-    "@anthropic-ai/sdk": "^0.116.0",
     "@ntux402/trace": "workspace:*"
   },
   "devDependencies": {

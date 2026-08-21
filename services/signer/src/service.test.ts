@@ -387,18 +387,29 @@ describe("AuthorizationSigner — sweep", () => {
     expect(recovered.toLowerCase()).toBe(payer.toLowerCase());
   });
 
-  it("ignores a destination or amount a caller tries to smuggle in", async () => {
+  // Non-negotiable #2: terms fields must not be in the schema at all -- and
+  // specifically not "validate and ignore them". A body carrying a destination
+  // is refused outright, and the error says why.
+  it("refuses a body carrying payment terms rather than ignoring them", async () => {
     const outcome = await signer.sweep({
       goalId: "1",
       to: VENDOR,
       value: "999999999",
-      payTo: VENDOR,
     });
-    expect(outcome.ok).toBe(true);
-    if (!outcome.ok) return;
-    // Both came from the chain, not the body.
-    expect(outcome.value.authorization.to).toBe(OWNER);
-    expect(outcome.value.authorization.value).toBe("250000");
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) return;
+    expect(outcome.status).toBe(400);
+    expect(outcome.error).toContain("payment terms");
+    expect(outcome.error).toContain("to");
+    expect(outcome.error).toContain("value");
+  });
+
+  it("refuses any unknown field", async () => {
+    const outcome = await signer.sweep({ goalId: "1", memo: "hello" });
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) return;
+    expect(outcome.status).toBe(400);
+    expect(outcome.error).toContain("memo");
   });
 
   it("refuses while the goal is still open", async () => {
@@ -434,13 +445,40 @@ describe("AuthorizationSigner — sweep", () => {
     expect(outcome.status).toBe(404);
   });
 
-  it("is deterministic, so a retry cannot pay twice", async () => {
+  /*
+   * A sweep has no vault-frozen window, so unlike sign() it is *not*
+   * byte-identical on retry -- the validity window moves with the clock. The
+   * property that actually prevents a double payment is the nonce, which is
+   * clock-independent; EIP-3009 marks it used at settlement, so only one of
+   * however many authorizations exist can execute.
+   *
+   * Tested against a moved clock, because a frozen one would pass while
+   * proving nothing.
+   */
+  it("keeps the nonce stable as the clock moves, so only one can execute", async () => {
     const first = await signer.sweep({ goalId: "1" });
-    const second = await signer.sweep({ goalId: "1" });
+
+    const later = new AuthorizationSigner({
+      vault,
+      keys,
+      config: {
+        chainId: CHAIN_ID,
+        usdcAddress: USDC_BASE_SEPOLIA,
+        verifyDomainOnChain: false,
+        now: () => NOW + 1200,
+      },
+    });
+    const second = await later.sweep({ goalId: "1" });
+
     expect(first.ok && second.ok).toBe(true);
     if (!first.ok || !second.ok) return;
+
+    // The replay guard: same nonce, so the token accepts at most one.
     expect(second.value.authorization.nonce).toBe(first.value.authorization.nonce);
-    expect(second.value.signature).toBe(first.value.signature);
+    // And the honest consequence of a clock-derived window.
+    expect(second.value.authorization.validBefore).not.toBe(
+      first.value.authorization.validBefore,
+    );
   });
 
   it("does not collide with a spend nonce for the same goal", async () => {

@@ -39,7 +39,22 @@ export function loadDotEnv(path?: string): void {
     const key = trimmed.slice(0, eq).trim();
     let value = trimmed.slice(eq + 1).trim();
     // Strip an inline comment only when the value is unquoted.
-    if (!/^["']/.test(value)) value = value.split(/\s+#/)[0]!.trim();
+    if (!/^["']/.test(value)) {
+      /*
+       * `KEY=            # explanation` is an *empty* value, and the split on
+       * `\s+#` cannot see that: by this point the line has been trimmed, so the
+       * `#` sits at position 0 with no preceding whitespace to match, and the
+       * whole comment came back as though someone had configured it.
+       *
+       * Every blank line in .env.example is written that way, so a freshly
+       * copied .env used to hand `required()` a sentence of prose. The failure
+       * that produced was "ORCHESTRATOR_RELAY_KEY must be a 32-byte hex private
+       * key" — for a key the operator had quite correctly left blank, and
+       * instead of the "Missing ..., copy .env.example and fill it in" message
+       * that file explicitly points them at.
+       */
+      value = value.startsWith("#") ? "" : value.split(/\s+#/)[0]!.trim();
+    }
     value = value.replace(/^(["'])(.*)\1$/, "$2");
     if (value !== "" && process.env[key] === undefined) process.env[key] = value;
   }

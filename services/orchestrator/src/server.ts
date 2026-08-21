@@ -84,9 +84,19 @@ export function createOrchestratorServer(options: OrchestratorServerOptions): Se
   const traces = new TraceStore(options.traceDir ?? ".traces");
 
   return createServer((req, res) => {
+    /*
+     * Computed once, out here rather than inside the async frame, so the
+     * `.catch()` below can reach it too. It could not before, and a crash
+     * therefore answered without CORS headers -- which the browser reports as
+     * an opaque "Failed to fetch" rather than the 500 and its message. That is
+     * precisely the failure this project spent an afternoon misdiagnosing: the
+     * service was up and answering, and the only thing wrong was that the
+     * answer was unreadable.
+     */
+    const cors = corsHeaders(req);
+
     void (async () => {
       const path = (req.url ?? "/").split("?")[0] ?? "/";
-      const cors = corsHeaders(req);
 
       if (req.method === "OPTIONS") {
         res.writeHead(204, cors);
@@ -102,17 +112,22 @@ export function createOrchestratorServer(options: OrchestratorServerOptions): Se
       // Open like /health: the UI needs these addresses to render honestly, and
       // every one of them is already public on chain.
       if (req.method === "GET" && path === "/config") {
-        send(res, 200, {
-          vaultAddress: options.vaultAddress,
-          usdcAddress: options.usdcAddress,
-          chainId: options.chainId,
-          relayAddress: options.relay.relayAddress,
-          signerUrl: options.signerUrl,
-          mockApiUrl: options.mockApiUrl,
-          // Rendered in the UI so a stubbed run can never be mistaken for a real one.
-          settlement: options.facilitatorUrl ? "live" : "stub",
-          agent: options.agentSource,
-        });
+        send(
+          res,
+          200,
+          {
+            vaultAddress: options.vaultAddress,
+            usdcAddress: options.usdcAddress,
+            chainId: options.chainId,
+            relayAddress: options.relay.relayAddress,
+            signerUrl: options.signerUrl,
+            mockApiUrl: options.mockApiUrl,
+            // Rendered in the UI so a stubbed run can never be mistaken for a real one.
+            settlement: options.facilitatorUrl ? "live" : "stub",
+            agent: options.agentSource,
+          },
+          cors,
+        );
         return;
       }
 
@@ -208,7 +223,9 @@ export function createOrchestratorServer(options: OrchestratorServerOptions): Se
 
       send(res, 404, { error: "not found" }, cors);
     })().catch((e: unknown) => {
-      if (!res.headersSent) send(res, 500, { error: e instanceof Error ? e.message : String(e) });
+      if (!res.headersSent) {
+        send(res, 500, { error: e instanceof Error ? e.message : String(e) }, cors);
+      }
       else res.end();
     });
   });

@@ -85,10 +85,11 @@ const zap = await withRetry("Inco Lightning handshake", () =>
   Lightning.baseSepoliaTestnet({ hostChainRpcUrls: [...rpcUrls(rpcUrl)] }),
 );
 
-const apiKey = optional("LLM_API_KEY") ?? process.env["ANTHROPIC_API_KEY"];
+const apiKey = optional("AISA_INFERENCE_KEY");
 const agent = await buildAgent({
   apiKey,
   model: optional("LLM_MODEL"),
+  baseUrl: optional("AISA_API_BASE_URL"),
   fallback: new ScriptedAgent(),
 });
 

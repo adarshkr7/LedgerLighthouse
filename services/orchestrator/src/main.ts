@@ -46,8 +46,9 @@ const relay = new VaultRelay({
 const zap = await Lightning.baseSepoliaTestnet({ hostChainRpcUrls: [...rpcUrls(rpcUrl)] });
 
 const agent = await buildAgent({
-  apiKey: optional("LLM_API_KEY"),
+  apiKey: optional("AISA_INFERENCE_KEY"),
   model: optional("LLM_MODEL"),
+  baseUrl: optional("AISA_API_BASE_URL"),
   fallback: new ScriptedAgent(),
 });
 
