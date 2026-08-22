@@ -27,14 +27,18 @@ it. Neither is what you have.
 | AIsa charges **real money** per search ($0.008 / $0.016, measured) | — |
 | An LLM makes the spend decision from vendor-controlled text | the model is `qwen3.7-flash`, because frontier ids are balance-gated |
 | Traces are hash-chained, independently verifiable, and their roots anchored on Base Sepolia | — |
-| Payer keys are per-goal and ephemeral | held in a **file on disk**, not an enclave |
+| Payer keys are per-goal and ephemeral | ~~held in a **file on disk**, not an enclave~~ — closed 2026-08-23; derived in a TDX enclave |
 | The facilitator settles for real | you run it, so "outside our trust boundary" is aspirational |
 | The vendor is a real paid API behind a real 402, paid to a dedicated address | that address is still yours, so the USDC is recycled rather than earned |
 
-The row in bold type is what is left of the gap between what the project *claims* and what it
-*runs*, and it is the one the README still lists under "written and tested, not yet live" —
-which is to your credit while it is true. Anchoring, which used to sit beside it here, is done
-(A2). Closing the last one is worth more than any new feature.
+The custody row is closed: the signer runs in a TDX enclave, the measurements are whitelisted
+on chain, and a minted payer can be found in the enclave log and the vault but not on any disk.
+Anchoring is done too (A2), with the caveat in L5b that it is one anchor per goal rather than
+per run.
+
+What remains in this table is honest and worth saying out loud rather than closing: you run the
+facilitator, and the vendor payee is your own address. Neither is a bug — both are the demo
+being a demo — and claiming otherwise would cost more than it buys.
 
 ---
 
@@ -162,11 +166,12 @@ do is worth more than closing half of them silently.
 
 | # | Loophole | Severity | Fix |
 | --- | --- | --- | --- |
-| L1 | **Payer keys on disk**, not in an enclave. The core custody claim is unbacked in the running system. | **High** | A1 — deploy ROFL, set `SIGNER_REQUIRE_ROFL=true`. |
+| L1 | ~~**Payer keys on disk**, not in an enclave. The core custody claim is unbacked in the running system.~~ | ~~**High**~~ | **Closed 2026-08-23 — deployed and verified.** The signer runs in a TDX enclave and reports `store=ROFL enclave via /run/rofl-appd.sock`. Goal #52's payer appears in the enclave log as the address it minted, in the vault as that goal's `payer`, and **nowhere in `.keys/payers.json`** — three sources, one address, no copy on disk. The claim is backed. What is left is hardening rather than custody: `SIGNER_REQUIRE_ROFL=true` would make a *future* misconfiguration fail loudly instead of degrading to the file store silently. It changes nothing about what runs today, and costs a rebuild because `compose.yaml` is inside the measured bundle. |
 | L2 | **The orchestrator can inflate the amount.** It holds the relay key and calls `requestSpend(goalId, amount, payTo, resource)` — nothing forces `amount` to match the 402. The *model* cannot, but a compromised orchestrator can, up to `perCallCap` (6.00) to any allowlisted payee. `llm.ts` states this openly. | **High** | Bounded today by `perCallCap` × `callsRemaining` × the encrypted budget × the allowlist. **Real fix:** have the vendor sign its terms `(amount, resource, expiry)` and make `requestSpend` verify that signature — then the orchestrator cannot invent a number the vendor never quoted. This is the most valuable architectural improvement left, and worth *describing* even if you do not build it. |
 | L3 | **`vendor-upstream` is vendor-attested.** Nothing proves the bytes delivered match what was paid for. | Medium | Already handled honestly: the step carries `attestedBy: "vendor"`, the verifier rejects it if it claims an on-chain attestation, and the CLI says so after `VALID`. Do not over-claim; the honesty *is* the answer. |
 | L4 | **You run the facilitator**, so "outside our trust boundary" is aspirational. | Medium | Correct in the write-up: it is architecturally outside, operationally inside. A facilitator cannot forge an authorization — it can only decline to submit one — so the bound is real even when you run it. |
-| L5 | ~~**Trace roots never anchored** — a trace could be edited before anyone sees it.~~ | ~~Medium~~ | **Fixed.** The orchestrator anchors the root after every completed run, behind `TRACE_ANCHOR_ADDRESS`. A2. |
+| L5 | ~~**Trace roots never anchored** — a trace could be edited before anyone sees it.~~ | ~~Medium~~ | **Fixed.** The orchestrator anchors the root after a completed run, behind `TRACE_ANCHOR_ADDRESS`. A2. |
+| L5b | **One anchor per goal, first write wins.** `TraceAnchor.sol` requires the stored root to be zero, so run 2..N of a goal return `already` and go uncommitted — while `traces.save` rewrites the stored trace each run. On a multi-run goal the saved trace and the anchored root then describe different things, and a goal whose *first* run failed anchors that failure permanently. | Medium | Not a bug in the contract so much as a design that assumes one run per goal. Cheapest honest fix: key the anchor on `(vault, goalId, seq)`, or refuse to anchor a run that is not `paid`. Until then, say "the goal's first run is anchored", never "every run is anchored". |
 | L6 | **Catalog is hardcoded**; no discovery. The agent is handed URLs. | Low | Expose a capability manifest from `vendor-aisa`. Frame honestly: the 402 *is* price discovery; finding the URL is a separate layer. |
 
 ### The AIsa integration
@@ -185,7 +190,7 @@ do is worth more than closing half of them silently.
 | --- | --- | --- | --- |
 | L12 | **Testnet USDC has no value**, so "real payment" is doing work in the sentence. | Medium | Volunteer it in the first minute, and pivot to what *is* real: the AIsa credits, the attestations, the settlement mechanics. |
 | L13 | ~~**Circular payee** — the vendor pays your own wallet.~~ | ~~Low~~ | **Fixed.** A dedicated payee address, separate from the deployer and relay wallets. Still recoverable by you, so say "separate payee" rather than "third party". A4. |
-| L14 | **No auth on the services by default** (`SERVICE_TOKEN` unset). Loopback-bound, so fine locally; fatal if anything is exposed. | Low | Leave as-is for a local demo. If anything is deployed, set `SERVICE_TOKEN` and `BIND_HOST` deliberately. |
+| L14 | **No auth on the services by default** (`SERVICE_TOKEN` unset). Loopback-bound, so fine locally; fatal if anything is exposed. | Low | Leave as-is for a local demo. If anything is deployed, set `SERVICE_TOKEN` and `BIND_HOST` deliberately. Note `SERVICE_TOKEN` is *inbound only* — what a service demands. What the orchestrator **presents** to a ROFL-hosted signer is `SIGNER_SERVICE_TOKEN`; they were one variable until 2026-08-23, and setting it for the signer silently armed the orchestrator's own guard and 401'd the browser out of `/runs`. |
 | L15 | **`premium-feed` at 5.00 exceeds `MAX_BUDGET` 4.00**, so it can never be affordable — that path only ever shows a refusal. | Low | Deliberate, and documented in `App.tsx`. Mention it before someone finds it. |
 | L16 | **MetaMask's RPC is a single point of failure** for every write. | Medium | Track B — set it manually, verify on the day. |
 
