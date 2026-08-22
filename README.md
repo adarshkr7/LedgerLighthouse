@@ -238,7 +238,7 @@ flowchart LR
     MK -->|"verify · settle"| FAC
     FAC -->|"transferWithAuthorization"| USDC
     OR --> TR
-    TR -.->|"Merkle root — anchoring not yet wired"| TA
+    TR -->|"Merkle root — anchored per run"| TA
 
     classDef fe    fill:#1e3a5f,stroke:#4a9eff,color:#d0e8ff
     classDef untr  fill:#3a1a1a,stroke:#ef5350,color:#f5d0d0

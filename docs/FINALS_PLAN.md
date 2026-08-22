@@ -6,9 +6,9 @@ loophole a judge could find — with the fix for each.
 The short version of the recommendation, up front, because it is the decision everything
 else hangs off:
 
-> **Do not move to mainnet for the final.** Close the two gaps your own README already
-> declares, make the demo unfailable on the day, and say the testnet part out loud. Mainnet
-> adds real-money risk to a live demo and buys almost nothing with this audience.
+> **Do not move to mainnet for the final.** Close the gap your own README still declares —
+> the enclave — make the demo unfailable on the day, and say the testnet part out loud.
+> Mainnet adds real-money risk to a live demo and buys almost nothing with this audience.
 
 The reasoning is in §2. If you disagree, §6 is the mainnet path costed honestly.
 
@@ -26,14 +26,15 @@ it. Neither is what you have.
 | The vault verifies the attestation against the handle it stored | — |
 | AIsa charges **real money** per search ($0.008 / $0.016, measured) | — |
 | An LLM makes the spend decision from vendor-controlled text | the model is `qwen3.7-flash`, because frontier ids are balance-gated |
-| Traces are hash-chained and independently verifiable | roots are never anchored on chain |
+| Traces are hash-chained, independently verifiable, and their roots anchored on Base Sepolia | — |
 | Payer keys are per-goal and ephemeral | held in a **file on disk**, not an enclave |
 | The facilitator settles for real | you run it, so "outside our trust boundary" is aspirational |
-| The vendor is a real paid API behind a real 402 | its payee is your own wallet, so payment is circular |
+| The vendor is a real paid API behind a real 402, paid to a dedicated address | that address is still yours, so the USDC is recycled rather than earned |
 
-The two rows in bold type are the gap between what the project *claims* and what it *runs*.
-Both are in the README's own "written and tested, not yet live" section, which is to your
-credit — and closing them is worth more than any new feature.
+The row in bold type is what is left of the gap between what the project *claims* and what it
+*runs*, and it is the one the README still lists under "written and tested, not yet live" —
+which is to your credit while it is true. Anchoring, which used to sit beside it here, is done
+(A2). Closing the last one is worth more than any new feature.
 
 ---
 
@@ -84,11 +85,17 @@ single line is the difference between a claim and a guarantee, and it is already
 **Demo value:** you can show the signer refusing to start with the flag on and the socket
 absent. A control you have watched fail is a control the audience believes.
 
-### A2. Anchor the trace root on chain
+### A2. Anchor the trace root on chain — **done**
 
-`TraceAnchor` is deployed-ready with 3 passing tests and **no runtime path calls it**. Wire
-`anchor(vault, goalId, root, stepCount)` into the orchestrator after `builder.build()`,
-behind `TRACE_ANCHOR_ADDRESS` being set.
+`TraceAnchor` is live at `0x065d5e16160159cAB7D841818aBc92b4E85D5818` and a runtime path now
+calls it. `serve.ts` builds a `TraceAnchorClient` when `TRACE_ANCHOR_ADDRESS` is set, and
+`server.ts` anchors the root immediately after `builder.build()` and the save — in that order,
+so a root on chain always has a file to be checked against. The outcome (`anchored`,
+`already`, `skipped`, `failed`) is emitted on the SSE stream and logged; a failure to anchor
+never fails the run, because the money has moved and the record exists either way.
+
+Leaving `TRACE_ANCHOR_ADDRESS` unset is the documented opt-out, not a silent skip: traces stay
+tamper-evident, they just carry no proof of *when*.
 
 It turns "here is a hash chain you can verify" into "here is a hash chain, and this block
 proves it existed in this exact form before I walked on stage." Cheap — 32 bytes.
@@ -112,11 +119,13 @@ run, and it works today with the model you have.
 Treat the injection as the follow-up, and report the result honestly either way. "This model
 resisted; the architecture does not depend on it resisting" is a strong line.
 
-### A4. Break the payment circularity
+### A4. Break the payment circularity — **done**
 
-`VENDOR_AISA_PAYEE` is your own wallet, so the agent pays you. Fine for building, weak on
-stage. Generate a second address, use it as the vendor payee, and keep the key so you can
-sweep afterwards. Costs nothing and removes an obvious question.
+`VENDOR_AISA_PAYEE` is now a dedicated address, distinct from both the deployer wallet and the
+relay, so the agent no longer pays the account that opened the goal. Keep that key — the funds
+are meant to be swept back afterwards, which also means the honest line on stage is "a separate
+payee", not "an unrelated counterparty". The obvious question is closed; the overstatement it
+would invite is not worth reopening it.
 
 ---
 
@@ -157,7 +166,7 @@ do is worth more than closing half of them silently.
 | L2 | **The orchestrator can inflate the amount.** It holds the relay key and calls `requestSpend(goalId, amount, payTo, resource)` — nothing forces `amount` to match the 402. The *model* cannot, but a compromised orchestrator can, up to `perCallCap` (6.00) to any allowlisted payee. `llm.ts` states this openly. | **High** | Bounded today by `perCallCap` × `callsRemaining` × the encrypted budget × the allowlist. **Real fix:** have the vendor sign its terms `(amount, resource, expiry)` and make `requestSpend` verify that signature — then the orchestrator cannot invent a number the vendor never quoted. This is the most valuable architectural improvement left, and worth *describing* even if you do not build it. |
 | L3 | **`vendor-upstream` is vendor-attested.** Nothing proves the bytes delivered match what was paid for. | Medium | Already handled honestly: the step carries `attestedBy: "vendor"`, the verifier rejects it if it claims an on-chain attestation, and the CLI says so after `VALID`. Do not over-claim; the honesty *is* the answer. |
 | L4 | **You run the facilitator**, so "outside our trust boundary" is aspirational. | Medium | Correct in the write-up: it is architecturally outside, operationally inside. A facilitator cannot forge an authorization — it can only decline to submit one — so the bound is real even when you run it. |
-| L5 | **Trace roots never anchored** — a trace could be edited before anyone sees it. | Medium | A2. |
+| L5 | ~~**Trace roots never anchored** — a trace could be edited before anyone sees it.~~ | ~~Medium~~ | **Fixed.** The orchestrator anchors the root after every completed run, behind `TRACE_ANCHOR_ADDRESS`. A2. |
 | L6 | **Catalog is hardcoded**; no discovery. The agent is handed URLs. | Low | Expose a capability manifest from `vendor-aisa`. Frame honestly: the 402 *is* price discovery; finding the URL is a separate layer. |
 
 ### The AIsa integration
@@ -175,7 +184,7 @@ do is worth more than closing half of them silently.
 | # | Loophole | Severity | Fix |
 | --- | --- | --- | --- |
 | L12 | **Testnet USDC has no value**, so "real payment" is doing work in the sentence. | Medium | Volunteer it in the first minute, and pivot to what *is* real: the AIsa credits, the attestations, the settlement mechanics. |
-| L13 | **Circular payee** — the vendor pays your own wallet. | Low | A4. |
+| L13 | ~~**Circular payee** — the vendor pays your own wallet.~~ | ~~Low~~ | **Fixed.** A dedicated payee address, separate from the deployer and relay wallets. Still recoverable by you, so say "separate payee" rather than "third party". A4. |
 | L14 | **No auth on the services by default** (`SERVICE_TOKEN` unset). Loopback-bound, so fine locally; fatal if anything is exposed. | Low | Leave as-is for a local demo. If anything is deployed, set `SERVICE_TOKEN` and `BIND_HOST` deliberately. |
 | L15 | **`premium-feed` at 5.00 exceeds `MAX_BUDGET` 4.00**, so it can never be affordable — that path only ever shows a refusal. | Low | Deliberate, and documented in `App.tsx`. Mention it before someone finds it. |
 | L16 | **MetaMask's RPC is a single point of failure** for every write. | Medium | Track B — set it manually, verify on the day. |
@@ -207,8 +216,8 @@ Not recommended for the final (§2). If you want it afterwards:
 | --- | --- | --- |
 | **Now** | Revoke the leaked key (L10). Cap both keys (L7). | Minutes, and closes the two live risks. |
 | **Day 1** | Deploy ROFL, set `SIGNER_REQUIRE_ROFL=true` (A1). | Biggest claim→reality gap. |
-| **Day 1** | Anchor trace roots (A2). | Small, and completes the verifiability story. |
-| **Day 2** | Non-circular payee (A4). Decide the injection story (A3). | Removes the two easiest questions. |
+| ~~**Day 1**~~ | ~~Anchor trace roots (A2).~~ | **Done.** Completes the verifiability story. |
+| **Day 2** | ~~Non-circular payee (A4).~~ Decide the injection story (A3). | Payee done; the injection story is still open. |
 | **Day 2** | Pre-flight script, MetaMask RPC, spare goal, recorded run (Track B). | This is what saves the demo. |
 | **Day 3** | Rehearse twice, including one deliberate failure. | — |
 | **After** | Vendor-signed terms (L2). Then consider mainnet. | The real architectural win. |
