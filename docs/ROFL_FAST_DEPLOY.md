@@ -5,7 +5,13 @@ short one, written against the **verified state of the deployment on 2026-08-23*
 against the runbook's own description of it.
 
 The runbook says "what is missing is a deployment" and its Dockerfile header says
-`NOT YET BUILT OR DEPLOYED`. **Both are stale.** Steps 1–5 are done. Three commands remain.
+`NOT YET BUILT OR DEPLOYED`. Both were stale when this was written, and the deployment has
+since **completed**.
+
+> **Status: live.** The signer runs in a TDX enclave on machine `000000000000069a`, both
+> enclave measurements are whitelisted on chain, a replica is attested, and the guest kernel
+> reports `Memory Encryption Features active: Intel TDX`. The steps below are kept as the
+> record of what it took, and as the procedure for doing it again.
 
 ---
 
@@ -21,14 +27,15 @@ Verified against Docker Hub and Sapphire testnet, not read off the docs:
 | Stake | **done** | 100.0 TEST, admin `ll_rofl` (`0x44221a29…22C87c`) |
 | Secrets | **done** | 4 encrypted in `rofl.yaml` — RPC, vault, USDC, service token |
 | Trust root | **done** | pinned at height 33589825 |
-| **Enclave identity** | **missing** | policy reads `"enclaves": []` |
-| **Machine** | **missing** | `oasis rofl show` → *No registered replicas* |
+| **Enclave identity** | **done** | two measurements whitelisted; `oasis rofl show` lists them |
+| **Machine** | **done** | `000000000000069a`, offer `playground_short`, replica attested |
+| **Wired to the stack** | **done** | `SIGNER_URL` + `SIGNER_SERVICE_TOKEN`; mint returns 201 |
 
-So the gap is exactly: no `oasis rofl build` has run, therefore no enclave ID exists,
-therefore nothing has been scheduled.
-
-**The one blocker is Docker.** `oasis rofl build` drives a container build environment and
-`docker` is not on this shell's PATH.
+The last two rows were the gap when this was written — no `oasis rofl build` had run, so no
+enclave ID existed and nothing could be scheduled. Four separate faults stood in the way, none
+of them in the runbook, and each has its own section below: Docker not on PATH, the Windows
+build blocker (0a), WSL's DNS resolver, an offer that silently never schedules (4b), and a
+512 MiB disk that could run the service but not unpack it (4c).
 
 ---
 
@@ -275,19 +282,33 @@ run without one"*, and it fails in five seconds on stage.
 ## Step 6 — Point the stack at it (10 min)
 
 ```
-SIGNER_URL=http://<rofl-machine-host>:8402
-SERVICE_TOKEN=<same value as the ROFL secret>
+SIGNER_URL=https://p8402.m1690.opf-testnet-rofl-25.rofl.app
+SIGNER_SERVICE_TOKEN=<the plaintext you set as the ROFL secret named SERVICE_TOKEN>
 ```
 
-`SERVICE_TOKEN` is the half no ROFL secret can reach — the orchestrator needs the same value
-by hand.
+**Reachability is easier than feared.** `oasis rofl machine show` prints a `Proxy:` block
+giving each port from `compose.yaml` a public HTTPS name. No tunnel, no port forwarding —
+that URL is what `SIGNER_URL` takes.
 
-Reachability is the unglamorous risk. If the orchestrator cannot reach port 8402 on the
-machine, **an SSH tunnel is a respectable answer for a demo** — say so rather than pretending
-otherwise.
+**`SIGNER_SERVICE_TOKEN`, not `SERVICE_TOKEN`.** They are different jobs and the collision is
+expensive: `authorized()` in `@ntux402/shared` reads `SERVICE_TOKEN` to decide whether *the
+orchestrator* demands a bearer on its own routes, so putting the signer's token there arms
+that guard and the browser — holding no token — gets 401 on `/runs` and `/sweeps` too. The
+console locks itself out of the whole API, not just the mint. `SIGNER_SERVICE_TOKEN` falls
+back to `SERVICE_TOKEN` when unset, for a mesh where one token is shared behind a gateway.
 
-**Gate:** `pnpm --filter @ntux402/e2e run demo` completes end to end, and the payer address
-in the run matches one minted by the enclave.
+The value cannot be read back — `oasis rofl secret get` returns name and size only, because
+secrets are encrypted to the app's key. If it was not recorded, rotate it: `oasis rofl secret
+set SERVICE_TOKEN <file> --force`, then `oasis rofl update` and `oasis rofl machine restart`.
+No rebuild — the enclave identity comes from the bundle, not the secrets.
+
+**The browser never holds it.** `POST /payer` on the orchestrator proxies the mint, because
+the alternative is shipping the credential that mints payer keys to every viewer.
+
+**Gate — and it is the one worth running.** Mint through the orchestrator, then check the
+address three ways: it appears in `oasis rofl machine logs` as what the enclave minted, in the
+vault as that goal's `payer`, and **nowhere in `.keys/payers.json`**. Confirmed 2026-08-23 for
+goal #52's payer `0xbAe2E2CFE7f612287781E9DdFee46F4C0C55b25b`.
 
 ---
 

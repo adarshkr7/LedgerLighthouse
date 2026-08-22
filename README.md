@@ -112,12 +112,18 @@ Running code, not a design document. Every item below is exercised by the 327-te
 
 ### Verifiability, anchored
 
-- **`TraceAnchor`** deployed at [`0x065d5e16160159cAB7D841818aBc92b4E85D5818`](https://sepolia.basescan.org/address/0x065d5e16160159cAB7D841818aBc92b4E85D5818) — every completed run commits its Merkle root, so a trace proves *when* it said what it says
+- **`TraceAnchor`** deployed at [`0x065d5e16160159cAB7D841818aBc92b4E85D5818`](https://sepolia.basescan.org/address/0x065d5e16160159cAB7D841818aBc92b4E85D5818) — a completed run commits its Merkle root, so a trace proves *when* it said what it says.
+
+  **One anchor per goal, first write wins.** `TraceAnchor.sol` requires the stored root to be zero, so the *first* run on a goal claims the slot and later runs return `already` unchanged. Two consequences worth stating rather than discovering: a goal whose first run failed anchors that failure permanently, and on a multi-run goal the saved trace (rewritten per run) and the anchored root describe different things. The design assumes one run per goal; give a goal its own run if you want its anchor to mean something specific.
 - **Vendor-attested steps are marked as such**, and the verifier rejects one that claims an on-chain attestation it cannot have
 
-### Written and tested, not yet live
+### Custody, in an enclave
 
-- **ROFL enclave deployment** — the key-derivation path is implemented and covered by 12 tests, the `linux/amd64` image is published and pinned by digest in [`services/signer/compose.yaml`](services/signer/compose.yaml), and the app is registered on Sapphire testnet as `rofl1qr0fv0qs2u8vmmah0ucmwegcj2cdz7kj4qzjduhp` with its secrets encrypted into [`services/signer/rofl.yaml`](services/signer/rofl.yaml). What is left is `oasis rofl build` and `oasis rofl deploy` — the `enclaves:` policy list is still empty and no machine is rented, so **the running demo uses the file store**. Renting costs ~5 TEST ROSE/hour on top of the 100 staked at registration — step by step in [`docs/ROFL_RUNBOOK.md`](docs/ROFL_RUNBOOK.md)
+- **The payer key is derived inside an Intel TDX enclave and has never existed outside it.** Deployed 2026-08-23: app `rofl1qr0fv0qs2u8vmmah0ucmwegcj2cdz7kj4qzjduhp` on Sapphire testnet, both enclave measurements whitelisted in the on-chain policy, a replica attested and running. The signer reports `key store  store=ROFL enclave via /run/rofl-appd.sock` and the guest kernel reports `Memory Encryption Features active: Intel TDX`.
+
+  Checkable rather than asserted: goal #52's payer `0xbAe2E2CFE7f612287781E9DdFee46F4C0C55b25b` appears in the enclave's log as the address it minted, and in the vault as that goal's `payer` — and nowhere in `.keys/payers.json`. Three sources, one address, no copy on any disk.
+
+  Point the orchestrator at it with `SIGNER_URL` and `SIGNER_SERVICE_TOKEN`; leave both blank and it falls back to the local file store, which is exactly the trust assumption ROFL removes. Deployment is in [`docs/ROFL_FAST_DEPLOY.md`](docs/ROFL_FAST_DEPLOY.md), including two things the runbook could not have known — `oasis rofl build` cannot run on native Windows, and WSL needs `GODEBUG=netdns=cgo`.
 
 ---
 
@@ -312,7 +318,7 @@ LedgerLighthouse/
 │   │       ├── pay/sweep.ts            Forwards a sweep; chooses no amount, payee or token
 │   │       ├── x402/                   Resource client and response cache
 │   │       ├── trace-store.ts          Traces on disk behind a bounded LRU — they survive a restart
-│   │       └── server.ts               /health, /config, /runs (SSE), /sweeps, /traces
+│   │       └── server.ts               /health, /config, /runs (SSE), /sweeps, /traces, /payer
 │   │
 │   ├── signer/                         Holds the per-goal payer key. Reads chain only.
 │   │   ├── src/schema.ts               Enforces that a request carries (goalId, seq) and nothing else
@@ -861,6 +867,12 @@ Needs the `oasis` CLI, a publicly published `linux/amd64` image pinned by digest
 from the faucet. Until you run these, the signer uses the local file store — which is exactly the
 trust assumption ROFL removes.
 
+**Already done for this repo** (2026-08-23): the app is deployed and a replica is attested, so
+these are here to reproduce it rather than to reach it. `oasis rofl build` will not run on native
+Windows and WSL needs `GODEBUG=netdns=cgo`; pick the public `playground_short` offer, not the
+0.0-TEST internal one, which is whitelist-only and silently never schedules. All four traps, with
+evidence, are in [`docs/ROFL_FAST_DEPLOY.md`](docs/ROFL_FAST_DEPLOY.md).
+
 ### Security Properties
 
 - The payer key is **never written to disk** under ROFL, and never leaves the enclave in either direction.
@@ -979,7 +991,7 @@ what is charged and what is displayed.
 | | Malicious vendor's plan | What actually happens |
 |---|---|---|
 | 1 | Return `402` with an inflated price and an injection in `description` | The parser takes `maxAmountRequired`, payee and asset from the **schema**. The prose reaches only the model |
-| 2 | Convince the model to approve | It succeeds. The agent complies — and the UI shows it complying |
+| 2 | Convince the model to approve | Sometimes. The console shows the agent complying when it does — but on `qwen3.7-flash` it has also declined outright, and which way a given model goes is not something this system controls. Steps 3–5 do not depend on the answer |
 | 3 | Agent authorizes the spend | It cannot. The agent holds the **relay** key, which pays gas and authorizes nothing |
 | 4 | Relay commits `requestSpend` | The debit commits **before** the decision is knowable |
 | 5 | Inco evaluates against the encrypted budget | `false`. The overspend is caught by ciphertext, not by a `require()` |

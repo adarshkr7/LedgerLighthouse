@@ -10,9 +10,12 @@ What is missing is a deployment.
 **Time:** half a day, most of it waiting on image builds and registration.
 **Cost:** 100 TEST ROSE staked once at registration, plus 5.0 TEST per hour for as long as a
 machine is rented. Free from the faucet — but the hourly half is the one that runs out.
-**Status of these instructions:** the CLI sequence is from Oasis's own quickstart; the
-repo-specific parts are read off the committed files. The Dockerfile's own header says it has
-never been built — expect to iterate on the install layer.
+**Status of these instructions:** superseded in part. This ran to completion on
+2026-08-23 and the signer is live in a TDX enclave, so the Dockerfile *has* now been built and
+the "never been built" caveat that used to sit here is gone. What the run turned up is in
+[`ROFL_FAST_DEPLOY.md`](ROFL_FAST_DEPLOY.md) — the Windows build blocker, the WSL DNS
+workaround, the offer that silently never schedules, and the 512 MiB disk that could run the
+service but not unpack it. Read that one first; this remains the long-form reference.
 
 ---
 
@@ -209,10 +212,16 @@ mapping — the orchestrator would get a connection refused that reads like a ne
 and is a bind. Binding wide puts the authorization endpoint on a reachable interface, and
 the guard enforces a token only when it has one.
 
-Give the **same value** to the orchestrator as `SERVICE_TOKEN` in its own environment;
-`SignerClient` sends it as a Bearer header on both `/payer` and `/authorizations`. Set it on
-both sides or on neither — a token on the signer alone turns every authorization into a 401,
-which surfaces as a run that reaches Authorize and dies there.
+Give the **same value** to the orchestrator as `SIGNER_SERVICE_TOKEN` — **not**
+`SERVICE_TOKEN`, which is a different job. `authorized()` in `@ntux402/shared` reads
+`SERVICE_TOKEN` to decide whether *the orchestrator* demands a bearer on its own mutating
+routes, so setting the signer's token there arms that guard as a side effect and the browser,
+holding no token, gets 401 on `/runs` and `/sweeps` as well as the mint. One variable cannot
+be both what a service presents and what it demands.
+
+`SignerClient` sends it as a Bearer on both `/payer` and `/authorizations`. Set it on both
+sides or on neither — a token on the signer alone turns every authorization into a 401, which
+surfaces as a run that reaches Authorize and dies there.
 
 Use the *publicnode* RPC rather than `sepolia.base.org` — the latter has been observed
 returning `-32011 no backend is currently healthy` for `eth_call` while answering everything
@@ -310,12 +319,14 @@ SIGNER_URL=http://<rofl-machine-host>:8402
 
 Two things to sort out here, and they are the least glamorous part of this whole runbook:
 
-- **Reachability.** `oasis rofl machine show` reports where the machine is. The orchestrator
-  must be able to reach port 8402 there. If it cannot, an SSH tunnel from your laptop is a
-  perfectly respectable answer for a demo — say so rather than pretending otherwise.
+- **Reachability.** Better than this section assumed: `oasis rofl machine show` prints a
+  `Proxy:` block with a public HTTPS endpoint per port from `compose.yaml`, e.g.
+  `https://p8402.m1690.opf-testnet-rofl-25.rofl.app`. That is what `SIGNER_URL` takes, and no
+  tunnel is needed. Keep the tunnel in mind only if the proxy is unavailable.
 - **Exposure.** Handled in `compose.yaml` rather than here: it sets `BIND_HOST=0.0.0.0` and
   reads `SERVICE_TOKEN` from the secret set in §5. What remains on this side is giving the
-  orchestrator the *same* `SERVICE_TOKEN`, since that is the half no ROFL secret can reach.
+  orchestrator the same value as `SIGNER_SERVICE_TOKEN` (see §5 for why the name differs),
+  since that is the half no ROFL secret can reach.
   The signer authorizes only `(goalId, seq)` and cannot be argued into anything else, but
   "bounded loss" is a poor answer to "why did my demo goal run out of calls".
 
@@ -356,7 +367,8 @@ nobody has seen a system decline to run insecurely.
 
 ## Afterwards
 
-Update the README. The **"Written and tested, not yet live"** section currently lists ROFL
-deployment as outstanding, which is to your credit while it is true and a liability the
-moment it is not. Move it up, and keep the honest note that the local file store still
-exists for laptop runs — with `SIGNER_REQUIRE_ROFL` as the switch that forbids it.
+**Done 2026-08-23.** The README's "Written and tested, not yet live" section became
+"Custody, in an enclave", and it names the address the enclave minted, the goal that records
+it on chain, and the absence of that key from `.keys/payers.json` — three sources rather than
+a claim. The local file store still exists for laptop runs, with `SIGNER_REQUIRE_ROFL` as the
+switch that forbids it.

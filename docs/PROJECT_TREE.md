@@ -133,7 +133,8 @@ LedgerLighthouse/
 │   │   │   ├── main.ts                     CLI entry — runs the loop against a live goal
 │   │   │   ├── serve.ts                    Service entry for the web UI
 │   │   │   ├── server.ts                   HTTP surface — /health, /config, /runs (SSE),
-│   │   │   │                                 /sweeps, /traces
+│   │   │   │                                 /sweeps, /traces, /payer (proxies the mint so
+│   │   │   │                                 the browser never holds SIGNER_SERVICE_TOKEN)
 │   │   │   ├── server.test.ts              Route validation, catalog routing, guard behaviour
 │   │   │   ├── render.ts                   Console rendering for PaymentEvents
 │   │   │   ├── trace-store.ts              Traces on disk behind a bounded LRU. Written before they
