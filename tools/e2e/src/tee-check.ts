@@ -42,6 +42,7 @@ import { Lightning } from "@inco/lightning-js/lite";
 import { handleTypes } from "@inco/lightning-js";
 
 import { rpcTransport } from "@ntux402/shared/viem";
+import { rpcUrls } from "@ntux402/shared";
 import { IncoDecisionReader, pollForDecision } from "@ntux402/orchestrator";
 
 import {
@@ -146,7 +147,7 @@ check("Inco fee", true, `${formatEther(incoFee)} ETH per encrypted input`);
 // ----------------------------------------------------------------- encryption
 rule("1. encrypt the budget client-side");
 
-const zap = await Lightning.baseSepoliaTestnet({ hostChainRpcUrls: [rpcUrl] });
+const zap = await Lightning.baseSepoliaTestnet({ hostChainRpcUrls: [...rpcUrls(rpcUrl)] });
 
 let t = now();
 const budgetCiphertext = (await zap.encrypt(BUDGET, {

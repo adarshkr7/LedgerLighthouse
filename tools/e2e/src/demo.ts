@@ -35,7 +35,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import { Lightning } from "@inco/lightning-js/lite";
 import { handleTypes } from "@inco/lightning-js";
 import { rpcTransport } from "@ntux402/shared/viem";
-import { formatUsdc, usdcAbi } from "@ntux402/shared";
+import { formatUsdc, rpcUrls, usdcAbi } from "@ntux402/shared";
 import {
   IncoDecisionReader,
   PaymentLoop,
@@ -144,7 +144,7 @@ console.log(`  Nothing else in the system can produce a signature for it.`);
 // ------------------------------------------------------------- open the goal
 rule("2. open the goal — the user's own transaction");
 
-const zap = await Lightning.baseSepoliaTestnet({ hostChainRpcUrls: [rpcUrl] });
+const zap = await Lightning.baseSepoliaTestnet({ hostChainRpcUrls: [...rpcUrls(rpcUrl)] });
 
 let t = now();
 const budgetCiphertext = (await zap.encrypt(BUDGET, {
