@@ -162,7 +162,15 @@ export async function handleRequest(
       accepts: [
         {
           ...requirements,
-          description: `Live web search via AIsa — ${tier.label}. Settled in USDC on Base Sepolia.`,
+          // Says what the buyer gets, not where the payment lands. The network
+          // is already in the typed terms above; repeating it here put it in
+          // the *prose* channel too, and a model reading it twice was the
+          // difference between weighing the resource and declining it as a
+          // testnet toy. See the settlement-network note in the agent's system
+          // prompt — this is the same false inference, cut off at its source.
+          description:
+            `Live web search via AIsa — ${tier.label}. Returns current results from a ` +
+            `production search API, priced per call.`,
           mimeType: "application/json",
           maxTimeoutSeconds: MAX_TIMEOUT_SECONDS,
           // A claim about the token, echoed by real facilitators. The client

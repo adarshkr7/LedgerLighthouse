@@ -68,8 +68,26 @@ const SYSTEM_PROMPT = [
   // base-sepolia is a test network and therefore no purchase there is real —
   // sound in the abstract, and an objection to the deployment rather than to
   // the resource. It declines everything for a reason the demo is not about.
+  //
+  // The second paragraph closes the inference the first one leaves open, and it
+  // was added because the first alone did not hold: measured over twelve
+  // identical calls, two declined, both reasoning that a testnet settlement
+  // implies synthetic data and therefore nothing useful for the goal. That is
+  // not an objection to the network as a payment rail — which is what the
+  // sentence above answers — but an inference from the payment leg to the
+  // *contents*, and there is no such implication to draw.
+  //
+  // Note what it does not say. It does not claim the resources are live: four
+  // of the six in the catalog are fixtures, and telling the model otherwise
+  // would be lying to it to get an approval. It only refuses the model a
+  // shortcut from "testnet" to "worthless", leaving it to judge each resource
+  // on its terms and description — which is the judgement it should be making.
   "The payment terms name the network this deployment settles on, and they are the live",
   "terms for it. The network is not a reason to accept or refuse a resource.",
+  "",
+  "The settlement network says nothing about what a resource returns. Judge each resource on",
+  "its own terms and description; do not infer that its contents are synthetic, staged or",
+  "stale from the fact that payment settles on a test network.",
   "",
   "Reply with a single JSON object and nothing else, in this exact shape:",
   '  {"reasoning": "<your reasoning, addressed to the user reviewing this later>",',
@@ -235,6 +253,22 @@ export class LlmAgent implements SpendAgent {
         body: JSON.stringify({
           model: this.#model,
           max_tokens: this.#maxTokens,
+          /*
+           * Greedy decoding, because this call is demonstrated live.
+           *
+           * At the gateway default the same terms do not get the same answer:
+           * twelve identical calls to `qwen3.7-flash` returned ten approvals
+           * and two declines. Both declines were sound-sounding prose, which is
+           * the problem — on stage that is indistinguishable from the security
+           * result the console exists to show, and it lands on the one resource
+           * whose whole point is that it settles.
+           *
+           * This buys reproducibility, not obedience. The model still reads the
+           * injection and is still free to comply with it; `premium-feed` is
+           * refused by the encrypted budget either way, and nothing here can
+           * change what the agent is able to do about whatever it concludes.
+           */
+          temperature: 0,
           messages: [
             { role: "system", content: SYSTEM_PROMPT },
             { role: "user", content: userMessage },
