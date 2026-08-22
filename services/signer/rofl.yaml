@@ -50,7 +50,7 @@ deployments:
       - name: USDC_ADDRESS
         value: pGJwa1ggtd3PjSsymq07r/AEAcdqSC3cTCjsr1sQePNElk6zEUpkbmFtZVgcfT+ByG/0Xn20xfAswUt/fLEg4/JUg/8PCa1xG2Vub25jZU95Ml8Gmb4QColuuYI2sPVldmFsdWVYOkt4heVSY3DLl+aTZRl+Lf8dfhj2NDMAP6GyIDwxVCSn9H2bkup6Oscq+E3GZ01Cp3BeikKNm/caJV0=
       - name: SERVICE_TOKEN
-        value: pGJwa1gghodhbEPlIGo3Xvnu0NbLgrTNcpVEFLP3zyUOKNszTFFkbmFtZVgdwmI1kVrBa40D/qC58j2rFVfJSXPaOdJl/4x3SCtlbm9uY2VPEVTR9HICHUK0pMXKZNg3ZXZhbHVlWDzzu1O+XdyxK+ErSjuuqVfxg+ivTsJ++ceSCVXN6p75tK7UXHURbamZERuziEQLlYZ2VAHrwlfTX6TqwC8=
+        value: pGJwa1gg5wgt7DJtpDY2ALIZc6pKvsSHguw8JX4GgmmIdfNu0R1kbmFtZVgdq7zYYpaveQ3psMzsYxHMShewY4870JFs6IEj5ftlbm9uY2VPZytz7zRlNn5561lUICgpZXZhbHVlWFC9fr0pyvKY248T9j1X5ZIl1zvh8AHmMuJtt5usakMH9kumNNy+Buf+hHqRsakfUY5zCG7FC1R46ysW0XrVYUXCsHFkBoz8Gd8k+TCXEG+1JQ==
     machines:
       default:
         provider: oasis1qp2ens0hsp7gh23wajxa4hpetkdek3swyyulyrmz
