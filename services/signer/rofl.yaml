@@ -39,5 +39,14 @@ deployments:
         - any: {}
       fees: endorsing_node
       max_expiration: 3
+    secrets:
+      - name: BASE_SEPOLIA_RPC_URL
+        value: pGJwa1ggA2R1HgylrV3h2alNdb7yN/C4bUjL/JPZdJe98yGwjRlkbmFtZVgk2qCGOZde/5ec/3/AAsKRNB3IdIM3nkJlyHv8lQBX66DWG8LfZW5vbmNlTyi8/th/f8BB4OVmeWUVsmV2YWx1ZVg374sHkLRJFDs6RN7E281f0jZaSqPJx3wgRrHbvmNFPUnwNNofiDmiZl8R6QgCBtHVNYoirJJ7lQ==
+      - name: POLICY_VAULT_ADDRESS
+        value: pGJwa1ggE0k9pzkWuqXe5oZRClCQZfeRX0z1KnSKgjvpG2RzeT5kbmFtZVgkqh3sMBs+syJNPMh1FI1mSd7wDmwaucBbEwvIwnyTUd/lu4dTZW5vbmNlT5lTdFYNDOeUvG7GTtFHZGV2YWx1ZVg6+9BLP9QRhM1ihJFyQjTPDVqTspBlQ7UhPetD8r574hvBNtR4qo3HH0yzlAT0hSza8xfcTil1giU9Nw==
+      - name: USDC_ADDRESS
+        value: pGJwa1ggtd3PjSsymq07r/AEAcdqSC3cTCjsr1sQePNElk6zEUpkbmFtZVgcfT+ByG/0Xn20xfAswUt/fLEg4/JUg/8PCa1xG2Vub25jZU95Ml8Gmb4QColuuYI2sPVldmFsdWVYOkt4heVSY3DLl+aTZRl+Lf8dfhj2NDMAP6GyIDwxVCSn9H2bkup6Oscq+E3GZ01Cp3BeikKNm/caJV0=
+      - name: SERVICE_TOKEN
+        value: pGJwa1gghodhbEPlIGo3Xvnu0NbLgrTNcpVEFLP3zyUOKNszTFFkbmFtZVgdwmI1kVrBa40D/qC58j2rFVfJSXPaOdJl/4x3SCtlbm9uY2VPEVTR9HICHUK0pMXKZNg3ZXZhbHVlWDzzu1O+XdyxK+ErSjuuqVfxg+ivTsJ++ceSCVXN6p75tK7UXHURbamZERuziEQLlYZ2VAHrwlfTX6TqwC8=
 tooling:
   version: 0.19.1
