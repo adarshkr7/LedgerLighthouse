@@ -258,14 +258,12 @@ flowchart LR
 Everything inside **Untrusted Plane** may lie, be compromised, or be attacker-authored. Everything
 right of the approval record acts only on verified on-chain state.
 
-`TraceAnchor` is written and tested but neither deployed nor called from the runtime — traces are
-verified against `PolicyVault` today, and root anchoring is the next step. Drawn dotted for that
-reason.
+`TraceAnchor` is deployed at [`0x065d5e16160159cAB7D841818aBc92b4E85D5818`](https://sepolia.basescan.org/address/0x065d5e16160159cAB7D841818aBc92b4E85D5818) on Base Sepolia and wired directly into the runtime (`TraceAnchorClient`), anchoring each completed run's Merkle root on chain for permanent public verifiability.
 
 ### Repository Layout
 
 ```
-NTU_x402/
+LedgerLighthouse/
 ├── contracts/                          Foundry — policy lives here, not in TypeScript
 │   ├── src/PolicyVault.sol             Encrypted budget, write-ahead debit, attestation verification
 │   ├── src/TraceAnchor.sol             32 bytes of commitment per trace
@@ -295,7 +293,8 @@ NTU_x402/
 │   │   └── rofl.yaml · Dockerfile      Oasis ROFL manifest and container
 │   │
 │   ├── facilitator/                    Self-hosted x402 v1 facilitator. Outside the boundary.
-│   └── trace/                          Hash chain, Merkle accumulator, standalone verifier CLI
+│   ├── trace/                          Hash chain, Merkle accumulator, standalone verifier CLI
+│   └── vendor-aisa/                    x402 resource server in front of AIsa live paid search
 │
 ├── apps/web/                           MetaMask UI — landing page + execution console
 ├── mock-api/                           x402-priced endpoints, one per catalog resource
@@ -510,7 +509,7 @@ A rejection is terminal — no retry, no smaller amount. A reveal timeout is **n
 ### 1. Install dependencies
 
 ```bash
-git clone <repo-url> && cd NTU_x402
+git clone https://github.com/adarshkr7/LedgerLighthouse.git && cd LedgerLighthouse
 pnpm install --ignore-scripts
 ```
 
@@ -819,7 +818,6 @@ says what closes it.
 ### Closing the disclosed gaps
 
 - **Deploy the ROFL enclave and publish the payer binding on Sapphire.** Closes: custody is real but not provable from Base. `RoflKeyStore` and the manifest already exist; this adds three `oasis` CLI commands plus a Sapphire registry asserting that a given payer address was derived inside an attested app, which the trace verifier then checks.
-- **Wire `TraceAnchor` into the runtime.** Closes: traces are verifiable only if someone hands you the file. The contract is written and tested but never called. Anchoring the Merkle root at goal closure upgrades the claim from *verifiable* to *publicly committed*.
 - **Encrypt the whole policy, not just the budget.** Closes: `perCallCap` and `callsRemaining` are public plaintext and the allowlist is a public mapping, so a vendor can read the ceiling and price just underneath it. Moves the cap to `euint256`, the counter to `euint32`, and allowlist membership to an encrypted predicate.
 - **Set a TTL on the x402 response cache.** Closes: the client is constructed without one, so a repeated honest run serves from cache and shows no payment. One construction site — [`x402/client.ts:119`](services/orchestrator/src/x402/client.ts:119).
 
