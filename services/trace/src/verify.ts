@@ -32,7 +32,7 @@ import { baseSepolia } from "viem/chains";
 import { policyVaultAbi, usdcAbi } from "@ntux402/shared";
 
 import { merkleRoot } from "./merkle.js";
-import { GENESIS_HASH, computeStepHash, type Trace } from "./step.js";
+import { GENESIS_HASH, VENDOR_ATTESTED_STEPS, computeStepHash, type Trace } from "./step.js";
 import { rpcTransport } from "@ntux402/shared/viem";
 
 export interface Finding {
@@ -114,6 +114,26 @@ export async function verifyTrace(
         "chain.hash",
         `recomputed ${recomputed} but the trace claims ${step.hash} — this step's contents ` +
           `do not match its hash`,
+        i,
+      );
+    }
+
+    /*
+     * A vendor-attested step must never carry an attestation.
+     *
+     * `StepAttestation` is the structure the on-chain layer below re-checks —
+     * a handle, covalidator signatures, a commit tx. A `vendor-upstream` step
+     * describes an HTTP call to a service no RPC can reach, so one carrying
+     * those fields would be dressing a third party's word up as something this
+     * verifier had confirmed. The hash chain protects it from being *edited*;
+     * nothing can make it *true*, and the trace must not imply otherwise.
+     */
+    checksRun++;
+    if (VENDOR_ATTESTED_STEPS.includes(step.type) && step.attestation !== undefined) {
+      fail(
+        "chain.vendor-attested",
+        `a "${step.type}" step carries an on-chain attestation, but nothing about it is ` +
+          `verifiable on chain — it is a vendor's account of an off-chain call`,
         i,
       );
     }

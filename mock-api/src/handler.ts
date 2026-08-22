@@ -42,7 +42,7 @@ import {
   type SettleResponse,
 } from "@ntux402/shared";
 
-import { descriptionFor, findDemoGoal, type DemoGoal } from "@ntux402/shared";
+import { descriptionFor, findDemoGoal, isMockGoal, type DemoGoal } from "@ntux402/shared";
 
 import { DEFAULT_CONFIG, SCHEME_EXACT, X402_VERSION, type ServerConfig } from "./config.js";
 
@@ -110,6 +110,15 @@ function routeFor(path: string): Route | undefined {
   const slug = match[1] as string;
   const goal = findDemoGoal(ALIASES[slug] ?? slug);
   if (!goal) return undefined;
+
+  /*
+   * A catalog entry is not automatically ours. The live search goals are served
+   * by `services/vendor-aisa` against a real API, and answering for one here
+   * would hand back fabricated market data at a price the console displayed for
+   * something else entirely — a 200, a settlement, and the wrong product.
+   * 404 is the honest answer: this server does not have that resource.
+   */
+  if (!isMockGoal(goal)) return undefined;
 
   return {
     amountAtomic: overridePrice(goal, rawQuery) ?? goal.priceAtomic,

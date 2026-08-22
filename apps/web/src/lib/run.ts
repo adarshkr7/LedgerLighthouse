@@ -11,6 +11,21 @@ export type RunEvent =
   | { readonly channel: "payment"; readonly data: PaymentEvent }
   | { readonly channel: "result"; readonly data: RunResult }
   | { readonly channel: "trace"; readonly data: unknown }
+  /**
+   * The on-chain commitment to this run's trace root.
+   *
+   * Only when TRACE_ANCHOR_ADDRESS is configured. `already` is the ordinary
+   * result of a second run against one goal — the contract is first-write-wins
+   * so history cannot be revised — and is a success, not a fault.
+   */
+  | {
+      readonly channel: "anchor";
+      readonly data:
+        | { kind: "anchored"; txHash: string; root: string }
+        | { kind: "already"; root: string }
+        | { kind: "skipped"; reason: string }
+        | { kind: "failed"; reason: string };
+    }
   | { readonly channel: "error"; readonly data: { message: string } };
 
 /** Mirrors the orchestrator's `PaymentEvent`, with bigints already stringified. */
@@ -61,9 +76,36 @@ export interface Settlement {
   readonly errorReason?: string;
 }
 
+/**
+ * What a live vendor returns once it has been paid.
+ *
+ * Every string in it is written by a third party — the vendor, and beneath it
+ * whatever the search engine scraped. Rendered as quoted evidence, never as the
+ * console's own voice, and never as markup.
+ *
+ * Defined in the shared package next to the href filter the results panel
+ * needs, so the vendor producing this shape and the console rendering it cannot
+ * drift apart — and so that filter sits somewhere with a test runner.
+ */
+export type { SearchPayload } from "@ntux402/shared";
+
 export type RunResult =
   | { kind: "free"; data: unknown }
-  | { kind: "paid"; goalId: string; seq: string; terms: Terms; settlement?: Settlement }
+  | {
+      kind: "paid";
+      goalId: string;
+      seq: string;
+      terms: Terms;
+      settlement?: Settlement;
+      /**
+       * The thing that was bought.
+       *
+       * The orchestrator has always emitted this — `streamRun` sends the whole
+       * `PaymentResult` — the client type just never declared it, so the demo
+       * paid for data and then threw it away.
+       */
+      data?: unknown;
+    }
   | { kind: "policy-rejected"; goalId: string; seq: string; decisionHandle: string; commitTx: string }
   | { kind: "decision-unavailable"; goalId: string; seq: string; attempts: number; elapsedMs: number }
   | { kind: "failed"; reason: string };
@@ -81,12 +123,24 @@ export async function* streamRun(
    * policy acts on is still whatever comes back in the 402.
    */
   priceAtomic?: string,
+  /**
+   * Search text for a live-vendor goal. Omitted, the goal's own default is used.
+   *
+   * Validated again by the orchestrator and a third time by the vendor. This
+   * one is only so the input can go red before a round trip.
+   */
+  query?: string,
   signal?: AbortSignal,
 ): AsyncGenerator<RunEvent> {
   const response = await fetch(`${ORCHESTRATOR_URL}/runs`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ goalId, mode, ...(priceAtomic ? { priceAtomic } : {}) }),
+    body: JSON.stringify({
+      goalId,
+      mode,
+      ...(priceAtomic ? { priceAtomic } : {}),
+      ...(query ? { query } : {}),
+    }),
     ...(signal ? { signal } : {}),
   });
 

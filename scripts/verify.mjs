@@ -55,7 +55,7 @@ const steps = [
   { name: "build (TS packages)", cmd: "pnpm build" },
   { name: "typecheck", cmd: "pnpm typecheck" },
   { name: "test (vitest)", cmd: "pnpm test" },
-  { name: "boundary (orchestrator ↛ signer)", cmd: "pnpm check:boundary" },
+  { name: "boundary (orchestrator ↛ signer, vendor)", cmd: "pnpm check:boundary" },
   { name: "forge build", cmd: "forge build", cwd: "contracts", contracts: true },
   { name: "forge test", cmd: "forge test", cwd: "contracts", contracts: true },
   // After forge build, so there is an artifact to compare against. No-ops when

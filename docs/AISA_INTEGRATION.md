@@ -58,9 +58,30 @@ Three rules follow, and everything in §3–§5 is built to satisfy them:
    documented exposure, not a guarantee we claim to have. Use the register
    `agent/llm.ts` already uses for exactly this kind of admission.
 
-**Phase 0 must confirm whether AIsa supports per-key capability scoping.** If it does,
-rule 1 becomes a real control. If it does not, both keys draw on one balance and rule 1 is
-only process isolation — say so in the docs rather than implying more.
+**Confirmed 2026-08-22: AIsa does support per-key restrictions, so rule 1 is a real
+control rather than process isolation.** Keys are created at `console.aisa.one` → API Keys,
+an account may hold many, and the docs recommend one per service. Three restrictions are
+offered at creation:
+
+| Restriction | What it bounds |
+| --- | --- |
+| **IP allowlist** | which addresses may use the key at all |
+| **Spending limit** | how much the key may charge before it stops |
+| Model allowlist | restrict the key to named model ids |
+
+The **IP allowlist is the strongest of the three and is not in the written docs** — it is
+only visible in the create-key dialog. It is the one control that makes a leaked key
+*useless* rather than merely bounded, which is a different category of protection from a
+cap. Its cost is fragility: a key pinned to one address stops working the moment the
+machine moves networks, which is a poor property on demo day.
+
+The **spending limit** is what bounds the failure this section is about, and it works
+everywhere. Note what none of the three offers: a restriction by *endpoint family*. A model
+allowlist does not stop an inference key from reaching the paid data APIs — only the
+spending limit makes that loss finite.
+
+Set both keys to what the work needs, never to the account balance. Revocation is instant
+(`401 revoked_api_key`), so a leaked key is a dashboard click rather than an incident.
 
 ---
 

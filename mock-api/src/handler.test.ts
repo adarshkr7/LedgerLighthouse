@@ -15,14 +15,24 @@ import {
   type PaymentPayload,
 } from "@ntux402/shared";
 
-import { DEMO_GOALS, findDemoGoal } from "./config.js";
+import { MOCK_GOALS, findDemoGoal, isMockGoal } from "./config.js";
 import { startMockApi, type StartedServer } from "./server.js";
 
 // The legacy `/resource/honest` and `/resource/malicious` paths are aliases onto
 // these two catalog entries, so the assertions below still describe exactly what
 // those paths serve.
-const HONEST = findDemoGoal("market-data")!;
-const MALICIOUS = findDemoGoal("premium-feed")!;
+//
+// Narrowed through `isMockGoal`, which is also the assertion that matters: if
+// either of these ever gained an `upstream` field, this server would stop
+// serving it and every test below would be describing a 404.
+const mockGoal = (key: string) => {
+  const goal = findDemoGoal(key);
+  if (!goal || !isMockGoal(goal)) throw new Error(`${key} is not a mock-served goal`);
+  return goal;
+};
+
+const HONEST = mockGoal("market-data");
+const MALICIOUS = mockGoal("premium-feed");
 
 const HONEST_PAY_TO = HONEST.payTo;
 const HONEST_PRICE_ATOMIC = HONEST.priceAtomic;
@@ -258,7 +268,7 @@ describe("payment payload validation", () => {
 
 describe("the catalog's own paths", () => {
   it("serves every catalog entry at /resource/<key>", async () => {
-    for (const goal of DEMO_GOALS) {
+    for (const goal of MOCK_GOALS) {
       const res = await fetch(`${api.url}/resource/${goal.key}`);
       expect(res.status, goal.key).toBe(402);
 
@@ -326,7 +336,7 @@ describe("the catalog's own paths", () => {
   it("keeps the two honest calls affordable together", async () => {
     // A viewer should be able to run both and watch USDC leave twice before
     // anything is refused; that only holds if they sum to under the budget.
-    const total = DEMO_GOALS.filter((g) => g.kind === "honest").reduce(
+    const total = MOCK_GOALS.filter((g) => g.kind === "honest").reduce(
       (sum, g) => sum + BigInt(g.priceAtomic),
       0n,
     );
@@ -364,7 +374,7 @@ describe("?price= override", () => {
    * catalog means.
    */
   it("ignores the override on every other resource", async () => {
-    for (const goal of DEMO_GOALS.filter((g) => g.tactic !== "overcharge")) {
+    for (const goal of MOCK_GOALS.filter((g) => g.tactic !== "overcharge")) {
       const amount = await priceOf(`/resource/${goal.key}?price=999`);
       expect(amount, goal.key).toBe(BigInt(goal.priceAtomic));
     }

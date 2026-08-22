@@ -33,37 +33,53 @@ cautious and **this document supersedes it**: the shim is ours, so it can expose
 to the payment loop and issue the POST upstream itself. GET in, POST out. The x402 client
 never learns the difference and needs no change.
 
-**2. `usage` and `request_id` come back for free.**
-Tavily's response carries a `usage` object and a `request_id`, and `include_usage: true`
-asks for the former explicitly. That is exactly the per-call cost evidence the trace wants,
-and it means "usage via AIsa" needs no separate billing endpoint — which is fortunate,
-because no balance endpoint is documented.
+**2. Per-call cost comes back on every response, exactly.**
+Tavily's body carries `usage` (`{credits: 1}` at basic, `2` at advanced) and a `request_id`.
+More useful, the *headers* carry `x-aisa-customer-cost-micros-usd` — the true cost in
+millionths of a dollar, which is the same unit as a USDC atomic amount.
+
+This matters beyond pricing: it is a real spend tripwire. Six candidate balance endpoints
+were probed and all six 404'd, so there is no account balance to poll — but summing this
+header gives the shim exact cumulative spend without one. Both undocumented, so read
+defensively and never require them.
 
 ---
 
-## Step 1 — Price the call before you can know what it costs
-
-Do this first, because it constrains everything after it.
+## Step 1 — Price the call before you can know what it costs — **DONE**
 
 x402 requires the resource server to state `maxAmountRequired` **in the 402**, before the
-upstream call happens. But Tavily's cost varies with `search_depth` and `max_results`. The
-shim therefore cannot bill actual cost — it must quote a deterministic price derived from
-the request parameters alone.
+upstream call happens, so the shim cannot bill actual cost. It quotes a deterministic price
+derived from the request and absorbs any difference.
 
-Pin a small tier table in the shared catalog:
+Measured with [`scripts/aisa-measure-tiers.mjs`](../scripts/aisa-measure-tiers.mjs) on
+2026-08-22, four calls across a depth × result-count grid:
 
-| Tier | `search_depth` | `max_results` | Quoted USDC |
-| --- | --- | --- | --- |
-| basic | `basic` | 5 | to measure |
-| deep | `advanced` | 10 | to measure |
+| Tier | `search_depth` | `max_results` | Measured cost | Quoted | Latency |
+| --- | --- | --- | --- | --- | --- |
+| basic | `basic` | 5 | $0.008 (8000 atomic) | **0.01 USDC** | ~3.6 s |
+| deep | `advanced` | 10 | $0.016 (16000 atomic) | **0.02 USDC** | ~9.8 s |
 
-Measure real cost per tier with the probe, then quote that plus margin. When actual exceeds
-quoted, the shim absorbs it — which is correct behaviour for a fixed-price offer, and is
-why the tiers must be coarse rather than letting the caller dial arbitrary parameters.
+Three things the measurement settled:
 
-**Gate:** a tier table with measured numbers and a `verifiedOn` date, in
-[`catalog.ts`](../packages/shared/src/demo/catalog.ts) — the one place vendor, orchestrator
-and console all read, so displayed price cannot drift from charged price.
+- **Only `search_depth` moves the price.** `max_results` was varied 5 → 10 at both depths
+  and changed nothing, so the tier is named for depth and `maxResults` is a quality knob,
+  not a pricing input. It is also not guaranteed — a `basic` call asking for 10 returned 9.
+- **Cost is reported exactly, in headers nobody documented.**
+  `x-aisa-customer-cost-micros-usd` and `x-aisa-provider-cost-micros-usd` come back on every
+  call. Micros USD and USDC atomic units are both millionths, so the header value *is* the
+  atomic cost — no conversion anywhere.
+- **`advanced` costs 2× and takes ~3× longer.** Ten seconds of upstream latency sits inside
+  the payment flow, which Step 7 has to account for in the UI.
+
+Margin is ~25%, chosen to land on 0.01 and 0.02 — round numbers displayed next to a budget
+the viewer picked. Both sit far below the 6.00 per-call cap and inside the 0.20 demo budget,
+so a viewer can run a dozen real searches and watch the encrypted balance draw down before
+anything is refused. That is a *different* demonstration from the single over-budget bounce,
+and a complementary one: the budget is a running total the agent cannot read.
+
+Landed in [`aisa-tiers.ts`](../packages/shared/src/demo/aisa-tiers.ts) rather than
+`catalog.ts` — same shared package and same barrel, so the one-definition property holds,
+but the goal catalog stays about goals.
 
 ---
 
@@ -90,7 +106,38 @@ newline are each rejected at `/runs` with no upstream call made.
 
 ---
 
-## Step 3 — Build the vendor shim
+## Step 3 — Build the vendor shim — **DONE**
+
+Built as `services/vendor-aisa`, 30 tests. One thing changed from the plan below, and it
+matters: **the facilitator's `/verify` runs before the upstream call.**
+
+The plan had local sanity checks and then the upstream call, which leaves a griefing hole.
+A well-formed authorization that will fail at settlement — an already-consumed nonce, an
+unfunded payer — passes every check we can do locally, so we would pay AIsa for a search
+before discovering it. Looped, that drains the vendor's balance for free, and every one of
+those calls is a real charge. `/verify` is in the x402 protocol precisely so a resource
+server can ask "would this pay?" before doing the work.
+
+The resulting order runs cheapest-first, each costly step guarded by a free one:
+
+| # | Step | Cost |
+| --- | --- | --- |
+| 1 | shape, tier and query validation | free |
+| 2 | spend ceiling | free |
+| 3 | local payload sanity (payee, amount, network) | free |
+| 4 | facilitator `/verify` | free, no money moves |
+| 5 | upstream AIsa call | **costs us** |
+| 6 | facilitator `/settle` | moves the buyer's USDC |
+
+Also landed alongside it, because the shim should not run without them:
+
+- **`check-boundary.mjs` extended** to cover `@ntux402/vendor-aisa` *and* the literal string
+  `AISA_VENDOR_KEY` in orchestrator source. A key needs no import to leak.
+- **`SpendLedger`** — an hourly ceiling denominated in USDC atomic units, which are also
+  micros USD. A call whose cost went unreported counts at the quoted price, so a missing
+  header is not the cheapest way past the ceiling.
+
+### Original plan
 
 New package `services/vendor-aisa`, modeled on [`mock-api/src/`](../mock-api/src/):
 
@@ -137,7 +184,37 @@ that the second was cached.
 
 ---
 
-## Step 5 — Catalog and routing
+## Step 5 — Catalog and routing — **DONE**
+
+Two live entries — `aisa-search-basic` (0.01) and `aisa-search-deep` (0.02) — with prices
+read from `SEARCH_TIERS` rather than restated, so displayed and charged cannot drift. All
+four synthetic goals kept.
+
+Three decisions worth recording:
+
+- **`payTo` is now optional on `DemoGoal`.** The live vendor's payee is an address the
+  *operator* controls and can sweep (`VENDOR_AISA_PAYEE`), so a package that compiles into a
+  browser bundle cannot know it. It arrives from the orchestrator's `/config` as
+  `vendorAisaPayee`, and the console must union it with `DEMO_PAYEES` before opening a goal
+  — otherwise every live spend reverts `PayeeNotAllowlisted`, which is correct and baffling.
+- **`isMockGoal` is the routing predicate, never the key's name.** A prefix rule like
+  `mode.startsWith("aisa-")` sends a renamed goal to the wrong vendor, and that failure is a
+  200 carrying the wrong product at the right price — the exact bug the shared catalog
+  exists to prevent. `mock-api` now 404s upstream goals instead of serving a fixture for
+  them.
+- **Live search is opt-in, gated on the payee rather than the URL.** Unset, `/config`
+  reports it unavailable and `POST /runs` answers 503 up front rather than failing as a
+  fetch error twenty seconds in with a goal already debited.
+
+Covered by `services/orchestrator/src/server.test.ts` (8 tests), including that a query
+containing `a b&tier=deep#frag/../../etc` cannot break out of the query string or override
+the tier.
+
+One thing the guard taught us: `check-boundary.mjs` failed on a *comment* naming the vendor
+key. The check stayed blunt and the prose was reworded — for a guard like this a false
+positive costs a sentence and a false negative costs the key.
+
+### Original plan
 
 - Extend `DemoGoal` with `upstream?: { vendor: "mock" | "aisa"; path; tier }`.
 - Add the live-search goals (`aisa-search-basic`, `aisa-search-deep`).
@@ -157,7 +234,20 @@ that the second was cached.
 
 ---
 
-## Step 6 — Backend surface for the dashboard
+## Step 6 — Backend surface for the dashboard — **DONE**
+
+`POST /runs` takes `query`; `/config` reports `vendorAisaUrl` and `vendorAisaPayee` (that
+part landed in Step 5).
+
+The query validator moved to `@ntux402/shared` as `search-query.ts`, because both the
+orchestrator and the vendor run it and the boundary check forbids either importing the
+other — a shared module is the only place one definition can sit. The two passes are not
+redundant: the orchestrator's is the courteous one (fails before any chain write, gives the
+browser a usable message), the vendor's is load-bearing (its caller is the component this
+architecture assumes is compromised). A query sent for a mock goal is also a 400 — a
+control that silently does nothing is worse than one that says no.
+
+### Original plan
 
 - **`POST /runs`** accepts `query` and `tier` alongside `goalId` and `mode`, validated per
   Step 2, and threaded into the run context.
@@ -171,7 +261,34 @@ chain write.
 
 ---
 
-## Step 7 — The dashboard
+## Step 7 — The dashboard — **DONE**
+
+A query box on upstream goals only, and a `Delivered` panel rendering the real results.
+
+- **The payee union landed.** `openGoal` now allowlists `DEMO_PAYEES` *plus*
+  `config.vendorAisaPayee`. This was the live wire from Step 5: omitting it does not fail
+  at open time, it fails much later as `PayeeNotAllowlisted` — looking for all the world
+  like the confidential budget refusing a spend it never saw.
+- **`safeHref` lives in `@ntux402/shared`, not in the component.** It filters result URLs to
+  `http(s)`, and a `javascript:` href in a search result would be one click from running
+  script in the console's origin next to a connected wallet. That is a security control, and
+  `apps/web` has no test runner — so it sits where it can have eight tests instead.
+  `asSearchPayload` went with it, and returns nothing for the mock vendor's fabricated price
+  tick, so a fixture can never render as purchased data.
+- **Third-party text is quoted, never absorbed.** Results are React children (never
+  `dangerouslySetInnerHTML`), links carry `noopener noreferrer nofollow`, snippets are
+  clamped to three lines so a vendor cannot flood the panel to push the settlement details
+  out of view, and the footer says plainly that none of it was written by the console.
+- **Costs shown side by side.** Charged vs the vendor's actual cost, from
+  `x-aisa-customer-cost-micros-usd`. It is the only place a viewer can see that the 402's
+  price was a quote rather than a passthrough.
+
+Verified in the browser: all six goals list at the right prices, and an upstream goal with
+no vendor configured renders the disabled state rather than a button that fails. The
+*enabled* branch is unverified visually — it needs `VENDOR_AISA_PAYEE` set and the vendor
+service running.
+
+### Original plan
 
 The payload already reaches the browser. [`server.ts`](../services/orchestrator/src/server.ts)
 emits the whole `PaymentResult` on the `result` channel, and the `paid` variant carries
@@ -200,7 +317,39 @@ hostile result title cannot break the layout or impersonate console chrome.
 
 ---
 
-## Step 8 — Trace
+## Step 8 — Trace — **DONE**
+
+A `vendor-upstream` step carrying capability, tier, upstream request id, latency, and both
+amounts — what was charged and what the vendor says it paid.
+
+The design problem was not what to record but how to record it *without lending it the
+credibility of everything around it*. Every other claim in a trace is re-derivable offline
+or re-checkable against Base Sepolia. This one is a third party's account of an HTTP call no
+RPC can reach, sitting in a file whose entire purpose is to be verifiable.
+
+Four things keep the line visible:
+
+- **`VENDOR_ATTESTED_STEPS`** is data, not a comment, so adding a step type forces a
+  decision about which side of the line it falls on.
+- **The verifier actively rejects** a `vendor-upstream` step carrying a `StepAttestation` —
+  even one whose hash is valid. A forged claim of chain-verifiability is an error, not a
+  warning. Tested by constructing exactly that trace.
+- **`attestedBy: "vendor"`** is written into the step's outputs, so it is legible in the raw
+  JSON without knowing the type system.
+- **The CLI says it out loud** after `VALID`, because that word is otherwise read as
+  covering the whole file.
+
+What the step *does* get is tamper-evidence: it hashes into the chain like anything else, so
+the vendor's reported cost cannot be edited afterwards. Tested.
+
+Amounts stay strings end to end — a number in `costAtomic` would mean an atomic value had
+been through a float on its way into a hash. `vendorUpstreamOf` rejects anything that is not
+plain digits. And when reported cost exceeds the quote, the orchestrator logs it: the shim
+absorbs the loss, but it means the tier table is stale.
+
+No key material and no raw upstream headers are recorded — only the fields named above.
+
+### Original plan
 
 Add the `vendor-upstream` step: capability, tier, upstream status, `request_id`, the `usage`
 object, and quoted-price vs reported-cost.

@@ -13,6 +13,7 @@ import {
   describeGuard,
   loadDotEnv,
   optional,
+  optionalAddress,
   required,
   requiredAddress,
   requiredHexKey,
@@ -27,8 +28,9 @@ import { SignerClient } from "./pay/signer-client.js";
 import { ScriptedAgent } from "./agent/scripted.js";
 import { buildAgent } from "./agent/factory.js";
 import { createOrchestratorServer } from "./server.js";
+import { TraceAnchorClient } from "./pay/anchor.js";
 import { renderEvent } from "./render.js";
-import { rpcUrls } from "@ntux402/shared";
+import { assertPayoutAddress, rpcUrls } from "@ntux402/shared";
 
 loadDotEnv();
 
@@ -41,6 +43,41 @@ const vaultAddress = requiredAddress("POLICY_VAULT_ADDRESS");
 const usdcAddress = requiredAddress("USDC_ADDRESS");
 const signerUrl = optional("SIGNER_URL") ?? `http://127.0.0.1:${process.env["SIGNER_PORT"] ?? 8402}`;
 const mockApiUrl = optional("MOCK_API_URL") ?? `http://127.0.0.1:${process.env["MOCK_API_PORT"] ?? 4021}`;
+
+/*
+ * Live search is opt-in, and its absence is a first-class state rather than a
+ * broken one. The gate is the *payee*, not the URL: without an address to pay,
+ * a goal opened by the console would not allowlist the vendor and every spend
+ * would revert with `PayeeNotAllowlisted` — correct, and baffling. Better to
+ * report live search as unavailable and let the console grey it out.
+ *
+ * Note what is deliberately absent: the vendor's API key. This service reads
+ * the payee and the URL and nothing else. `scripts/check-boundary.mjs` fails CI
+ * if that credential's name appears anywhere in this source tree — including in
+ * a comment, which is why this one does not spell it out.
+ */
+const vendorAisaPayeeRaw = optionalAddress("VENDOR_AISA_PAYEE");
+const vendorAisaPayee = vendorAisaPayeeRaw
+  ? assertPayoutAddress("VENDOR_AISA_PAYEE", vendorAisaPayeeRaw)
+  : undefined;
+const vendorAisaUrl = vendorAisaPayee
+  ? (optional("VENDOR_AISA_URL") ?? `http://127.0.0.1:${process.env["VENDOR_AISA_PORT"] ?? 4022}`)
+  : undefined;
+
+/*
+ * Anchoring is opt-in on the address being set. Absent, traces stay
+ * tamper-evident but carry no proof of when they said it — see pay/anchor.ts.
+ */
+const anchorAddress = optionalAddress("TRACE_ANCHOR_ADDRESS");
+const anchors = anchorAddress
+  ? new TraceAnchorClient({
+      rpcUrl,
+      anchorAddress,
+      // The same gas-only relay key. Anchoring authorizes no payment.
+      relayKey: requiredHexKey("ORCHESTRATOR_RELAY_KEY"),
+      chainId,
+    })
+  : undefined;
 
 const relay = new VaultRelay({
   rpcUrl,
@@ -110,7 +147,10 @@ const server = createOrchestratorServer({
   usdcAddress,
   chainId,
   mockApiUrl,
+  vendorAisaUrl,
+  vendorAisaPayee,
   signerUrl,
+  anchors,
   facilitatorUrl: optional("X402_FACILITATOR_URL"),
   agentSource: apiKey ? "llm" : "scripted",
   traceDir: optional("TRACE_STORE_PATH") ?? ".traces",
@@ -126,5 +166,15 @@ server.listen(port, bindHost(), () => {
   });
   if (!optional("X402_FACILITATOR_URL")) {
     log.warn("settlement is STUBBED — payloads are validated but no money moves");
+  }
+  log.info("trace anchoring", { contract: anchorAddress ?? "not configured" });
+  log.info("live search", {
+    vendor: vendorAisaUrl ?? "not configured",
+    ...(vendorAisaPayee ? { payee: vendorAisaPayee } : {}),
+  });
+  if (!vendorAisaPayee) {
+    log.warn(
+      "live AIsa search is unavailable — set VENDOR_AISA_PAYEE (and run @ntux402/vendor-aisa)",
+    );
   }
 });

@@ -24,7 +24,7 @@ import { policyVaultAbi, usdcAbi } from "@ntux402/shared";
 import { canonicalJson } from "./canonical.js";
 import { TraceBuilder } from "./builder.js";
 import { merkleProof, merkleRoot, verifyMerkleProof, hashLeaf, hashNode } from "./merkle.js";
-import { GENESIS_HASH, type Trace } from "./step.js";
+import { GENESIS_HASH, computeStepHash, type Trace } from "./step.js";
 import { verifyTrace } from "./verify.js";
 
 const VAULT: Address = "0x0C759D06a1c14F43852D7b078Db2f8C342F15921";
@@ -393,5 +393,104 @@ describe("TraceBuilder", () => {
 
   it("is byte-stable for the same events", () => {
     expect(buildTrace().root).toBe(buildTrace().root);
+  });
+});
+
+describe("vendor-attested steps", () => {
+  const build = () => {
+    let clock = 1_800_000_000_000;
+    const builder = new TraceBuilder({
+      goalId: 7n,
+      vault: VAULT,
+      chainId: CHAIN_ID,
+      now: () => (clock += 1000),
+    });
+    builder.record({ type: "request", url: "https://vendor.local/r", attempt: 1 });
+    builder.record({
+      type: "vendor-upstream",
+      capability: "search",
+      tier: "basic",
+      requestId: "req-abc",
+      latencyMs: 3600,
+      quotedAtomic: "10000",
+      costAtomic: "8000",
+    });
+    return builder.build();
+  };
+
+  it("records the capability, the tier and both amounts", () => {
+    const step = build().steps.find((s) => s.type === "vendor-upstream");
+    expect(step?.inputs).toMatchObject({ capability: "search", tier: "basic" });
+    expect(step?.outputs).toMatchObject({
+      requestId: "req-abc",
+      quotedAtomic: "10000",
+      costAtomic: "8000",
+    });
+  });
+
+  /*
+   * The distinction the step type exists for. Everything else in a trace is
+   * either re-derivable offline or re-checkable against Base Sepolia; this is a
+   * third party's account of an HTTP call no RPC can reach.
+   */
+  it("marks itself vendor-attested and carries no on-chain attestation", () => {
+    const step = build().steps.find((s) => s.type === "vendor-upstream");
+    expect((step?.outputs as { attestedBy: string }).attestedBy).toBe("vendor");
+    expect(step?.attestation).toBeUndefined();
+  });
+
+  it("still hashes into the chain, so it cannot be edited after the fact", async () => {
+    const trace = build();
+    const index = trace.steps.findIndex((s) => s.type === "vendor-upstream");
+
+    expect((await verifyTrace(trace)).valid).toBe(true);
+
+    // Rewrite the vendor's reported cost without recomputing the hash.
+    const tampered: Trace = {
+      ...trace,
+      steps: trace.steps.map((s, i) =>
+        i === index ? { ...s, outputs: { ...(s.outputs as object), costAtomic: "1" } } : s,
+      ),
+    };
+    const result = await verifyTrace(tampered);
+    expect(result.valid).toBe(false);
+    expect(result.findings.some((f) => f.check === "chain.hash")).toBe(true);
+  });
+
+  it("is rejected if it ever claims an on-chain attestation", async () => {
+    const trace = build();
+    const index = trace.steps.findIndex((s) => s.type === "vendor-upstream");
+
+    // Forged so the hash still matches: the only thing wrong is the *claim*.
+    const forged = trace.steps.map((s, i) => {
+      if (i !== index) return s;
+      const attestation = {
+        decisionHandle: HANDLE,
+        covalidatorSignatures: [],
+        commitTx: COMMIT_TX,
+        goalId: "7",
+        seq: "1",
+        approved: true,
+      };
+      const partial = {
+        index: s.index,
+        type: s.type,
+        timestamp: s.timestamp,
+        inputs: s.inputs,
+        outputs: s.outputs,
+        priorHash: s.priorHash,
+        attestation,
+      };
+      return { ...partial, hash: computeStepHash(partial) };
+    });
+    const rebuilt: Trace = {
+      ...trace,
+      steps: forged,
+      root: merkleRoot(forged.map((s) => s.hash)),
+    };
+
+    const result = await verifyTrace(rebuilt);
+    expect(result.valid).toBe(false);
+    expect(result.findings.some((f) => f.check === "chain.vendor-attested")).toBe(true);
   });
 });

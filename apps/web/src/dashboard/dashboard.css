@@ -1400,3 +1400,182 @@
     transition: none;
   }
 }
+
+/* ---------------------------------------------------- live search input ---
+ * Shown only for upstream goals. The note under it says the price out loud,
+ * because this is the one control on the page that spends real money on a
+ * third-party API every time it is used.
+ */
+.d-search {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.d-search-label {
+  font-family: var(--d-mono);
+  font-size: var(--d-t-label);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--d-fg-muted);
+}
+
+.d-search input {
+  width: 100%;
+  padding: 8px 10px;
+  background: var(--d-bg);
+  border: 1px solid var(--d-border);
+  color: var(--d-fg);
+  font-family: var(--d-sans);
+  font-size: var(--d-t-body);
+}
+
+.d-search input:focus-visible {
+  outline: none;
+  border-color: var(--d-brand);
+}
+
+.d-search input::placeholder {
+  color: var(--d-fg-muted);
+}
+
+.d-search input:disabled {
+  opacity: 0.5;
+}
+
+.d-search-note {
+  font-size: var(--d-t-label);
+  line-height: 1.5;
+  color: var(--d-fg-muted);
+}
+
+/* ------------------------------------------------------- search results ---
+ * Third-party text, framed as a quotation. The left rule and the muted footer
+ * are doing the same job `attributeVendorText` does for a refusal string: this
+ * is what the vendor said, not what the console is telling you.
+ */
+.d-results {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  background: var(--d-bg-muted);
+  border: 1px solid var(--d-border-muted);
+  /* Its own scroll region: the console is one frame and never scrolls, so a
+     long result list has to stay inside its own box. */
+  max-height: 340px;
+  overflow-y: auto;
+}
+
+.d-results-head h3 {
+  margin: 0;
+  font-size: var(--d-t-title);
+  font-weight: 500;
+}
+
+.d-results-query {
+  margin: 4px 0 0;
+  font-family: var(--d-mono);
+  font-size: var(--d-t-label);
+  color: var(--d-fg);
+}
+
+.d-results-label {
+  margin-right: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--d-fg-muted);
+}
+
+.d-results-tier {
+  margin-left: 8px;
+  padding: 1px 6px;
+  border: 1px solid var(--d-border);
+  border-radius: 999px;
+  color: var(--d-fg-muted);
+}
+
+.d-results-usage {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin: 0;
+  padding: 8px 0;
+  border-top: 1px solid var(--d-border-muted);
+  border-bottom: 1px solid var(--d-border-muted);
+}
+
+.d-results-usage dt {
+  font-size: var(--d-t-label);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--d-fg-muted);
+}
+
+.d-results-usage dd {
+  margin: 2px 0 0;
+  font-family: var(--d-mono);
+  font-size: var(--d-t-body);
+}
+
+.d-results-answer {
+  margin: 0;
+  padding-left: 10px;
+  border-left: 2px solid var(--d-brand);
+  font-size: var(--d-t-body);
+  line-height: 1.55;
+}
+
+.d-results-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.d-result-title {
+  font-size: var(--d-t-body);
+  line-height: 1.4;
+  /* A hostile title is not allowed to push the layout around. */
+  overflow-wrap: anywhere;
+}
+
+.d-result-title a {
+  color: var(--d-fg);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.d-result-title a:hover {
+  color: var(--d-brand);
+}
+
+.d-result-host {
+  margin-top: 2px;
+  font-family: var(--d-mono);
+  font-size: var(--d-t-label);
+  color: var(--d-fg-muted);
+  overflow-wrap: anywhere;
+}
+
+.d-result-snippet {
+  margin: 4px 0 0;
+  font-size: var(--d-t-label);
+  line-height: 1.55;
+  color: var(--d-fg-muted);
+  overflow-wrap: anywhere;
+  /* Capped so one verbose result cannot bury the rest, and so a vendor cannot
+     flood the panel to push the settlement details out of view. */
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.d-results-foot {
+  font-size: var(--d-t-label);
+  line-height: 1.5;
+  color: var(--d-fg-muted);
+}

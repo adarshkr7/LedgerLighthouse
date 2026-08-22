@@ -83,11 +83,16 @@ curl.exe -sS -D - "https://api.aisa.one/apis/v1/financial/prices?ticker=AAPL&int
 balance. Nothing in the docs says they do, and the OpenAPI spec is too large to have
 confirmed it — this curl is how you find out.
 
-**1d. Ask AIsa support directly: can one account hold multiple API keys with separate
-capability scopes or spend limits?**
+**1d. Key scoping — answered, no need to ask.**
 
-This is the only question you cannot answer with curl, and it is the one that decides
-whether Step 2 is a real control or just process isolation.
+`console.aisa.one` → API Keys. An account may hold many; the docs recommend one per
+service. Each may carry a **spend cap** (USD per day/week/month), a rate-limit override, and
+a model allowlist. Revocation is instant.
+
+So the two-key split is a real control. Note what is *not* offered: any restriction by
+endpoint family. A model allowlist does not keep an inference key away from the paid data
+APIs — the spend cap is what bounds that, by making the loss finite rather than preventing
+it.
 
 **Gate:** you have written down — a live model ID, whether `output_config`/`thinking`
 survive, the real per-call price of one data endpoint, and the scoping answer.
@@ -195,8 +200,13 @@ produces a false "the resource server refused the payment" message in the one ca
 precision matters. On upstream failure: 502, no settlement, no money moved.
 
 Add a **hard call ceiling** in this service — N upstream calls per hour, refused past that.
-With no confirmed balance endpoint, a local counter is the only spend tripwire available,
-and it is ten lines.
+
+Better than a bare counter: AIsa returns `x-aisa-customer-cost-micros-usd` on every call
+(undocumented, confirmed by measurement — see [`AISA_LIVE_SEARCH.md`](AISA_LIVE_SEARCH.md)
+§1). Micros USD are USDC atomic units, so summing that header gives exact cumulative spend
+and the ceiling can be denominated in money rather than in calls. Six candidate balance
+endpoints were probed and all six 404'd, so this header is the only spend visibility that
+exists — treat it as optional, since nothing documents it.
 
 `pnpm-workspace.yaml` already globs `services/*`, so no change there.
 

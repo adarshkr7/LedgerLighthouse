@@ -18,6 +18,41 @@ export const USDC_EIP712_VERSION = "2";
 
 export const BASE_SEPOLIA_CHAIN_ID = 84532;
 
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+
+/**
+ * Refuses an address that USDC can be sent to but never retrieved from.
+ *
+ * Two of them, and both are easy to configure by accident:
+ *
+ *  - **The zero address.** The conventional burn.
+ *  - **The token contract itself.** The likelier mistake by far, because
+ *    `USDC_ADDRESS` is already sitting in `.env` and is the only USDC-shaped
+ *    address most people have to hand. Tokens transferred to their own contract
+ *    are held by an address with no owner and no recovery path.
+ *
+ * Nothing downstream would catch either. Both are well-formed addresses, so the
+ * transfer succeeds, the settlement reports success, the trace records a
+ * genuine on-chain payment — and the money is simply gone. This is the only
+ * place that can tell the difference, because it is the only place that knows
+ * the address is meant to be a *payout* destination rather than a parameter.
+ */
+export function assertPayoutAddress(name: string, address: Address): Address {
+  const lower = address.toLowerCase();
+
+  if (lower === ZERO_ADDRESS) {
+    throw new Error(`${name} is the zero address. Funds sent there are burned.`);
+  }
+  if (lower === USDC_BASE_SEPOLIA.toLowerCase()) {
+    throw new Error(
+      `${name} is the USDC token contract, not a wallet — it is the value of USDC_ADDRESS. ` +
+        `USDC sent to its own contract cannot be recovered by anyone. Use an address you ` +
+        `hold the private key for; your MetaMask address is the right answer here.`,
+    );
+  }
+  return address;
+}
+
 /**
  * The EIP-3009 struct the payer signs. Field order is part of the type hash, so
  * it is not cosmetic — reordering these changes the signature.

@@ -83,6 +83,23 @@ export function requiredAddress(name: string): Address {
   return raw as Address;
 }
 
+/**
+ * An address that may legitimately be unset, but must be an address when set.
+ *
+ * The middle ground `optional()` cannot express. A blank value means the
+ * feature is off; a malformed one means someone tried to turn it on and got it
+ * wrong, and silently treating that as "off" hides the typo behind a feature
+ * that just quietly never appears.
+ */
+export function optionalAddress(name: string): Address | undefined {
+  const raw = optional(name);
+  if (raw === undefined) return undefined;
+  if (!/^0x[0-9a-fA-F]{40}$/.test(raw)) {
+    throw new Error(`${name} must be a 20-byte hex address when set, got ${JSON.stringify(raw)}`);
+  }
+  return raw as Address;
+}
+
 export function requiredHexKey(name: string): `0x${string}` {
   const raw = required(name);
   const withPrefix = raw.startsWith("0x") ? raw : `0x${raw}`;

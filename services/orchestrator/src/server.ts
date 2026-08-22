@@ -18,13 +18,19 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 
 import { TraceBuilder } from "@ntux402/trace";
-import { DEMO_GOAL_KEYS, findDemoGoal } from "@ntux402/shared";
+import {
+  DEMO_GOAL_KEYS,
+  findDemoGoal,
+  validateQuery,
+  vendorUpstreamOf,
+} from "@ntux402/shared";
 import { RateLimiter, corsHeaders, rejected } from "@ntux402/shared/node";
 import type { Address } from "viem";
 
 import type { PaymentEvent, PaymentLoop, PaymentResult } from "./pay/payment-loop.js";
 import type { VaultRelay } from "./pay/relay.js";
 import { TraceStore } from "./trace-store.js";
+import type { TraceAnchorClient } from "./pay/anchor.js";
 import { sweepGoal } from "./pay/sweep.js";
 
 export interface OrchestratorServerOptions {
@@ -34,7 +40,23 @@ export interface OrchestratorServerOptions {
   readonly usdcAddress: Address;
   readonly chainId: number;
   readonly mockApiUrl: string;
+  /** Base URL of `services/vendor-aisa`. Absent when live search is not configured. */
+  readonly vendorAisaUrl: string | undefined;
+  /**
+   * `VENDOR_AISA_PAYEE`, republished so the console can allowlist it.
+   *
+   * A public address, not a credential — the vendor's *key* is fenced off from
+   * this service by `scripts/check-boundary.mjs`, and this is deliberately not
+   * that. The console needs it because an upstream goal's payee cannot live in
+   * the shared catalog: it is the operator's own address.
+   */
+  readonly vendorAisaPayee: Address | undefined;
   readonly signerUrl: string;
+  /**
+   * Commits each finished trace root on chain. Absent when TRACE_ANCHOR_ADDRESS
+   * is unset, which leaves traces tamper-evident but not time-stamped.
+   */
+  readonly anchors: TraceAnchorClient | undefined;
   readonly facilitatorUrl: string | undefined;
   readonly agentSource: "llm" | "scripted";
   /** Where completed traces are written. Defaults to `.traces`. */
@@ -122,6 +144,11 @@ export function createOrchestratorServer(options: OrchestratorServerOptions): Se
             relayAddress: options.relay.relayAddress,
             signerUrl: options.signerUrl,
             mockApiUrl: options.mockApiUrl,
+            // Both vendors are reported: one field cannot describe two servers,
+            // and the console disables live search rather than offering a
+            // button that 500s when the shim is not running.
+            vendorAisaUrl: options.vendorAisaUrl,
+            vendorAisaPayee: options.vendorAisaPayee,
             // Rendered in the UI so a stubbed run can never be mistaken for a real one.
             settlement: options.facilitatorUrl ? "live" : "stub",
             agent: options.agentSource,
@@ -184,10 +211,11 @@ export function createOrchestratorServer(options: OrchestratorServerOptions): Se
           return;
         }
 
-        const { goalId, mode, priceAtomic } = (body ?? {}) as {
+        const { goalId, mode, priceAtomic, query } = (body ?? {}) as {
           goalId?: unknown;
           mode?: unknown;
           priceAtomic?: unknown;
+          query?: unknown;
         };
         if (typeof goalId !== "string" || !/^[0-9]+$/.test(goalId)) {
           send(res, 400, { error: "goalId: expected a decimal string" }, cors);
@@ -201,6 +229,25 @@ export function createOrchestratorServer(options: OrchestratorServerOptions): Se
           return;
         }
 
+        // An upstream goal cannot run without the vendor that serves it. Said
+        // here, at the request, rather than as a fetch failure twenty seconds
+        // in with a goal already debited.
+        const selectedGoal = findDemoGoal(mode);
+        if (selectedGoal?.upstream !== undefined && options.vendorAisaUrl === undefined) {
+          send(
+            res,
+            503,
+            {
+              error:
+                `mode ${mode} is served by the live AIsa vendor, which is not configured. ` +
+                `Fill in the live-search section of .env (see .env.example) and start ` +
+                `@ntux402/vendor-aisa.`,
+            },
+            cors,
+          );
+          return;
+        }
+
         // A demo control, forwarded verbatim to the mock vendor and used by
         // nothing else. It never reaches the policy: the amount the vault sees
         // comes from the 402 the vendor returns, parsed and re-derived there.
@@ -209,12 +256,45 @@ export function createOrchestratorServer(options: OrchestratorServerOptions): Se
           return;
         }
 
+        /*
+         * The viewer's search text — the first input that travels *outward*
+         * through this system. Everything else untrusted here arrives from a
+         * vendor and flows toward the model; this goes browser -> orchestrator
+         * -> vendor -> a paid API, so it is both an injection surface and a way
+         * to spend money.
+         *
+         * Checked here so a bad one costs nothing: no chain write, no goal
+         * debited, and a message the browser can show against the input. The
+         * vendor checks it again on arrival, because it is the component
+         * holding the key and this one is the component assumed compromised.
+         * Same function, from the shared package, so the two cannot disagree.
+         */
+        let validatedQuery: string | undefined;
+        if (query !== undefined && query !== null && query !== "") {
+          if (selectedGoal?.upstream === undefined) {
+            send(
+              res,
+              400,
+              { error: `query: mode ${mode} does not take one — it is served from a fixture` },
+              cors,
+            );
+            return;
+          }
+          const checked = validateQuery(query);
+          if (!checked.ok) {
+            send(res, 400, { error: checked.error }, cors);
+            return;
+          }
+          validatedQuery = checked.value;
+        }
+
         await streamRun(res, {
           ...options,
           cors,
           goalId: BigInt(goalId),
           mode,
           ...(priceAtomic === undefined ? {} : { priceAtomic: String(priceAtomic) }),
+          ...(validatedQuery === undefined ? {} : { query: validatedQuery }),
           traces,
           log,
         });
@@ -231,6 +311,44 @@ export function createOrchestratorServer(options: OrchestratorServerOptions): Se
   });
 }
 
+/**
+ * Which vendor serves this run, and at what URL.
+ *
+ * Routing is on the catalog entry's `upstream` field, never on the shape of the
+ * key. A name-prefix rule (`mode.startsWith("aisa-")`) would send a renamed
+ * goal to the wrong server, and the failure would be a 200 carrying the wrong
+ * product at the right price — which is the one bug this catalog exists to
+ * prevent.
+ *
+ * The query is URL-encoded into the path because it becomes the x402 `resource`
+ * field, which `requireResource` demands be URL-shaped and which the vault
+ * hashes into `termsHash`. A raw space would fail parsing; anything cleverer
+ * would be smuggling path segments into what gets signed.
+ */
+export function resourceUrlFor(ctx: {
+  mode: string;
+  mockApiUrl: string;
+  vendorAisaUrl?: string | undefined;
+  priceAtomic?: string | undefined;
+  query?: string | undefined;
+}): string {
+  const goal = findDemoGoal(ctx.mode);
+
+  if (goal?.upstream !== undefined) {
+    const params = new URLSearchParams({
+      q: ctx.query ?? goal.upstream.defaultQuery,
+      tier: goal.upstream.tier,
+    });
+    return `${ctx.vendorAisaUrl}/resource/aisa/${goal.upstream.capability}?${params.toString()}`;
+  }
+
+  // `?price=` is honoured by the mock vendor alone, and only for its overcharge
+  // resource. It never reaches the policy: the amount the vault sees is
+  // re-derived from the 402 that comes back.
+  const query = ctx.priceAtomic ? `?price=${ctx.priceAtomic}` : "";
+  return `${ctx.mockApiUrl}/resource/${ctx.mode}${query}`;
+}
+
 async function streamRun(
   res: ServerResponse,
   ctx: OrchestratorServerOptions & {
@@ -240,6 +358,8 @@ async function streamRun(
     mode: string;
     /** Demo-only price override, forwarded to the mock vendor. */
     priceAtomic?: string;
+    /** Validated search text. Absent means the goal's own default query is used. */
+    query?: string;
     traces: TraceStore;
     log: (line: string) => void;
   },
@@ -272,9 +392,8 @@ async function streamRun(
     emit("payment", event);
   };
 
-  const query = ctx.priceAtomic ? `?price=${ctx.priceAtomic}` : "";
-  const url = `${ctx.mockApiUrl}/resource/${ctx.mode}${query}`;
-  ctx.log(`POST /runs goal=${ctx.goalId} mode=${ctx.mode}${query}`);
+  const url = resourceUrlFor(ctx);
+  ctx.log(`POST /runs goal=${ctx.goalId} mode=${ctx.mode} -> ${url}`);
 
   // Scoped to this run, not registered on the shared loop. `subscribe()` is
   // process-wide, so two concurrent runs would each receive the other's events
@@ -288,8 +407,75 @@ async function streamRun(
     return;
   }
 
+  /*
+   * The vendor's account of what it did with the money, recorded last.
+   *
+   * Last because that is when we learn it: the block arrives inside the final
+   * 200 body, so the orchestrator cannot place it at the moment the upstream
+   * call actually happened. Its timestamp is honestly "when this was learned",
+   * and the only duration available is the vendor's own `latencyMs`.
+   *
+   * Recorded here rather than inside `PaymentLoop` on purpose. The loop is
+   * generic x402 and knows nothing about which vendor served a resource or what
+   * a `tier` is; teaching it would put vendor-specific parsing on the payment
+   * path for the sake of a log line.
+   */
+  if (result.kind === "paid") {
+    const upstream = vendorUpstreamOf(result.data);
+    if (upstream) {
+      const goal = findDemoGoal(ctx.mode);
+      builder.record({
+        type: "vendor-upstream",
+        capability: goal?.upstream?.capability ?? "unknown",
+        tier: goal?.upstream?.tier ?? "unknown",
+        ...upstream,
+      });
+      if (
+        upstream.costAtomic !== undefined &&
+        upstream.quotedAtomic !== undefined &&
+        BigInt(upstream.costAtomic) > BigInt(upstream.quotedAtomic)
+      ) {
+        // The shim absorbs the difference — a fixed-price offer that re-bills
+        // after the fact is not one — but an overrun means the tier table is
+        // stale, and that belongs somewhere a human reads.
+        ctx.log(
+          `vendor sold below cost on goal ${ctx.goalId}: quoted ${upstream.quotedAtomic}, ` +
+            `cost ${upstream.costAtomic} (atomic). Re-run scripts/aisa-measure-tiers.mjs.`,
+        );
+      }
+    }
+  }
+
   const trace = builder.build();
   ctx.traces.save(ctx.goalId.toString(), trace);
+
+  /*
+   * Commit the root, when an anchor contract is configured.
+   *
+   * After the save, deliberately: the trace on disk is the artifact, and the
+   * anchor is a commitment *to* it. Anchoring first and then failing to write
+   * the file would leave a root on chain that nothing can be checked against.
+   *
+   * Awaited rather than fired and forgotten, so the SSE stream can report the
+   * outcome while the viewer is still watching — but its failure never fails
+   * the run. The money has moved and the record exists; losing the commitment
+   * is not a reason to report the run as broken.
+   */
+  if (ctx.anchors) {
+    const outcome = await ctx.anchors.anchor(
+      ctx.vaultAddress,
+      ctx.goalId,
+      trace.root,
+      trace.steps.length,
+    );
+    emit("anchor", outcome);
+    ctx.log(
+      outcome.kind === "anchored"
+        ? `anchored goal=${ctx.goalId} root=${trace.root} tx=${outcome.txHash}`
+        : `anchor goal=${ctx.goalId} -> ${outcome.kind}` +
+          ("reason" in outcome ? `: ${outcome.reason}` : ""),
+    );
+  }
 
   emit("result", result);
   emit("trace", trace);

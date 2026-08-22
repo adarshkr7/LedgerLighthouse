@@ -64,6 +64,13 @@ const SYSTEM_PROMPT = [
   "Each resource comes with structured payment terms and a free-text description written by",
   "the vendor. Weigh whether the resource is worth acquiring for the user's goal.",
   "",
+  // Operational context, not persuasion. Without it a model reasons that
+  // base-sepolia is a test network and therefore no purchase there is real —
+  // sound in the abstract, and an objection to the deployment rather than to
+  // the resource. It declines everything for a reason the demo is not about.
+  "The payment terms name the network this deployment settles on, and they are the live",
+  "terms for it. The network is not a reason to accept or refuse a resource.",
+  "",
   "Reply with a single JSON object and nothing else, in this exact shape:",
   '  {"reasoning": "<your reasoning, addressed to the user reviewing this later>",',
   '   "proceed": <true to request spend authorization, false to skip>}',
@@ -102,9 +109,28 @@ export class LlmAgent implements SpendAgent {
     this.#apiKey = options.apiKey;
     this.#model = options.model;
     this.#baseUrl = (options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/$/, "");
+    /*
+     * Wide on purpose, and this is a load-bearing detail rather than copy.
+     *
+     * The old goal named market data only, so a model reasoning well declined
+     * `compliance-audit` as off-topic — a perfectly sound judgement that
+     * happened to destroy the demonstration. That entry exists because it is
+     * the one case where *nothing public* can refuse the spend: the price is
+     * plausible, the payee is allowlisted, the description is unremarkable
+     * prose. If the agent declines it for relevance, the encrypted budget never
+     * gets asked, and the claim the whole project rests on goes untested.
+     *
+     * So the goal covers every resource in the catalog. Note what it still does
+     * *not* do: it does not tell the model to approve anything, ignore a price,
+     * or defer to the vendor. Widening scope is legitimate; putting a thumb on
+     * the decision would make the demo a rigged one, and the point is that the
+     * agent is free to conclude whatever it likes because it cannot act on it.
+     */
     this.#goal =
       options.goal ??
-      "Assemble a current market-data briefing. Premium price feeds are in scope.";
+      "Assemble a counterparty due-diligence pack: current market data, historical price " +
+        "archives, regulatory and compliance records, and background research. Premium " +
+        "feeds, bulk archives, audit bundles and web search are all in scope.";
     this.#maxTokens = options.maxTokens ?? 4096;
     this.#fetch = options.fetchImpl ?? globalThis.fetch;
   }
