@@ -35,7 +35,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import { Lightning } from "@inco/lightning-js/lite";
 import { handleTypes } from "@inco/lightning-js";
 import { rpcTransport } from "@ntux402/shared/viem";
-import { formatUsdc, rpcUrls, usdcAbi } from "@ntux402/shared";
+import { DEMO_PAYEES, formatUsdc, rpcUrls, usdcAbi } from "@ntux402/shared";
 import {
   IncoDecisionReader,
   PaymentLoop,
@@ -93,8 +93,7 @@ const CALLS_REMAINING = 5;
  */
 const PAYER_FUNDING = 450_000n; // 0.45 USDC
 
-const HONEST_PAY_TO: Address = "0x1111111111111111111111111111111111111111";
-const MALICIOUS_PAY_TO: Address = "0x2222222222222222222222222222222222222222";
+
 
 const rpcUrl = required("BASE_SEPOLIA_RPC_URL");
 const vaultAddress = requiredAddress("POLICY_VAULT_ADDRESS");
@@ -189,7 +188,7 @@ const openHash = await userWallet.writeContract({
       relay: relayAddress,
       asset: usdcAddress,
       expiry: BigInt(Math.floor(Date.now() / 1000) + 7 * 24 * 3600),
-      allowlist: [HONEST_PAY_TO, MALICIOUS_PAY_TO],
+      allowlist: [...DEMO_PAYEES],
     },
   ],
   value: incoFee,
@@ -207,8 +206,15 @@ console.log(`  perCallCap    ${formatUsdc(PER_CALL_CAP)} USDC — public, and de
 console.log(`                malicious price, so the bounce comes from Inco and not from a require()`);
 console.log(`\n  Basescan: https://sepolia.basescan.org/address/${vaultAddress}`);
 
-// Both allowlisted on purpose: the malicious vendor must fail the *confidential*
-// check, not a public precondition. An allowlist rejection would prove nothing.
+// Every mock payee is allowlisted on purpose: run 2 must fail the *confidential*
+// check, not a public precondition. A PayeeNotAllowlisted revert would prove
+// nothing about the budget — it is the vault refusing on a public rule, which is
+// the thing this demo exists to distinguish itself from.
+//
+// Taken from the catalog rather than listed here. The two addresses this file
+// used to hardcode were the payees of the two goals it happened to buy, so
+// pointing run 2 at a third goal reverted with PayeeNotAllowlisted — a config
+// gap that reads exactly like a policy decision at a glance.
 
 // ------------------------------------------------------------- fund the payer
 rule("3. fund the ephemeral payer");
