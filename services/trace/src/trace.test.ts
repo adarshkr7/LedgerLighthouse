@@ -173,7 +173,6 @@ function buildTrace(overrides: { approved?: boolean } = {}): Trace {
       gasUsed: 296_517n,
     },
   });
-  builder.attachSignatures([`0x${"33".repeat(65)}`]);
   builder.record({
     type: "reveal-polled",
     attempts: 2,
@@ -186,6 +185,7 @@ function buildTrace(overrides: { approved?: boolean } = {}): Trace {
     seq: 1n,
     approved: overrides.approved ?? true,
     txHash: FINALIZE_TX,
+    signatures: [`0x${"33".repeat(65)}`],
   });
   builder.record({ type: "signed", nonce: `0x${"ee".repeat(32)}`, value: "10000" });
   builder.record({
@@ -389,6 +389,44 @@ describe("TraceBuilder", () => {
     const trace = buildTrace();
     const step = trace.steps.find((s) => s.type === "payment-required");
     expect((step?.outputs as { description: string }).description).toBe("Premium feed.");
+  });
+
+  /*
+   * Every trace this system shipped carried `covalidatorSignatures: []`,
+   * including the one in submission/. The signatures reached `finalizeDecision`
+   * and were then dropped on the floor, so the field that makes an attestation
+   * checkable by someone holding only the file was the one field left empty.
+   */
+  it("carries the covalidator signatures into the attestation", () => {
+    const trace = buildTrace();
+    const finalized = trace.steps.find((s) => s.type === "decision-finalized");
+    expect(finalized?.attestation?.covalidatorSignatures).toEqual([`0x${"33".repeat(65)}`]);
+  });
+
+  it("keeps a malformed signature list out of the hash rather than trusting it", () => {
+    let clock = 1_800_000_000_000;
+    const builder = new TraceBuilder({
+      goalId: 7n,
+      vault: VAULT,
+      chainId: 84532,
+      now: () => (clock += 1000),
+    });
+    builder.record({
+      type: "spend-requested",
+      goalId: 7n,
+      spend: { seq: 1n, decisionHandle: HANDLE, commitTx: COMMIT_TX },
+    });
+    builder.record({
+      type: "decision-finalized",
+      goalId: 7n,
+      seq: 1n,
+      approved: true,
+      txHash: FINALIZE_TX,
+      signatures: "not-an-array",
+    });
+
+    const finalized = builder.steps.find((s) => s.type === "decision-finalized");
+    expect(finalized?.attestation?.covalidatorSignatures).toEqual([]);
   });
 
   it("is byte-stable for the same events", () => {

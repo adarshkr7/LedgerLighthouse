@@ -93,11 +93,44 @@ function send(
   res.end(payload);
 }
 
+/**
+ * Bounded so a hostile body cannot be used to exhaust memory — the signer and
+ * the facilitator both capped theirs and this one did not, which made it the
+ * cheapest process in the set to push over. Generous for what the routes
+ * actually accept: the largest legitimate body is a goal id, a catalog key and
+ * a query that `validateQuery` caps at 256 characters.
+ */
+const MAX_BODY_BYTES = 8 * 1024;
+
+/** Distinguishable from a parse failure, so the two get different statuses. */
+class BodyTooLarge extends Error {}
+
 async function readJson(req: IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = [];
-  for await (const chunk of req) chunks.push(chunk as Buffer);
+  let total = 0;
+  for await (const chunk of req) {
+    const buf = chunk as Buffer;
+    total += buf.length;
+    if (total > MAX_BODY_BYTES) throw new BodyTooLarge(`body exceeds ${MAX_BODY_BYTES} bytes`);
+    chunks.push(buf);
+  }
   const text = Buffer.concat(chunks).toString("utf8");
   return JSON.parse(text === "" ? "null" : text);
+}
+
+/**
+ * Answers a body that could not be read.
+ *
+ * An oversized body is a 413 and a malformed one is a 400: reporting the first
+ * as "not valid JSON" would send an operator hunting for a syntax error in a
+ * payload that was never parsed.
+ */
+function sendBodyError(res: ServerResponse, error: unknown, cors: Record<string, string>): void {
+  if (error instanceof BodyTooLarge) {
+    send(res, 413, { error: error.message }, cors);
+    return;
+  }
+  send(res, 400, { error: "body: not valid JSON" }, cors);
 }
 
 export function createOrchestratorServer(options: OrchestratorServerOptions): Server {
@@ -174,8 +207,8 @@ export function createOrchestratorServer(options: OrchestratorServerOptions): Se
         let body: unknown;
         try {
           body = await readJson(req);
-        } catch {
-          send(res, 400, { error: "body: not valid JSON" }, cors);
+        } catch (e) {
+          sendBodyError(res, e, cors);
           return;
         }
         const { goalId } = (body ?? {}) as { goalId?: unknown };
@@ -206,8 +239,8 @@ export function createOrchestratorServer(options: OrchestratorServerOptions): Se
         let body: unknown;
         try {
           body = await readJson(req);
-        } catch {
-          send(res, 400, { error: "body: not valid JSON" }, cors);
+        } catch (e) {
+          sendBodyError(res, e, cors);
           return;
         }
 
@@ -398,9 +431,17 @@ async function streamRun(
   // Scoped to this run, not registered on the shared loop. `subscribe()` is
   // process-wide, so two concurrent runs would each receive the other's events
   // and each trace would record both goals.
+  //
+  // `fresh` because a POST to /runs is a person asking to buy the thing, not a
+  // retry of an earlier attempt. Without it the process-wide response cache
+  // answered the second run of a resource from memory: `kind: "free"`, no
+  // `requestSpend`, no debit against the encrypted budget — while the catalog
+  // copy invites the viewer to "run it several times and watch the encrypted
+  // budget draw down". The run that demonstrates the product was the one the
+  // cache swallowed.
   let result: PaymentResult;
   try {
-    result = await ctx.loop.fetchPaid(url, ctx.goalId, { onEvent: forward });
+    result = await ctx.loop.fetchPaid(url, ctx.goalId, { onEvent: forward, fresh: true });
   } catch (e) {
     emit("error", { message: e instanceof Error ? e.message : String(e) });
     res.end();

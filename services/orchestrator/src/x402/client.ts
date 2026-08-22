@@ -92,6 +92,16 @@ export interface RequestOptions {
    * since paying implies the caller already knows it has no usable result.
    */
   readonly payment?: string;
+  /**
+   * Skip the cache read: the caller intends a *new purchase*, not a retry.
+   *
+   * The cache cannot tell the two apart from the URL — a run retried after a
+   * network blip and a viewer deliberately buying the same resource again are
+   * byte-identical requests. Only the caller knows which one it is, so the
+   * caller says so. The 200 is still written to the cache either way, so a
+   * blip-retry *after* a fresh purchase remains protected.
+   */
+  readonly fresh?: boolean;
 }
 
 const defaultSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -130,8 +140,10 @@ export class X402Client {
     const key = cacheKey("GET", url);
 
     // A cached 200 short-circuits everything. This is the guard that stops a
-    // retry after a network blip from re-entering the payment path.
-    if (options.payment === undefined) {
+    // retry after a network blip from re-entering the payment path. `fresh`
+    // opts out for a caller making a deliberate repeat purchase — see
+    // `RequestOptions.fresh` for why the URL alone cannot distinguish the two.
+    if (options.payment === undefined && options.fresh !== true) {
       const cached = this.#cache.get(key);
       if (cached) {
         return {

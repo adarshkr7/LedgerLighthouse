@@ -51,7 +51,6 @@ export class TraceBuilder {
         seq: string;
         decisionHandle: Hex;
         commitTx: Hex;
-        signatures: readonly Hex[];
         approved?: boolean;
       }
     | undefined;
@@ -130,7 +129,6 @@ export class TraceBuilder {
           seq: String(spend["seq"]),
           decisionHandle: spend["decisionHandle"] as Hex,
           commitTx: spend["commitTx"] as Hex,
-          signatures: [],
         };
         this.append(
           "spend-requested",
@@ -176,7 +174,12 @@ export class TraceBuilder {
           pending
             ? {
                 decisionHandle: pending.decisionHandle,
-                covalidatorSignatures: pending.signatures,
+                // The bytes the orchestrator handed `finalizeDecision`, carried
+                // on the event itself. They used to arrive through a separate
+                // `attachSignatures` call that only the tests ever made, so
+                // every trace this system actually produced recorded an empty
+                // array — an attestation with no attestation in it.
+                covalidatorSignatures: hexArray(event["signatures"]),
                 commitTx: pending.commitTx,
                 finalizeTx: event["txHash"] as Hex,
                 goalId: String(event["goalId"]),
@@ -251,17 +254,6 @@ export class TraceBuilder {
     }
   }
 
-  /**
-   * Attaches the covalidator signatures for the spend currently in flight.
-   *
-   * Separate from `record` because the orchestrator's event stream does not
-   * carry them — they are bytes it passes to `finalizeDecision`, not something
-   * it reports. The demo driver hands them over explicitly.
-   */
-  attachSignatures(signatures: readonly Hex[]): void {
-    if (this.#pending) this.#pending = { ...this.#pending, signatures };
-  }
-
   build(): Trace {
     return {
       version: 1,
@@ -272,6 +264,19 @@ export class TraceBuilder {
       root: merkleRoot(this.#steps.map((step) => step.hash)),
     };
   }
+}
+
+/**
+ * Hex strings off an untyped event.
+ *
+ * Defensive because `IncomingEvent` is declared structurally — the trace package
+ * deliberately does not import the orchestrator's types, so nothing but this
+ * function stands between a malformed event and a step hash committing to
+ * whatever was in it.
+ */
+function hexArray(value: unknown): readonly Hex[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((v): v is Hex => typeof v === "string" && v.startsWith("0x"));
 }
 
 /** Stable digest of a whole trace — handy for a quick equality check. */

@@ -318,6 +318,46 @@ describe("cache prevents re-entering the payment path", () => {
   });
 });
 
+describe("fresh — a deliberate repeat purchase", () => {
+  it("goes back to the network instead of answering from cache", async () => {
+    const api = await serve([
+      { status: 200, body: { data: "first" } },
+      { status: 402, body: validTermsBody() },
+    ]);
+    const client = new X402Client();
+    const url = `${api.url}/r`;
+
+    await client.fetchResource(url);
+    const repeat = await client.fetchResource(url, { fresh: true });
+
+    // The 402 is the point: a repeat purchase must be allowed to reach the
+    // payment path, not be short-circuited into a free replay of the last 200.
+    expect(repeat.kind).toBe("payment-required");
+    expect(api.hits).toBe(2);
+  });
+
+  it("still writes its own 200 to the cache, so a later retry is protected", async () => {
+    const api = await serve([
+      { status: 200, body: { data: "first" } },
+      { status: 200, body: { data: "second" } },
+    ]);
+    const client = new X402Client();
+    const url = `${api.url}/r`;
+
+    await client.fetchResource(url);
+    await client.fetchResource(url, { fresh: true });
+
+    // Opting out of the read must not opt out of the write: a blip-retry after
+    // a fresh purchase still has to be served from memory rather than re-paying.
+    const retry = await client.fetchResource(url);
+    expect(retry.kind).toBe("ok");
+    if (retry.kind !== "ok") return;
+    expect(retry.fromCache).toBe(true);
+    expect(retry.body).toEqual({ data: "second" });
+    expect(api.hits).toBe(2);
+  });
+});
+
 describe("defaults", () => {
   it("ships a bounded retry policy", () => {
     expect(DEFAULT_RETRY.maxAttempts).toBeGreaterThan(1);

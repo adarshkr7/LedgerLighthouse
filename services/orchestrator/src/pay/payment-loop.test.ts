@@ -24,6 +24,8 @@ import {
   type SettleResponse,
 } from "@ntux402/shared";
 
+import { TraceBuilder } from "@ntux402/trace";
+
 import { X402Client } from "../x402/client.js";
 import { ScriptedAgent } from "../agent/scripted.js";
 import type { AttestedDecision, DecisionReader } from "../inco/reveal.js";
@@ -261,6 +263,54 @@ describe("PaymentLoop — happy path", () => {
     // One requestSpend total. A second would be paying twice for one resource.
     expect(relay.spends).toHaveLength(1);
     expect(api.paymentsSeen).toHaveLength(1);
+  });
+
+  /*
+   * The other half of the rule above, and the one the console depends on. A
+   * viewer clicking run a second time is buying the resource again, not
+   * retrying the first purchase — so the spend must reach the vault and debit
+   * the encrypted budget. Cached, it returned `free` and the budget never
+   * moved, which is precisely the draw-down the demo exists to show.
+   */
+  it("pays again when the caller declares a fresh purchase", async () => {
+    const loop = buildLoop();
+    await loop.fetchPaid("https://mock.local/resource/honest", 1n);
+    const second = await loop.fetchPaid("https://mock.local/resource/honest", 1n, {
+      fresh: true,
+    });
+
+    expect(second.kind).toBe("paid");
+    expect(relay.spends).toHaveLength(2);
+    expect(api.paymentsSeen).toHaveLength(2);
+    // Each purchase is its own spend record, so each is separately evaluated
+    // against the budget rather than replaying the first decision.
+    expect(relay.finalized.map((f) => f.seq)).toEqual([1n, 2n]);
+  });
+
+  /*
+   * The seam between this package and `@ntux402/trace`.
+   *
+   * The two are coupled structurally and on purpose — the verifier must not
+   * import the orchestrator — which means nothing but a test notices when an
+   * emitted field and the name the builder reads drift apart. That is exactly
+   * how every shipped trace came to carry `covalidatorSignatures: []` while the
+   * signatures sat in the finalize call one frame away.
+   */
+  it("emits signatures the trace builder lands in the attestation", async () => {
+    const signatures: Hex[] = [`0x${"33".repeat(65)}`, `0x${"44".repeat(65)}`];
+    decisions.decision = { approved: true, signatures };
+
+    const builder = new TraceBuilder({
+      goalId: 1n,
+      vault: `0x${"77".repeat(20)}`,
+      chainId: 84532,
+    });
+    await buildLoop().fetchPaid("https://mock.local/resource/honest", 1n, {
+      onEvent: (event) => builder.record(event as unknown as { type: string }),
+    });
+
+    const finalized = builder.build().steps.find((s) => s.type === "decision-finalized");
+    expect(finalized?.attestation?.covalidatorSignatures).toEqual(signatures);
   });
 });
 

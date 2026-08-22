@@ -79,6 +79,16 @@ export type PaymentEvent =
       readonly seq: bigint;
       readonly approved: boolean;
       readonly txHash: `0x${string}`;
+      /**
+       * The covalidator signatures submitted with this decision.
+       *
+       * Reported because the trace's attestation is only worth the name if it
+       * carries them: a reader holding the file can check them against Inco's
+       * verifier without asking this service for anything. They are already
+       * public — `e.reveal` made the handle readable by anyone — so emitting
+       * them discloses nothing that was not already fetchable.
+       */
+      readonly signatures: readonly `0x${string}`[];
     }
   | {
       readonly type: "orphan-recovered";
@@ -219,11 +229,30 @@ export class PaymentLoop {
    * The sink is therefore a parameter of the call, scoped to exactly the run
    * that owns it. Nothing needs unsubscribing, because nothing outlives the
    * frame.
+   *
+   * ## `options.fresh`, and why a repeat run must be able to pay again
+   *
+   * The response cache lives on the `X402Client`, which lives as long as the
+   * process. That is right for a *retry* — a run re-issued after a blip must
+   * not pay twice — and wrong for a *deliberate repeat purchase*, which is what
+   * every click of the console's run button is. Left to the cache, the second
+   * run of a resource returned `kind: "free"` before reaching `requestSpend`:
+   * no chain write, no debit, no settlement, and a budget that visibly did not
+   * move while the UI promised it would.
+   *
+   * The two are indistinguishable from the URL, so the caller declares which it
+   * is. Callers that re-issue a run on failure keep the default and stay
+   * protected; the server passes `fresh` because a human asked for the thing
+   * again and expects to be charged for it.
    */
   async fetchPaid(
     url: string,
     goalId: bigint,
-    options: { readonly onEvent?: (event: PaymentEvent) => void } = {},
+    options: {
+      readonly onEvent?: (event: PaymentEvent) => void;
+      /** Treat this as a new purchase rather than a retry. See above. */
+      readonly fresh?: boolean;
+    } = {},
   ): Promise<PaymentResult> {
     const { client, relay, signer, agent } = this.#config;
     const network = this.#config.network ?? NETWORK_BASE_SEPOLIA;
@@ -231,7 +260,10 @@ export class PaymentLoop {
     const emit = (event: PaymentEvent) => this.#emit(event, options.onEvent);
 
     emit({ type: "request", url, attempt: 1 });
-    const first: FetchOutcome = await client.fetchResource(url);
+    const first: FetchOutcome = await client.fetchResource(
+      url,
+      options.fresh === true ? { fresh: true } : {},
+    );
 
     if (first.kind === "ok") {
       emit({ type: "response-200", url, fromCache: first.fromCache });
@@ -336,6 +368,7 @@ export class PaymentLoop {
       seq: spend.seq,
       approved,
       txHash: finalizeTx,
+      signatures: poll.decision.signatures,
     });
 
     if (!approved) {

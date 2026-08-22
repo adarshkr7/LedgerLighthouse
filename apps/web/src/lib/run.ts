@@ -44,7 +44,15 @@ export type PaymentEvent =
   | { type: "spend-requested"; goalId: string; spend: SpendRequested }
   | { type: "reveal-polled"; attempts: number; latencyMs: number; approved: boolean }
   | { type: "reveal-timeout"; attempts: number; elapsedMs: number }
-  | { type: "decision-finalized"; goalId: string; seq: string; approved: boolean; txHash: string }
+  | {
+      type: "decision-finalized";
+      goalId: string;
+      seq: string;
+      approved: boolean;
+      txHash: string;
+      /** Covalidator signatures, so the downloaded trace carries its own proof. */
+      signatures: string[];
+    }
   | { type: "signer-refused"; status: number; reason: string }
   | { type: "signed"; nonce: string; value: string }
   | { type: "settled"; settlement: Settlement }
