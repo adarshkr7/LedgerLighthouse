@@ -20,8 +20,7 @@
  */
 
 import { useState } from "react";
-import { useConnect } from "wagmi";
-import { injected } from "wagmi/connectors";
+import { ConnectorAlreadyConnectedError, useAccount, useConnect } from "wagmi";
 
 import App from "./App.js";
 import { Landing } from "./landing/Landing.js";
@@ -40,21 +39,64 @@ function hasInjectedProvider(): boolean {
 export default function Root() {
   const [entered, setEntered] = useState(false);
   const [phase, setPhase] = useState<ConnectPhase>("idle");
-  const { connectAsync } = useConnect();
+  /*
+   * The connector comes from the config, and is never built here.
+   *
+   * This used to call `connectAsync({ connector: injected() })`. Passing a
+   * factory is legal — `connect` runs it through
+   * `config._internal.connectors.setup()` — but `setup` does not add the result
+   * to the connectors store. That left two live `injected` connectors over one
+   * `window.ethereum`: the config's, and this ad-hoc one, which was the one
+   * recorded in `state.connections`.
+   *
+   * wagmi's `change` handler ignores any event whose `uid` is not in
+   * `connections`, so with the wrong instance connected a `chainChanged` could
+   * be dropped on the floor and the stored connection would keep reporting the
+   * chain the wallet had left. `useConnectorChainId` in `App.tsx` no longer
+   * believes that record, but there is no reason to keep producing it.
+   */
+  const { connectAsync, connectors } = useConnect();
+  const { isConnected } = useAccount();
 
   async function enter(): Promise<void> {
-    if (!hasInjectedProvider()) {
+    // First is the config's own `injected()`; anything after it was discovered
+    // over EIP-6963. Both target the same extension, and the first preserves
+    // exactly what the old `injected()` call connected to.
+    const connector = connectors[0];
+    if (!hasInjectedProvider() || !connector) {
       // Nothing to prompt. The console's first step explains what to install,
       // which is a better place to recover than a dead end on the landing page.
       setEntered(true);
       return;
     }
 
+    /*
+     * Already connected is a reason to go in, not a reason to prompt.
+     *
+     * `WagmiProvider` reconnects on mount, so by the time anyone clicks, the
+     * config's connector is usually live already — and `connect` throws
+     * `ConnectorAlreadyConnectedError` when handed the connector that is
+     * currently `state.current`. The old code never hit that only because it
+     * built a fresh `injected()` every time, whose uid could never match.
+     * Using the registered connector is right, but it makes this case real,
+     * and it lands in the catch below as a refusal the user never made.
+     */
+    if (isConnected) {
+      setEntered(true);
+      return;
+    }
+
     setPhase("connecting");
     try {
-      await connectAsync({ connector: injected() });
+      await connectAsync({ connector });
       setEntered(true);
-    } catch {
+    } catch (e) {
+      // Raced with the on-mount reconnect: the connection exists, so this is
+      // the success path arriving by an unusual route.
+      if (e instanceof ConnectorAlreadyConnectedError) {
+        setEntered(true);
+        return;
+      }
       // Declined, or dismissed. Stay put and say so — silently advancing into
       // the console would imply a connection that does not exist.
       setPhase("declined");

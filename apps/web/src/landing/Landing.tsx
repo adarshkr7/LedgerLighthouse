@@ -72,13 +72,24 @@ const NAV_LINKS: ReadonlyArray<readonly [id: string, label: string]> = [
   ["questions", "Questions"],
 ];
 
-/** The stack, as bare wordmarks. No logo files, so the type is the mark. */
-const STACK = ["INCO", "BASE", "X402", "EIP-3009", "METAMASK", "VIEM"];
+/**
+ * The stack, as bare wordmarks. No logo files, so the type is the mark.
+ *
+ * AIsa was absent, which was simply wrong: it runs the inference the agent
+ * thinks with *and* sells the search the agent buys. Two load-bearing roles and
+ * no mention anywhere on this page.
+ */
+const STACK = ["INCO", "AISA", "BASE", "X402", "EIP-3009", "METAMASK", "VIEM"];
 
 /**
  * The three numbers, and only numbers the system can defend. "3" is the
- * signature count, "7" is the stage count, "0" is the number of keys the model
+ * signature count, "9" is the stage count, "0" is the number of keys the model
  * is ever handed. A fourth stat would have had to be invented.
+ *
+ * The stage count read 07 while `STAGE_IDS` in the dashboard held nine and the
+ * catalog copy promised a "nine-stage path". The seven belongs to the diagram
+ * below — seven *components* — and using one word for both counts is what let
+ * the page contradict the product it links to.
  */
 const STATS: ReadonlyArray<{
   readonly value: string;
@@ -86,7 +97,7 @@ const STATS: ReadonlyArray<{
   readonly label: string;
 }> = [
   { value: "03", label: "Wallet signatures per run" },
-  { value: "07", label: "Stages in the payment path" },
+  { value: "09", label: "Stages in the payment path" },
   { value: "00", label: "Keys the model ever holds" },
 ];
 
@@ -303,12 +314,12 @@ export function Landing({
           <div className="gf-grid gf-head">
             <SplitLines as="h2" className="gf-h2 gf-head-title" lines={["The payment path."]} />
             <p className="gf-mono gf-dim gf-head-tag">
-              <DecryptText text="// SEVEN STAGES" />
+              <DecryptText text="// SEVEN COMPONENTS" />
             </p>
           </div>
           <p className="gf-lede">
-            Seven stages, one of which can be compromised safely. Hover any stage for the line that
-            makes it matter.
+            Seven components, one of which can be compromised safely. Hover any of them for the
+            line that makes it matter.
           </p>
           <Flow />
         </div>
@@ -429,7 +440,7 @@ export function Landing({
           </div>
 
           <div className="gf-footer-base gf-mono gf-dim">
-            <span>Built with Inco</span>
+            <span>Built with Inco and AIsa</span>
             <span>Base Sepolia</span>
           </div>
         </div>

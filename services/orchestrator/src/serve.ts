@@ -163,6 +163,9 @@ const server = createOrchestratorServer({
   anchors,
   facilitatorUrl: optional("X402_FACILITATOR_URL"),
   agentSource: agentIsLive ? "llm" : "scripted",
+  // Only when it is real. The scripted stand-in has no model name, and the
+  // console draws the distinction rather than printing a placeholder.
+  ...(agentIsLive && model ? { agentModel: model } : {}),
   traceDir: optional("TRACE_STORE_PATH") ?? ".traces",
   log: (line) => log.info(line),
 });

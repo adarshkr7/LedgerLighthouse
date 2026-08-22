@@ -59,6 +59,15 @@ export interface OrchestratorServerOptions {
   readonly anchors: TraceAnchorClient | undefined;
   readonly facilitatorUrl: string | undefined;
   readonly agentSource: "llm" | "scripted";
+  /**
+   * The model behind `agentSource: "llm"`, when there is one.
+   *
+   * Reported so the console can say *which* model read the vendor's text
+   * rather than only that some model did. Undefined for the scripted
+   * stand-in, which is why it is optional rather than a string with a
+   * placeholder: "scripted" is not a model name.
+   */
+  readonly agentModel?: string | undefined;
   /** Where completed traces are written. Defaults to `.traces`. */
   readonly traceDir?: string | undefined;
   readonly log?: (line: string) => void;
@@ -185,6 +194,7 @@ export function createOrchestratorServer(options: OrchestratorServerOptions): Se
             // Rendered in the UI so a stubbed run can never be mistaken for a real one.
             settlement: options.facilitatorUrl ? "live" : "stub",
             agent: options.agentSource,
+            agentModel: options.agentModel,
           },
           cors,
         );

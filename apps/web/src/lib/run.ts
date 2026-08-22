@@ -41,6 +41,21 @@ export type PaymentEvent =
       decidedToRequest: boolean;
       source: "llm" | "scripted" | "scripted-fallback";
     }
+  /*
+   * The two orphan events, which this union was missing entirely.
+   *
+   * `#recoverOrphan` emits them when a goal still carries an unfinalized spend
+   * from a previous run — the state an interrupted or timed-out reveal leaves
+   * behind. Both were emitted by the orchestrator and declared by nothing here,
+   * so the SSE reader cast them to a variant that did not exist and every panel
+   * ignored them: a goal could be reported blocked, or a stranded spend
+   * finalized, and the console showed neither.
+   *
+   * `seq` is a `bigint` on the orchestrator and arrives as a decimal string —
+   * the SSE writer stringifies bigints on the way out.
+   */
+  | { type: "orphan-recovered"; seq: string; approved: boolean; txHash: `0x${string}` }
+  | { type: "orphan-abandoned"; seq: string; reason: string }
   | { type: "spend-requested"; goalId: string; spend: SpendRequested }
   | { type: "reveal-polled"; attempts: number; latencyMs: number; approved: boolean }
   | { type: "reveal-timeout"; attempts: number; elapsedMs: number }

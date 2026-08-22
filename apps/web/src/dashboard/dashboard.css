@@ -1319,6 +1319,25 @@
   animation: d-rise 0.3s var(--d-ease-quart) both;
 }
 
+/* The stated justification: prose, so it reads as prose. */
+.mi-reasoning {
+  margin: 0 0 8px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--d-fg);
+}
+
+/* The raw transcript, which runs long and rambles by nature — capped and
+   scrolled so it cannot push the structured projection below the fold, which
+   is the panel's actual argument. */
+.mi-transcript {
+  max-height: 220px;
+  overflow-y: auto;
+  margin-bottom: 8px;
+  white-space: pre-wrap;
+  opacity: 0.85;
+}
+
 .mi-anchor,
 .mi-busy,
 .mi-spinner {

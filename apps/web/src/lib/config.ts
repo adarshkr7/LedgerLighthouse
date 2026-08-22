@@ -67,6 +67,8 @@ export interface OrchestratorConfig {
   /** "stub" means payloads are validated but no money moves. Shown, never hidden. */
   readonly settlement: "live" | "stub";
   readonly agent: "llm" | "scripted";
+  /** The model that read the vendor's text. Absent when the agent is scripted. */
+  readonly agentModel?: string | undefined;
 }
 
 export async function fetchOrchestratorConfig(): Promise<OrchestratorConfig> {

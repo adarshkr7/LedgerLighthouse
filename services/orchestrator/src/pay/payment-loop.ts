@@ -529,10 +529,20 @@ export class PaymentLoop {
 
     const poll = await pollForDecision(this.#config.decisions, handle, { ...this.#config.poll });
     if (poll.kind === "timeout") {
+      /*
+       * `lastError` is the whole point of this message.
+       *
+       * Without it the operator is told the decision is unavailable and not one
+       * word about why, and "Inco's covalidator cannot reach an RPC" reads
+       * exactly like "the decision was never produced". `pollForDecision`
+       * returns it precisely so the caller can say which — see its header on
+       * why the timeout is an outcome rather than a throw — and dropping it
+       * here cost an hour of diagnosis that the log already had the answer to.
+       */
       return abandon(
         `goal ${goalId} is blocked by an unfinalized spend at seq ${pending}, and its decision ` +
           `is still not retrievable after ${poll.attempts} attempts. The goal cannot accept a new ` +
-          `spend until it is finalized.`,
+          `spend until it is finalized. Last error: ${poll.lastError ?? "none reported"}.`,
       );
     }
 

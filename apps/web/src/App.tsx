@@ -10,7 +10,14 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useAccount, useChainId, useConnect, useDisconnect, useSwitchChain, useWalletClient } from "wagmi";
+import {
+  useAccount,
+  useConnect,
+  useDisconnect,
+  useSwitchChain,
+  useWalletClient,
+  type Connector,
+} from "wagmi";
 import { createPublicClient, parseEventLogs, type Address, type Hex } from "viem";
 import { rpcTransport } from "@ntux402/shared/viem";
 import { Lightning } from "@inco/lightning-js/lite";
@@ -100,19 +107,202 @@ function parseUsdc(text: string): bigint | undefined {
   return BigInt(whole) * 1_000_000n + BigInt(frac.padEnd(6, "0").slice(0, 6));
 }
 
+/**
+ * The goal's expiry, as a date and a distance from now.
+ *
+ * Both, because neither alone answers the question being asked. A timestamp
+ * says when and makes the viewer do arithmetic; "in 6 days" says how long and
+ * hides which day. An expired goal is called expired rather than shown as a
+ * negative interval.
+ */
+function formatExpiry(expiry: bigint): string {
+  const when = new Date(Number(expiry) * 1000);
+  const stamp = when.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+  const days = Math.round((when.getTime() - Date.now()) / 86_400_000);
+  if (when.getTime() <= Date.now()) return `${stamp} · expired`;
+  return `${stamp} · in ${days === 0 ? "under a day" : days === 1 ? "1 day" : `${days} days`}`;
+}
+
 const clampBudget = (value: bigint) =>
   value < MIN_BUDGET ? MIN_BUDGET : value > MAX_BUDGET ? MAX_BUDGET : value;
 
 /** Opened on first render so the console is never in a no-resource state. */
 const DEFAULT_GOAL = DEMO_GOALS[0] as DemoGoal;
 
+/**
+ * What each precondition means when it is missing, in the viewer's terms.
+ *
+ * The three wallet steps all began `if (!config || !wallet || !address || ...)
+ * throw new Error("not ready")`, which put the word "not ready" on screen and
+ * nothing else. Four different faults arrived looking identical, and the one
+ * that actually happens most is the one a viewer would guess last: MetaMask
+ * locks itself after idle, `useWalletClient` goes undefined, and `useAccount`
+ * keeps reporting the cached address — so the console still shows a connected
+ * wallet and every signing step fails.
+ */
+const PRECONDITION_HINTS: Record<string, string> = {
+  config: "the orchestrator config has not loaded — check the service is reachable",
+  wallet:
+    "the wallet client is unavailable — it is locked, still reconnecting, or on the wrong network",
+  address: "no account is connected",
+  payer: "the payer key has not been minted yet",
+  goalId: "no goal is open",
+};
+
+/**
+ * Builds the error naming every absent precondition.
+ *
+ * Returns the error rather than throwing it, so the call site keeps the
+ * `if (!a || !b) throw notReady({ a, b })` shape. That is not styling: the
+ * `if` is what narrows `a` and `b` to non-undefined for the rest of the
+ * function, and a helper that threw would take the narrowing with it.
+ */
+/**
+ * The chain the wallet is *actually* on, asked of the connector itself.
+ *
+ * Neither of wagmi's two ready-made answers can be trusted here:
+ *
+ * - `useChainId()` reads `config.state.chainId`, which wagmi only ever moves
+ *   to a chain listed in `createConfig({ chains })` — "if chain is not
+ *   configured, then don't switch over to it". This config declares Base
+ *   Sepolia alone, so it reports 84532 no matter where the wallet is.
+ * - `useAccount().chainId` reads the stored connection, which is only as fresh
+ *   as the last `change` event wagmi managed to apply. `createConfig`'s handler
+ *   drops any `change` whose `uid` is absent from `state.connections`, so a
+ *   missed event leaves the record stale for good — observed reporting 84532
+ *   while the wallet sat on 23295.
+ *
+ * Both being wrong at once is precisely the state that produced "unlock
+ * MetaMask": `getConnectorClient` compared the *live* connector chain against
+ * the *clamped* 84532, threw `ConnectorChainMismatchError`, and left
+ * `useWalletClient` with no data and the UI with no way to say why.
+ *
+ * So this asks the connector, and subscribes to the EIP-1193 provider directly
+ * rather than to wagmi's re-broadcast of it — the same reasoning that already
+ * makes `openGoal` re-read `wallet.getChainId()` before it writes
+ * (IMPLEMENTATION.md §5.2), applied to the gate rather than only to the write.
+ */
+function useConnectorChainId(connector: Connector | undefined): number | undefined {
+  const [chainId, setChainId] = useState<number>();
+
+  useEffect(() => {
+    if (!connector) {
+      setChainId(undefined);
+      return;
+    }
+    let cancelled = false;
+    const read = () => {
+      void connector.getChainId().then(
+        (id) => {
+          if (!cancelled) setChainId(id);
+        },
+        () => {
+          // A locked wallet cannot answer. Undefined rather than stale: the
+          // caller separates "wrong chain" from "cannot say", and guessing
+          // here would put the wrong one of those on screen.
+          if (!cancelled) setChainId(undefined);
+        },
+      );
+    };
+    read();
+
+    type Eip1193 = {
+      on?: (event: string, listener: (value: unknown) => void) => void;
+      removeListener?: (event: string, listener: (value: unknown) => void) => void;
+    };
+    let provider: Eip1193 | undefined;
+    const onChainChanged = (value: unknown) => setChainId(Number(value));
+
+    void connector
+      .getProvider()
+      .then((p) => {
+        if (cancelled) return;
+        provider = p as Eip1193;
+        provider.on?.("chainChanged", onChainChanged);
+      })
+      .catch(() => {
+        // Nothing to subscribe to. `read` and the focus handler still cover it.
+      });
+
+    // A network is switched in the extension, which means leaving this tab and
+    // coming back. Re-reading on focus catches an event missed entirely.
+    window.addEventListener("focus", read);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("focus", read);
+      provider?.removeListener?.("chainChanged", onChainChanged);
+    };
+  }, [connector]);
+
+  return chainId;
+}
+
+function notReady(parts: Record<string, unknown>): Error {
+  const missing = Object.keys(parts).filter((key) => !parts[key]);
+  return new Error(
+    `Not ready: ${missing.map((key) => PRECONDITION_HINTS[key] ?? key).join("; ")}.`,
+  );
+}
+
+/**
+ * What a run inherited from the one before it.
+ *
+ * A goal keeps a spend "pending" between `requestSpend` and
+ * `finalizeDecision`, and a run that dies in between — the Inco reveal timing
+ * out is the way it happens — leaves that behind. The next run either clears it
+ * or is blocked by it, and either way that is not a fact about the request the
+ * viewer just made. So it sits outside the stage list rather than inside it.
+ */
+function OrphanNotice({ events }: { events: readonly PaymentEvent[] }) {
+  const abandoned = events.find((e) => e.type === "orphan-abandoned");
+  const recovered = events.find((e) => e.type === "orphan-recovered");
+
+  // Abandoned first: it is the one that stopped the run.
+  if (abandoned) {
+    return (
+      <div className="d-notice" data-tone="error">
+        <strong>Blocked by an unfinalized spend at seq {abandoned.seq}</strong>
+        <p>{abandoned.reason}</p>
+      </div>
+    );
+  }
+  if (recovered) {
+    return (
+      <div className="d-notice">
+        <strong>Cleared a stranded spend at seq {recovered.seq}</strong>
+        <p>
+          An earlier run committed that spend and stopped before recording the outcome. Its decision
+          was retrieved and finalized as {recovered.approved ? "approved" : "rejected"} before this
+          request went ahead — the goal could not have accepted a new spend until it was.
+        </p>
+      </div>
+    );
+  }
+  return null;
+}
+
 export default function App() {
-  const { address, isConnected } = useAccount();
-  const chainId = useChainId();
+  const { address, isConnected, chainId: connectionChainId, connector } = useAccount();
   const { connect, connectors } = useConnect();
   const { disconnect } = useDisconnect();
   const { switchChain } = useSwitchChain();
-  const { data: wallet } = useWalletClient();
+  /*
+   * The error matters as much as the data.
+   *
+   * `useWalletClient` resolves through `getConnectorClient`, which throws
+   * `ConnectorChainMismatchError` when the connector's live chain differs from
+   * the one it was asked for — so a wallet on the wrong network leaves
+   * `wallet` undefined by the very same route a locked wallet does. Discarding
+   * the error left the UI guessing between the two, and it guessed "locked",
+   * which is the one a user cannot fix by unlocking.
+   */
+  const { data: wallet, error: walletError, refetch: refetchWallet } = useWalletClient();
+
+  /* Live, from the connector — see `useConnectorChainId` for why neither of
+     wagmi's own answers will do. Falls back to the stored connection only
+     until that first read lands, so the network line is never blank. */
+  const liveChainId = useConnectorChainId(connector);
+  const chainId = liveChainId ?? connectionChainId;
 
   const [config, setConfig] = useState<OrchestratorConfig>();
   const [configError, setConfigError] = useState<string>();
@@ -144,6 +334,24 @@ export default function App() {
   const [error, setError] = useState<string>();
   /** Undefined until read. Checked so the UI never offers a transaction that must revert. */
   const [usdcBalance, setUsdcBalance] = useState<bigint>();
+  /**
+   * The goal record, straight from the vault.
+   *
+   * The dialog used to derive "calls remaining" as `CALLS_REMAINING -
+   * approvedCalls`, a counter that starts at 5 every time the page loads. On a
+   * goal resumed by id that is simply wrong — it reported five calls left on a
+   * goal with three — and it was wrong in the flattering direction, which is
+   * the worst way for a number next to a spending limit to be wrong.
+   *
+   * `goals()` is a public mapping getter, so it returns the struct's members
+   * as separate values rather than one tuple.
+   */
+  const [goalState, setGoalState] = useState<{
+    readonly callsRemaining: number;
+    readonly expiry: bigint;
+    readonly seq: bigint;
+    readonly open: boolean;
+  }>();
   /*
    * Which dialog is up, or none.
    *
@@ -169,6 +377,20 @@ export default function App() {
       setConfigError(e instanceof Error ? e.message : String(e)),
     );
   }, []);
+
+  /*
+   * Re-ask for the wallet client once the wallet reaches the right chain.
+   *
+   * `useWalletClient` caches with `staleTime: Infinity` and invalidates only
+   * when the *address* changes. A chain switch changes neither the address nor
+   * the query key — `useChainId()` is pinned at 84532 — so the failed query
+   * would sit there errored and `wallet` would stay undefined until a reload.
+   * That is what would turn "Switch network" into a button that appears to do
+   * nothing at all.
+   */
+  useEffect(() => {
+    if (liveChainId === CHAIN_ID && !wallet) void refetchWallet();
+  }, [liveChainId, wallet, refetchWallet]);
 
   // Read the connected account's USDC. Without this the UI happily offers a
   // transfer the account cannot cover, and the user's first sign of trouble is
@@ -198,7 +420,53 @@ export default function App() {
     };
   }, [config, address, funded]);
 
-  const wrongChain = isConnected && chainId !== CHAIN_ID;
+  /* `!== undefined` matters: a locked wallet answers nothing, and reporting
+     that as the wrong network would send the user off to switch a network that
+     is already correct. */
+  /*
+   * Re-read on `approvedCalls` so the dialog follows a run rather than a
+   * reload: every approved spend decrements `callsRemaining` on chain, and a
+   * figure that only refreshes on F5 is the same stale-counter bug in a slower
+   * costume. `closed` and `funded` are here for the same reason.
+   */
+  useEffect(() => {
+    if (!config || !goalId) {
+      setGoalState(undefined);
+      return;
+    }
+    let cancelled = false;
+    void reader
+      .readContract({
+        address: config.vaultAddress,
+        abi: policyVaultAbi,
+        functionName: "goals",
+        args: [BigInt(goalId)],
+      })
+      .then((row) => {
+        if (cancelled) return;
+        const [, , , , callsRemaining, expiry, seq, open] = row as readonly [
+          Address,
+          Address,
+          Address,
+          Address,
+          number,
+          bigint,
+          bigint,
+          boolean,
+        ];
+        setGoalState({ callsRemaining, expiry, seq, open });
+      })
+      .catch(() => {
+        // Unreadable is not zero. Undefined, so the dialog says "unavailable"
+        // rather than reporting a goal with no calls left.
+        if (!cancelled) setGoalState(undefined);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [config, goalId, approvedCalls, closed, funded]);
+
+  const wrongChain = isConnected && chainId !== undefined && chainId !== CHAIN_ID;
   const funding = budget + FUNDING_HEADROOM;
   const underfunded = usdcBalance !== undefined && usdcBalance < funding;
   const guard = useCallback(
@@ -230,7 +498,9 @@ export default function App() {
   // --- step 3: encrypt, then open ------------------------------------------
   const openGoal = () =>
     guard("Encrypting budget and opening the goal…", async () => {
-      if (!config || !wallet || !address || !payer) throw new Error("not ready");
+      if (!config || !wallet || !address || !payer) {
+        throw notReady({ config, wallet, address, payer });
+      }
 
       // Re-read the chain rather than trusting connection-time state: MetaMask
       // caches a stale chainId after a manual network change (IMPLEMENTATION.md §5.2).
@@ -306,7 +576,9 @@ export default function App() {
   // --- step 4: fund the payer ----------------------------------------------
   const fundPayer = () =>
     guard("Funding the ephemeral payer…", async () => {
-      if (!config || !wallet || !address || !payer) throw new Error("not ready");
+      if (!config || !wallet || !address || !payer) {
+        throw notReady({ config, wallet, address, payer });
+      }
       const hash = await wallet.writeContract({
         address: config.usdcAddress,
         abi: usdcAbi,
@@ -343,7 +615,9 @@ export default function App() {
    */
   const returnFunds = () =>
     guard("Closing the goal and returning the balance…", async () => {
-      if (!config || !wallet || !address || !goalId) throw new Error("not ready");
+      if (!config || !wallet || !address || !goalId) {
+        throw notReady({ config, wallet, address, goalId });
+      }
 
       // Same reasoning as openGoal: MetaMask caches a stale chainId.
       const live = await wallet.getChainId();
@@ -840,6 +1114,13 @@ export default function App() {
                 })()
               : null}
 
+            {/* Above the stages, because it explains something that happened
+                *before* them: a spend this run inherited rather than made. The
+                stage list has no room for it — it describes one request — and
+                without this the recovery is invisible and the block looks like
+                an unexplained failure. */}
+            <OrphanNotice events={events} />
+
             {/* Rendered from the first paint, not on the first event. The
                 stages are a fixed list precisely so the shape of the flow is
                 legible before anything has happened. */}
@@ -861,7 +1142,7 @@ export default function App() {
           </header>
           <div className="d-pane-body">
             {started ? (
-              <ModelInput events={events} running={running} />
+              <ModelInput events={events} running={running} model={config?.agentModel} />
             ) : (
               <p className="d-caption">
                 The vendor&apos;s own words land here once a run starts — including the ones written
@@ -957,7 +1238,13 @@ export default function App() {
               <button
                 type="button"
                 className="d-btn d-btn-block"
-                disabled={!payer || !!busy}
+                // `wallet` too, not just `payer`. This step signs a transaction,
+                // and `useWalletClient` yields undefined whenever MetaMask is
+                // locked or mid-reconnect — a state a session left open
+                // overnight comes back in. Gated on the payer alone, the button
+                // stayed enabled through it and the click bought a failed run
+                // instead of a signing prompt.
+                disabled={!payer || !wallet || !isConnected || wrongChain || !!busy}
                 onClick={() => {
                   void openGoal();
                   closeModal();
@@ -968,6 +1255,18 @@ export default function App() {
               {!payer ? (
                 <p className="d-hint">
                   Mint the payer first — its address is a field of the goal record.
+                </p>
+              ) : wrongChain ? (
+                <p className="d-hint">
+                  Wallet is on chain {chainId} — switch it to Base Sepolia ({CHAIN_ID}) to open a
+                  goal. Until it moves, the wallet client is unavailable and the budget cannot be
+                  encrypted.
+                </p>
+              ) : !isConnected || !wallet ? (
+                <p className="d-hint">
+                  Wallet not available — unlock MetaMask or reconnect. Encrypting the budget needs
+                  it: the ciphertext is bound to your address.
+                  {walletError ? ` (${walletError.message})` : ""}
                 </p>
               ) : null}
             </>
@@ -1016,10 +1315,10 @@ export default function App() {
         title="Goal detail"
         tag={goalId ? `Goal #${goalId}` : undefined}
       >
-        {/* TODO(needs backend): the vault exposes no goal title, and the live
-            `callsRemaining` / `expiry` would each need a `goals()` read that
-            does not exist in this component. Shown values are the ones this
-            session actually set. */}
+        {/* `callsRemaining` and `expiry` are read from the vault, so they hold
+            for a goal opened in another session. There is still no goal title:
+            the record has no such field, so there is nothing to read and the
+            dialog is titled by id instead. */}
         <Field label="Opened with">
           {openedHere ? (
             `${formatUsdc(budget)} USDC`
@@ -1031,9 +1330,19 @@ export default function App() {
         </Field>
         <Field label="Per-call cap">{formatUsdc(PER_CALL_CAP)} USDC · public</Field>
         <Field label="Calls remaining">
-          {Math.max(0, CALLS_REMAINING - approvedCalls)} of {CALLS_REMAINING}
+          {goalState ? (
+            `${goalState.callsRemaining} of ${CALLS_REMAINING}`
+          ) : (
+            <span className="d-muted">unavailable</span>
+          )}
         </Field>
-        <Field label="Expiry">7 days from opening</Field>
+        <Field label="Expiry">
+          {goalState ? (
+            formatExpiry(goalState.expiry)
+          ) : (
+            <span className="d-muted">unavailable</span>
+          )}
+        </Field>
         <Field label="Last funded">
           {funded ? `${formatUsdc(funding)} USDC` : <span className="d-muted">—</span>}
         </Field>

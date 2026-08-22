@@ -27,6 +27,27 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 
 import type { PaymentEvent } from "../lib/run.js";
 
+/**
+ * How the orchestrator joins the two halves of the model's answer.
+ *
+ * `llm.ts` emits `${decision.reasoning}\n\n--- model's own reasoning ---\n${reasoning}`:
+ * the justification the model chose to state, then the thinking it did to get
+ * there. They are very different artifacts and deserve different framing, so
+ * they are split rather than dumped as one block. A response without the
+ * marker — the scripted agent's, or a model that returned no trace — is all
+ * summary and no transcript, which `split` handles by returning one part.
+ */
+const REASONING_MARKER = "\n\n--- model's own reasoning ---\n";
+
+function splitReasoning(text: string): { summary: string; transcript: string | undefined } {
+  const at = text.indexOf(REASONING_MARKER);
+  if (at === -1) return { summary: text.trim(), transcript: undefined };
+  return {
+    summary: text.slice(0, at).trim(),
+    transcript: text.slice(at + REASONING_MARKER.length).trim() || undefined,
+  };
+}
+
 function find<T extends PaymentEvent["type"]>(
   events: readonly PaymentEvent[],
   type: T,
@@ -37,12 +58,23 @@ function find<T extends PaymentEvent["type"]>(
 export function ModelInput({
   events,
   running,
+  model,
 }: {
   events: readonly PaymentEvent[];
   running: boolean;
+  /**
+   * The model that produced the reasoning, from the orchestrator's config.
+   *
+   * The bar reported `source` alone, so a live run was labelled "llm" — true,
+   * and no help at all in telling one model from another, or a real gateway
+   * from a stand-in. Optional because the scripted agent has no model name.
+   */
+  model?: string | undefined;
 }) {
   const reasoning = find(events, "agent-reasoning");
   const required = find(events, "payment-required");
+
+  const { summary, transcript } = splitReasoning(reasoning?.reasoning ?? "");
 
   const [showStructured, setShowStructured] = useState(false);
   const [anchor, setAnchor] = useState({ x: 0, y: 0 });
@@ -171,7 +203,11 @@ export function ModelInput({
                     ? "Agent complied"
                     : "Agent declined"}
               </span>
-              {reasoning ? <span className="mi-source">{reasoning.source}</span> : null}
+              {reasoning ? (
+                <span className="mi-source">
+                  {reasoning.source === "llm" && model ? model : reasoning.source}
+                </span>
+              ) : null}
               <span className="mi-sep" aria-hidden="true" />
               <button
                 type="button"
@@ -180,7 +216,7 @@ export function ModelInput({
                 onClick={() => setShowStructured((v) => !v)}
               >
                 <BracesIcon />
-                {showStructured ? "Hide structured" : "Structured"}
+                {showStructured ? "Hide reasoning" : "Reasoning"}
               </button>
             </>
           )}
@@ -190,6 +226,22 @@ export function ModelInput({
 
     {showStructured && !running ? (
       <div className="mi-structured">
+        {/* The reasoning first, because it is the thing a viewer came to see:
+            the agent reading attacker-controlled prose and saying why it
+            acted. `llm.ts` calls it "the demo's most valuable artifact" and
+            it was going to the terminal only. */}
+        {summary ? (
+          <>
+            <span className="d-label">Why the agent said it decided this</span>
+            <p className="mi-reasoning">{summary}</p>
+          </>
+        ) : null}
+        {transcript ? (
+          <>
+            <span className="d-label">The model's own reasoning, verbatim</span>
+            <pre className="d-code mi-transcript">{transcript}</pre>
+          </>
+        ) : null}
         <span className="d-label">What the policy acts on</span>
         <pre className="d-code">
           {reasoning ? JSON.stringify(reasoning.modelSafeTerms, null, 2) : "—"}

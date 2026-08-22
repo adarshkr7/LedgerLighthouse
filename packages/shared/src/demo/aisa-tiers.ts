@@ -81,8 +81,8 @@ export const SEARCH_TIERS: Readonly<Record<SearchTierName, SearchTier>> = {
     measuredCostAtomic: "8000", // $0.008
     priceAtomic: "10000", // 0.01 USDC
     observedLatencyMs: 3600,
-    label: "Web search",
-    blurb: "Live results from a real search API — the ordinary case",
+    label: "AIsa web search",
+    blurb: "Live results from AIsa's search API — the ordinary case",
   },
   deep: {
     name: "deep",
@@ -91,7 +91,7 @@ export const SEARCH_TIERS: Readonly<Record<SearchTierName, SearchTier>> = {
     measuredCostAtomic: "16000", // $0.016
     priceAtomic: "20000", // 0.02 USDC
     observedLatencyMs: 9800,
-    label: "Deep web search",
+    label: "AIsa deep search",
     blurb: "Advanced depth, more sources — twice the price, three times the wait",
   },
 } as const;
