@@ -13,6 +13,10 @@
     "./node": {
       "types": "./dist/node/index.d.ts",
       "default": "./dist/node/index.js"
+    },
+    "./viem": {
+      "types": "./dist/viem/index.d.ts",
+      "default": "./dist/viem/index.js"
     }
   },
   "scripts": {
@@ -24,5 +28,8 @@
     "@types/node": "^26.2.0",
     "typescript": "^5.9.2",
     "vitest": "^4.1.10"
+  },
+  "dependencies": {
+    "viem": "^2.55.11"
   }
 }

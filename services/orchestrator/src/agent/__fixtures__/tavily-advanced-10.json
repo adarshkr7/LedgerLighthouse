@@ -1,0 +1,93 @@
+{
+  "query": "base sepolia usdc contract address",
+  "follow_up_questions": null,
+  "answer": null,
+  "images": [],
+  "results": [
+    {
+      "url": "https://sepolia.basescan.org/token/0x5deac602762362fe5f135fa5904351916053cf70",
+      "title": "ERC-20 Token | Address: 0x5deac602...16053cf70",
+      "content": "Base Sepolia USDC (USDC) Total Supply 1,000,000,000 USDC. Token Contract (WITH 18 Decimals) A token is a representation of an on-chain or off-chain asset. as",
+      "score": 0.7959917,
+      "raw_content": null,
+      "id": "35f93e-00"
+    },
+    {
+      "url": "https://sepolia.basescan.org/token/0x26df8d79c4faca88d0212f0bd7c4a4d1e8955f0e?a=0xc364914bdc210b9f97926894029d340f4c8d727c",
+      "title": "ERC-20 Token | Address: 0x26df8d79...1e8955f0e",
+      "content": "Token USDC (USDC) ERC-20. Total Supply 1,148,105,000 USDC. Token Contract (WITH 18 Decimals) can be attached to this address. 2026 (BASE-Sepolia-A)",
+      "score": 0.7892503,
+      "raw_content": null,
+      "id": "196d7a-01"
+    },
+    {
+      "url": "https://orderly.network/docs/build-on-omnichain/addresses",
+      "title": "Smart Contract Addresses - Orderly",
+      "content": "## ​ Base\n\n| Contract Name | Mainnet Address | Testnet Address (Sepolia) |\n --- \n| USDC | 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913 | 0x036CbD53842c5426634e7929541eC2318f3dCF7e |\n| Vault | 0x816f722424b49cf1275cc86da9840fbd5a6167e9 | 0xdc7348975aE9334DbdcB944DDa9163Ba8406a0ec |\n| VaultProxyAdmin | 0xA2eA0a58b083c492AdC91A687FAc8B53AdB7c0Fd | 0xe014a38501cF2B8139dED0b60Ed4FbD02C113b59 |\n| VaultCrossChainManager | 0xa0a07a78c7d31E6f8698F48Fc9219f9a3030f38C | 0xc8E38C1Fd1422f49DB592BAe619080EA5Deb50e0 |\n| CrossChainRelay | 0x173B47eDBeCa665125edc24C509bfE545CDA60a9 | 0x25eB1e506608ab7eb8f91802e1dae6963848ED25 |\n\n## ​ Mantle [...] ## ​ Optimism\n\n| Contract Name | Mainnet Address | Testnet Address (Sepolia) |\n --- \n| USDC | 0x0b2c639c533813f4aa9d7837caf62653d097ff85 | 0x5fd84259d66Cd46123540766Be93DFE6D43130D7 |\n| Vault | 0x816f722424b49cf1275cc86da9840fbd5a6167e9 | 0xEfF2896077B6ff95379EfA89Ff903598190805EC |\n| VaultProxyAdmin | 0xA2eA0a58b083c492AdC91A687FAc8B53AdB7c0Fd | 0xEfD0cbED3f520cb59c6Cf8cE428a44978C18F8Fb |\n| VaultCrossChainManager | 0xa0a07a78c7d31E6f8698F48Fc9219f9a3030f38C | 0x6C14bf583C142B66EC59F8fc725B255e3a94BAA3 |\n| CrossChainRelay | 0x173B47eDBeCa665125edc24C509bfE545CDA60a9 | 0x09a766D6bcA1Fd8FdB6c09b76084719cF94d041b |\n\n## ​ Base [...] | Contract Name | Mainnet Address | Testnet Address (Sepolia) |\n --- \n| USDC | 0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48 | 0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238 |\n| USDT | 0xdAC17F958D2ee523a2206206994597C13D831ec7 | 0x01a6810727db185bbf7f30ec158c3ac8b8112627 |\n| YUSD | 0x4274cd7277c7bb0806bd5fe84b9adae466a8da0a |\n| deUSD | 0x15700b564ca08d9439c58ca5053166e8317aa138 |\n| WBTC | 0x2260fac5e5542a773aa44fbcfedf7c193bc2c599 |\n| USD1 | 0x8d0d000ee44948fc98c9b98a4fa4921476f08b0d |\n| Vault | 0x816f722424b49cf1275cc86da9840fbd5a6167e9 | 0x0EaC556c0C2321BA25b9DC01e4e3c95aD5CDCd2f |\n| VaultProxyAdmin | 0xa2ea0a58b083c492adc91a687fac8b53adb7c0fd | 0xa3BB1F1Aa238AF13528965f069fD0a4F1595d8e9 |",
+      "score": 0.75852895,
+      "raw_content": null,
+      "id": "5f1ab3-02"
+    },
+    {
+      "url": "https://sepolia.etherscan.io/token/0xf08a50178dfcde18524640ea6618a1f965821715",
+      "title": "ERC-20 Token | Address: 0xf08a5017...965821715",
+      "content": "Sepolia Testnet\n\n Site Settings\n\n Ethereum Mainnet\n\n Sepolia Testnet\n Hoodi Testnet\n\n Beacon Chain ETH2\n\n# Token\n\n USD Coin (USDC)\n\n### Overview\n\n#### Max Total Supply\n\n2,614,516,000 USDC\n\n#### Holders\n\n27,175\n\n#### Total Transfers\n\n-\n\n### Market\n\n#### Onchain Market Cap\n\n-\n\n#### Circulating Supply Market Cap\n\n-\n\n### Other Info\n\n#### Token Contract (WITH 6 Decimals)\n\n0xf08a50178dfcde18524640ea6618a1f965821715\n\n Holders\n Transfers\n Contract\n\nLoading...\n\nLoading\n\nLoading...\n\nLoading\n\nLoading...\n\nLoading\n\nClick here to  update the token information / general information\n\n| # | Exchange | Pair | Price | 24H Volume | % Volume |\n ---  ---  --- |\n\nAre you the contract creator? Verify and Publish your contract source code today!\n\nDecompile Bytecode [...] 40161045d90610e67565b6105e46001600160a01b0384168383610b89565b505050565b6001600160a01b03871661062e5760405162461bcd60e51b815260206004820152600c60248201526b7a65726f206164647265737360a01b604482015260640161045d565b834211158061063b575083155b61067b5760405162461bcd60e51b81526020600482015260116024820152701c195c9b5a5d081a5cc8195e1c1a5c9959607a1b604482015260640161045d565b6001600160a01b03871660009081526004602052604081208054611901917ff5ef049a10050cded82c82ab29872d516ad9ee1723bb9180c144bf9fd54f8a1f917f6e71edae12b1b97f4d1f60370fef10105fa2faae0126114a169c64845d6126c9918c918c918c9190886106ee83610e8a565b909155506040805160208101969096526001600160a01b0394851690860152929091166060840152608083015260a082015260c0810188905260e001604051602081830303815290604052805190602001206040516020016107729392919060f09390931b60016 [...] 1565b6101d96102f2366004610d7d565b6104dc565b61018c610305366004610d17565b61052a565b61018c610318366004610d17565b610599565b61018c61032b366004610d7d565b60036020526000908152604090205460ff1681565b6101d961034e366004610d41565b6105a6565b6101d9610361366004610d98565b6105e9565b6101a5610374366004610e0b565b600260209081526000928352604080842090915290825290205481565b6101d961039f366004610d7d565b61084d565b60006103b1338484610899565b5060015b92915050565b6001600160a01b038316600090815260026020908152604080832033845290915281205460001914610420576001600160a01b03841660009081526002602090815260408083203384529091528120805484929061041a908490610e54565b90915550505b61042b8484846109bd565b949350505050565b6005546001600160a01b031633146104665760405162461bcd60e51b815260040161045d90610e67565b60405180910390fd5b6001600160a01b031660009",
+      "score": 0.69399214,
+      "raw_content": null,
+      "id": "7fa9c6-03"
+    },
+    {
+      "url": "https://developers.circle.com/stablecoins/usdc-contract-addresses",
+      "title": "USDC contract addresses - Circle Docs",
+      "content": "| Blockchain | Token Address |\n --- |\n| Algorand Testnet | `10458941` |\n| Aptos Testnet | `0x69091fbab5f7d635ee7ac5098cf0c1efbe31d68fec0f2cd565e8d168daf52832` |\n| Arbitrum Sepolia | `0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d` |\n| Arc Testnet | `0x3600000000000000000000000000000000000000` |\n| Avalanche Fuji | `0x5425890298aed601595a70AB815c96711a31Bc65` |\n| Base Sepolia | `0x036CbD53842c5426634e7929541eC2318f3dCF7e` |\n| Celo Sepolia | `0x01C5C0122039549AD1493B8220cABEdD739BC44E` |\n| Codex Testnet | `0x6d7f141b6819C2c9CC2f818e6ad549E7Ca090F8f` |\n| Cronos Testnet | `0xEb33dc5fac03833e132593659e1dE7256aB59794` |\n| Ethereum Sepolia | `0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238` |\n| EDGE Testnet | `0x2d9F7CAD728051AA35Ecdc472a14cf8cDF5CFD6B` |\n| Hedera Testnet | `0.0.429274` | [...] | Polkadot Westmint | `Asset ID 31337` |\n| Polygon PoS Amoy | `0x41E94Eb019C0762f9Bfcf9Fb1E58725BfB0e7582` |\n| Sei Testnet | `0x4fCF1784B31630811181f670Aea7A7bEF803eaED` |\n| Solana Devnet | `4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU` |\n| Sonic Testnet | `0x0BA304580ee7c9a980CF72e55f5Ed2E9fd30Bc51` |\n| Sonic Blaze Testnet | `0xA4879Fed32Ecbef99399e5cbC247E533421C4eC6` |\n| Starknet Sepolia | `0x0512feAc6339Ff7889822cb5aA2a86C848e9D392bB0E3E237C008674feeD8343` |\n| Stellar Testnet | `USDC-GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5` |\n| Sui Testnet | `0xa1ec7fc00a6f40db9693ad1415d0c193ad3906494428cf252621037bd7117e29::usdc::USDC` |\n| Unichain Sepolia | `0x31d0220469e10c4E71834a79b1f276d740d3768F` |\n| World Chain Sepolia | `0x66145f38cBAC35Ca6F1Dfb4914dF98F1614aeA88` | [...] | Hedera Testnet | `0.0.429274` |\n| HyperEVM Testnet | `0x2B3370eE501B4a559b57D449569354196457D8Ab` |\n| Injective Testnet | `0x0C382e685bbeeFE5d3d9C29e29E341fEE8E84C5d` |\n| Ink Testnet | `0xFabab97dCE620294D2B0b0e46C68964e326300Ac` |\n| Linea Sepolia | `0xFEce4462D57bD51A6A552365A011b95f0E16d9B7` |\n| Monad Testnet | `0x534b2f3A21130d7a60830c2Df862319e593943A3` |\n| Morph Hoodi Testnet | `0x7433b41C6c5e1d58D4Da99483609520255ab661B` |\n| NEAR Testnet | `3e2210e1184b45b64c8a434c0a7e7b23cc04ea7eb7a6c3c32520d03d4afcb8af` |\n| Noble Testnet | `uusdc` |\n| OP Sepolia | `0x5fd84259d66Cd46123540766Be93DFE6D43130D7` |\n| Pharos Testnet | `0xcfC8330f4BCAB529c625D12781b1C19466A9Fc8B` |\n| Plume Testnet | `0xcB5f30e335672893c7eb944B374c196392C19D18` |\n| Polkadot Westmint | `Asset ID 31337` |",
+      "score": 0.68140936,
+      "raw_content": null,
+      "id": "cbbfe7-04"
+    },
+    {
+      "url": "https://sepolia.etherscan.io/address/0x8267cf9254734c6eb452a7bb9aaf97b392258b21",
+      "title": "Address: 0x8267cf92...392258b21 | Etherscan Sepolia",
+      "content": "Loading...\n\nLoading\n\nLoading...\n\nLoading\n\nLoading...\n\nLoading\n\nLoading...\n\nLoading\n\nLoading...\n\nLoading\n\nLoading...\n\nLoading\n\nLoading...\n\nLoading\n\n| Transaction Hash | Block | Age | Implementation | Event | Status |\n ---  ---  --- |\n\n| Proxy Contract | Transaction Hash | Block | Age | Proxy Type |\n ---  --- \n\n| Block |  | Uncle Number | Difficulty | Gas Used | Reward |\n ---  ---  --- |\n\nView All Uncles\n\nLoading...\n\nLoading\n\n 0x8267cF9254734C6Eb452a7bb9AAF97B392258b21\n\nLoading...\n\nLoading\n\nLoading...\n\nLoading\n\n Download: [CSV Export  ]\n\nA contract address hosts a smart contract, which is a set of code stored on the blockchain that runs when predetermined conditions are met. Learn more about addresses in our Knowledge Base.\n\n###### Address QR Code [...] Sepolia Testnet\n\n Site Settings\n\n Ethereum Mainnet\n\n Sepolia Testnet\n Hoodi Testnet\n\n Beacon Chain ETH2\n\nAPI\n\nCheck Previous Balance\n\n#### ETH Balance\n\n0 ETH\n\n#### Token Holdings\n\nCould not find any matches!\n\n ERC-20 Tokens (8) 0x5555.com\n\n    ERC-20: 0x55... (0x5555...)\n\n    0.55555555 0x5555.com\n\n    $0.00\n\n   RareTron.io\n\n    ERC-20: Rare... (RareTr...)\n\n    6,666,666 RareTron.io\n\n    $0.00\n\n   Visit  Rocketpool.bond\n\n    ERC-20: Rock... (Visit ...)\n\n    15,000 Visit Rocketpool.bond\n\n    $0.00\n\n   USDC\n\n    ERC-20: USDC (USDC)\n\n    10,000 USDC\n\n    $0.00\n\n   USDC\n\n    ERC-20: USDC (USDC)\n\n    60 USDC\n\n    $0.00\n\n   USDC\n\n    ERC-20: USDC (USDC)\n\n    60 USDC\n\n    $0.00\n\n   VanityTron.io\n\n    ERC-20: Vani... (Vanity...)\n\n    6,666,666 VanityTron.io\n\n    $0.00\n\n   VanityTrx.org [...] 6,666,666 VanityTron.io\n\n    $0.00\n\n   VanityTrx.org\n\n    ERC-20: Vani... (Vanity...)\n\n    999,999 VanityTrx.org\n\n    $0.00\n\n### More Info\n\n#### ContractCreator\n\n0xae6444fE...7C5DB8F2D\") |  3 yrs 289 days ago\n\n#### TokenTracker\n\nERC-20: USDC (USDC)\n\n### Multichain Info\n\nN/A\n\n Transactions\n Internal Transactions\n Token Transfers (ERC-20)\n Contract\n Events\n\nLatest 25 from a total of 2,768 transactions\n\n View Completed Txns\n View Pending Txns\n View Failed Txns\n View Outgoing Txns\n View Incoming Txns\n View Contract Creation",
+      "score": 0.62633044,
+      "raw_content": null,
+      "id": "54771e-05"
+    },
+    {
+      "url": "https://help.coinify.com/hc/en-us/articles/10101842554012-Sandbox-testing-Setting-up-a-Sepolia-testnet-and-USDC-token",
+      "title": "Sandbox testing: Setting up a Sepolia testnet and USDC token - Coinify",
+      "content": "Coinify Help Center home page\n\n# Sandbox testing: Setting up a Sepolia testnet and USDC token\n\nIn this article we will:\n\nThe goal is to enable to you complete the Trades in Coinify's Sandbox environment and to receive the testnet USDC to your wallet.\n\nFollow the next steps to get set up:\n\n`Add to Metamask`\n\n4. Now, we will add Coinify's USDC token contract to the Sepolia testnet:\n\n`+ Import tokens`\n\n`0x746d7b1dfcD1Cc2f4b7d09F3F1B9A21764FBeB33`\n`Token contract address`\n`Add custom token`\n\n`Import token`\n\nAnd that’s about it. Use your Metamask wallet address (displayed on the top of the browser extension) and provide it as a destination address when creating a trade in the Sandbox environment:\n\nOnce the trade completes, you’ll receive the relevant webhook and Sepolia USDC in your wallet. [...] ## Related articles",
+      "score": 0.61307496,
+      "raw_content": null,
+      "id": "6d0637-06"
+    },
+    {
+      "url": "https://docs.base.org/base-chain/network-information/base-contracts",
+      "title": "Contract Addresses",
+      "content": "Most L2 predeploy addresses are the same on Base Mainnet and Base Sepolia. Network-specific L2 contracts, such as OptimismMintableERC20Factory, are listed with their respective addresses in each table above.\n\n## ​ L1 Contract Addresses\n\n### ​ Ethereum Mainnet [...] ### ​ Base Testnet (Sepolia) [...] ### ​ Base Testnet (Sepolia)",
+      "score": 0.5758033,
+      "raw_content": null,
+      "id": "dde1b3-07"
+    },
+    {
+      "url": "https://www.reddit.com/r/ethdev/comments/18hqany/how_to_get_usdc_in_sepolia",
+      "title": "How to get USDC in Sepolia? : r/ethdev",
+      "content": "There's not a \"real\" USDC on Goerli or Sepolia. You can deploy your own contracts to testnets and mint as much of a token as you want. If you're",
+      "score": 0.49729064,
+      "raw_content": null,
+      "id": "f65797-08"
+    },
+    {
+      "url": "https://base-sepolia.blockscout.com/token/0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+      "title": "Base Sepolia USDC token details",
+      "content": "USDC token on Base Sepolia — view holders, transfers, total supply and analytics on the Base Sepolia (Sepolia) Explorer. Total supply 89,299,677,063.604",
+      "score": 0.3681336,
+      "raw_content": null,
+      "id": "223962-09"
+    }
+  ],
+  "response_time": 2.19,
+  "usage": {
+    "credits": 2
+  },
+  "request_id": "fe2262a5-7621-44a4-9b05-70dec2f7062d"
+}

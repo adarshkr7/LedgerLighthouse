@@ -61,6 +61,11 @@ console.log(`${DIM}ok${OFF}`);
 const services = [
   { name: "signer", filter: "@ntux402/signer", script: "start" },
   { name: "mock-api", filter: "@ntux402/mock-api", script: "start" },
+  // Only when a vendor key is configured. Without one the service refuses to
+  // start, and a dead pane every `pnpm dev` teaches people to ignore panes.
+  ...(config.AISA_VENDOR_KEY
+    ? [{ name: "vendor-aisa", filter: "@ntux402/vendor-aisa", script: "start" }]
+    : []),
   ...(config.X402_FACILITATOR_URL
     ? [{ name: "facilitator", filter: "@ntux402/facilitator", script: "start" }]
     : []),

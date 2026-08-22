@@ -26,6 +26,7 @@ import {
 import { baseSepolia } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
 import { policyVaultAbi } from "@ntux402/shared";
+import { rpcTransport } from "@ntux402/shared/viem";
 
 export interface SpendRequested {
   readonly seq: bigint;
@@ -70,12 +71,12 @@ export class VaultRelay {
     this.#chainId = config.chainId;
     this.#public = createPublicClient({
       chain: baseSepolia,
-      transport: http(config.rpcUrl),
+      transport: rpcTransport(config.rpcUrl),
     }) as PublicClient;
     this.#wallet = createWalletClient({
       account,
       chain: baseSepolia,
-      transport: http(config.rpcUrl),
+      transport: rpcTransport(config.rpcUrl),
     });
   }
 
@@ -196,6 +197,33 @@ export class VaultRelay {
       throw new Error(`finalizeDecision reverted (${hash})`);
     }
     return { txHash: hash, gasUsed: receipt.gasUsed };
+  }
+
+  /**
+   * The seq awaiting finalisation for this goal, or 0 when none is.
+   *
+   * Non-zero means a previous run committed a debit and never came back to
+   * finalise it. The vault refuses every later `requestSpend` with
+   * `SpendPending()` until that is cleared, so this is the read that tells the
+   * loop whether it is about to hit a wall.
+   */
+  async pendingSeq(goalId: bigint): Promise<bigint> {
+    return (await this.#public.readContract({
+      address: this.#vault,
+      abi: policyVaultAbi,
+      functionName: "pendingSeq",
+      args: [goalId],
+    })) as bigint;
+  }
+
+  /** The stored decision handle for a spend, for recovering an orphan. */
+  async decisionHandle(goalId: bigint, seq: bigint): Promise<Hex> {
+    return (await this.#public.readContract({
+      address: this.#vault,
+      abi: policyVaultAbi,
+      functionName: "decisionHandle",
+      args: [goalId, seq],
+    })) as Hex;
   }
 
   async isApproved(goalId: bigint, seq: bigint): Promise<boolean> {

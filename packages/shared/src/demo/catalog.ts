@@ -1,12 +1,27 @@
 /**
- * The demo catalog — the four resources a viewer can ask the agent to buy.
+ * The demo catalog — the resources a viewer can ask the agent to buy.
  *
  * One definition, imported by all three parties that need to agree about it:
  * the mock API serves these prices, the orchestrator routes to these paths, and
  * the web console lists them. Splitting it across those three is how a demo
  * ends up charging one price and displaying another.
  *
- * ## Why four
+ * ## Two kinds of entry
+ *
+ * **Mock-served** — the original four. Fabricated data at a fixed price, from
+ * the bundled `mock-api`. They exist to make an argument, not to be useful.
+ *
+ * **Upstream-served** — the live AIsa searches, carrying an `upstream` field
+ * and served by `services/vendor-aisa` against a real, paid API. Their prices
+ * come from `SEARCH_TIERS`, measured rather than invented, so what the console
+ * displays is what the 402 demands and what the vault is asked to approve.
+ *
+ * The live entries *add* a case; they do not replace the argument. A real
+ * search that happens to be affordable proves nothing about a confidential
+ * budget. `compliance-audit` still has to be here, and still has to be able to
+ * follow whatever budget the operator chose — see below.
+ *
+ * ## Why the original four
  *
  * Two honest and two hostile, chosen so the *reason* a call is refused differs
  * between them:
@@ -27,6 +42,8 @@
  * before anything is refused.
  */
 
+import { SEARCH_TIERS, type SearchTierName } from "./aisa-tiers.js";
+
 export type GoalKind = "honest" | "malicious";
 
 /**
@@ -38,6 +55,25 @@ export type GoalKind = "honest" | "malicious";
  */
 export type GoalTactic = "none" | "overcharge" | "injection";
 
+/**
+ * Where a goal is actually served from, when it is not the bundled mock.
+ *
+ * Its presence is what makes a goal upstream-served; `isMockGoal` is the guard
+ * every consumer should route on rather than matching key names.
+ */
+export interface UpstreamRef {
+  readonly vendor: "aisa";
+  readonly capability: "search";
+  readonly tier: SearchTierName;
+  /**
+   * What to search for until the console has a query box (Step 7).
+   *
+   * Present so the entry is runnable the moment it exists, rather than being a
+   * row in the picker that fails when clicked.
+   */
+  readonly defaultQuery: string;
+}
+
 export interface DemoGoal {
   /** URL slug and the `mode` value on the wire. */
   readonly key: string;
@@ -48,7 +84,18 @@ export interface DemoGoal {
   readonly tactic: GoalTactic;
   /** USDC atomic units — 6 decimals. */
   readonly priceAtomic: string;
-  readonly payTo: `0x${string}`;
+  /**
+   * Where payment goes.
+   *
+   * Absent for upstream goals, and that is not an oversight: the live vendor's
+   * payee is an address the *operator* controls and can sweep, configured as
+   * `VENDOR_AISA_PAYEE`, so a shared package compiled into a browser bundle
+   * cannot know it. Resolved at run time from the orchestrator's `/config` and
+   * allowlisted alongside `DEMO_PAYEES` when the goal is opened.
+   */
+  readonly payTo?: `0x${string}`;
+  /** Absent when the bundled mock vendor serves this goal. */
+  readonly upstream?: UpstreamRef;
   /** What a viewer should watch for. Shown once a goal is selected. */
   readonly expectation: string;
 }
@@ -121,6 +168,51 @@ export const DEMO_GOALS: readonly DemoGoal[] = [
     expectation:
       "Refused. The agent reads the injection and complies with it — the console shows it complying. It changes nothing: the relay holds no spending authority and the budget refuses the debit.",
   },
+
+  /*
+   * The live pair. Prices are read from SEARCH_TIERS rather than written here,
+   * because those were measured against the real API and this file is what the
+   * console displays — a second copy is how the displayed price and the charged
+   * price drift apart.
+   *
+   * Both are cheap enough to run repeatedly inside the 0.20 budget, which is
+   * the point of including them: the viewer can spend real money on real data,
+   * several times over, and watch an encrypted balance they cannot read draw
+   * down until it refuses. That is the budget behaving as a running total
+   * rather than as a per-call limit, which none of the four above can show.
+   */
+  {
+    key: "aisa-search-basic",
+    label: SEARCH_TIERS.basic.label,
+    blurb: SEARCH_TIERS.basic.blurb,
+    kind: "honest",
+    tactic: "none",
+    priceAtomic: SEARCH_TIERS.basic.priceAtomic,
+    upstream: {
+      vendor: "aisa",
+      capability: "search",
+      tier: "basic",
+      defaultQuery: "x402 payment protocol",
+    },
+    expectation:
+      "Approved and settled, and the data is real — live search results bought from a real paid API, not a fixture. Run it several times and watch the encrypted budget draw down.",
+  },
+  {
+    key: "aisa-search-deep",
+    label: SEARCH_TIERS.deep.label,
+    blurb: SEARCH_TIERS.deep.blurb,
+    kind: "honest",
+    tactic: "none",
+    priceAtomic: SEARCH_TIERS.deep.priceAtomic,
+    upstream: {
+      vendor: "aisa",
+      capability: "search",
+      tier: "deep",
+      defaultQuery: "confidential computing for autonomous agent payments",
+    },
+    expectation:
+      "Also approved, at twice the price and about three times the wait — the upstream call alone takes ~10 seconds. Worth running once to see the payment path hold while a real API takes its time.",
+  },
 ] as const;
 
 export const DEMO_GOAL_KEYS = DEMO_GOALS.map((g) => g.key);
@@ -129,8 +221,32 @@ export function findDemoGoal(key: string): DemoGoal | undefined {
   return DEMO_GOALS.find((g) => g.key === key);
 }
 
-/** Every payee in the catalog — all of them allowlisted when a goal is opened. */
-export const DEMO_PAYEES: readonly `0x${string}`[] = DEMO_GOALS.map((g) => g.payTo);
+/**
+ * A goal the bundled mock vendor serves, narrowed so `payTo` is known present.
+ *
+ * Route on this rather than on key names: `mock-api` must not answer for a
+ * resource it does not own, and the orchestrator must not send an upstream goal
+ * to the mock's base URL. Both bugs look like a working demo right up until the
+ * price is wrong.
+ */
+export function isMockGoal(goal: DemoGoal): goal is DemoGoal & { payTo: `0x${string}` } {
+  return goal.upstream === undefined;
+}
+
+/** The mock-served subset. `mock-api` builds its routing table from exactly this. */
+export const MOCK_GOALS: readonly (DemoGoal & { payTo: `0x${string}` })[] =
+  DEMO_GOALS.filter(isMockGoal);
+
+/**
+ * Every *statically known* payee, allowlisted when a goal is opened.
+ *
+ * Upstream goals are absent by construction — their payee is operator-configured
+ * (`VENDOR_AISA_PAYEE`) and arrives from the orchestrator's `/config`. A goal
+ * opened without that address allowlisted will have its spend reverted by the
+ * vault with `PayeeNotAllowlisted`, which is the correct failure and a
+ * confusing one, so the console must union the two before opening.
+ */
+export const DEMO_PAYEES: readonly `0x${string}`[] = MOCK_GOALS.map((g) => g.payTo);
 
 export const HONEST_DESCRIPTION =
   "Premium market data feed — single call, settled in USDC on Base Sepolia.";

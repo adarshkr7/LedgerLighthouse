@@ -55,6 +55,13 @@ class FakeVault implements VaultReader {
   async spend(goalId: bigint, seq: bigint) {
     return this.spends.get(`${goalId}:${seq}`);
   }
+  /** Balance the payer holds, for sweep tests. */
+  balance = 0n;
+
+  async tokenBalance(): Promise<bigint> {
+    return this.balance;
+  }
+
   async tokenDomainSeparator() {
     return this.domainSeparator;
   }
@@ -307,5 +314,188 @@ describe("AuthorizationSigner", () => {
     expect(address).toMatch(/^0x[0-9a-fA-F]{40}$/);
     expect(Object.keys({ address })).toEqual(["address"]);
     expect(await keys.signerFor(address)).toBeDefined();
+  });
+});
+
+describe("AuthorizationSigner — sweep", () => {
+  /*
+   * The sweep exists because the UI promises the leftover balance can go back
+   * to the owner. It has to do that without giving anyone a way to direct a
+   * payment, which is the property the whole service rests on — so most of
+   * these are about what a caller *cannot* express.
+   */
+
+  const OWNER: Address = "0x9999999999999999999999999999999999999999";
+  let vault: FakeVault;
+  let keys: InMemoryKeyStore;
+  let signer: AuthorizationSigner;
+  let payer: Address;
+
+  beforeEach(async () => {
+    vault = new FakeVault();
+    keys = new InMemoryKeyStore();
+    payer = await keys.mint();
+    // Closed, funded, and owned by OWNER.
+    vault.goals.set("1", makeGoal({ payer, open: false }));
+    vault.balance = 250_000n;
+    signer = new AuthorizationSigner({
+      vault,
+      keys,
+      config: {
+        chainId: CHAIN_ID,
+        usdcAddress: USDC_BASE_SEPOLIA,
+        verifyDomainOnChain: false,
+        now: () => NOW,
+      },
+    });
+  });
+
+  it("sends the whole balance to the goal owner", async () => {
+    const outcome = await signer.sweep({ goalId: "1" });
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+
+    expect(outcome.value.authorization.from).toBe(payer);
+    expect(outcome.value.authorization.to).toBe(OWNER);
+    expect(outcome.value.authorization.value).toBe("250000");
+  });
+
+  it("recovers to the payer, so the token will accept it", async () => {
+    const outcome = await signer.sweep({ goalId: "1" });
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+
+    const recovered = await recoverTypedDataAddress({
+      domain: {
+        name: USDC_EIP712_NAME,
+        version: USDC_EIP712_VERSION,
+        chainId: CHAIN_ID,
+        verifyingContract: USDC_BASE_SEPOLIA,
+      },
+      types: TRANSFER_WITH_AUTHORIZATION_TYPES,
+      primaryType: "TransferWithAuthorization",
+      message: {
+        from: outcome.value.authorization.from,
+        to: outcome.value.authorization.to,
+        value: BigInt(outcome.value.authorization.value),
+        validAfter: BigInt(outcome.value.authorization.validAfter),
+        validBefore: BigInt(outcome.value.authorization.validBefore),
+        nonce: outcome.value.authorization.nonce,
+      },
+      signature: outcome.value.signature,
+    });
+    expect(recovered.toLowerCase()).toBe(payer.toLowerCase());
+  });
+
+  // Non-negotiable #2: terms fields must not be in the schema at all -- and
+  // specifically not "validate and ignore them". A body carrying a destination
+  // is refused outright, and the error says why.
+  it("refuses a body carrying payment terms rather than ignoring them", async () => {
+    const outcome = await signer.sweep({
+      goalId: "1",
+      to: VENDOR,
+      value: "999999999",
+    });
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) return;
+    expect(outcome.status).toBe(400);
+    expect(outcome.error).toContain("payment terms");
+    expect(outcome.error).toContain("to");
+    expect(outcome.error).toContain("value");
+  });
+
+  it("refuses any unknown field", async () => {
+    const outcome = await signer.sweep({ goalId: "1", memo: "hello" });
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) return;
+    expect(outcome.status).toBe(400);
+    expect(outcome.error).toContain("memo");
+  });
+
+  it("refuses while the goal is still open", async () => {
+    vault.goals.set("1", makeGoal({ payer, open: true }));
+    const outcome = await signer.sweep({ goalId: "1" });
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) return;
+    expect(outcome.status).toBe(409);
+    expect(outcome.error).toContain("still open");
+  });
+
+  it("refuses when there is nothing to sweep", async () => {
+    vault.balance = 0n;
+    const outcome = await signer.sweep({ goalId: "1" });
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) return;
+    expect(outcome.status).toBe(409);
+  });
+
+  it("refuses a goal denominated in another token", async () => {
+    vault.goals.set("1", makeGoal({ payer, open: false, asset: OTHER_TOKEN }));
+    const outcome = await signer.sweep({ goalId: "1" });
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) return;
+    expect(outcome.status).toBe(409);
+  });
+
+  it("refuses when it holds no key for the payer", async () => {
+    vault.goals.set("1", makeGoal({ payer: VENDOR, open: false }));
+    const outcome = await signer.sweep({ goalId: "1" });
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) return;
+    expect(outcome.status).toBe(404);
+  });
+
+  /*
+   * A sweep has no vault-frozen window, so unlike sign() it is *not*
+   * byte-identical on retry -- the validity window moves with the clock. The
+   * property that actually prevents a double payment is the nonce, which is
+   * clock-independent; EIP-3009 marks it used at settlement, so only one of
+   * however many authorizations exist can execute.
+   *
+   * Tested against a moved clock, because a frozen one would pass while
+   * proving nothing.
+   */
+  it("keeps the nonce stable as the clock moves, so only one can execute", async () => {
+    const first = await signer.sweep({ goalId: "1" });
+
+    const later = new AuthorizationSigner({
+      vault,
+      keys,
+      config: {
+        chainId: CHAIN_ID,
+        usdcAddress: USDC_BASE_SEPOLIA,
+        verifyDomainOnChain: false,
+        now: () => NOW + 1200,
+      },
+    });
+    const second = await later.sweep({ goalId: "1" });
+
+    expect(first.ok && second.ok).toBe(true);
+    if (!first.ok || !second.ok) return;
+
+    // The replay guard: same nonce, so the token accepts at most one.
+    expect(second.value.authorization.nonce).toBe(first.value.authorization.nonce);
+    // And the honest consequence of a clock-derived window.
+    expect(second.value.authorization.validBefore).not.toBe(
+      first.value.authorization.validBefore,
+    );
+  });
+
+  it("does not collide with a spend nonce for the same goal", async () => {
+    const outcome = await signer.sweep({ goalId: "1" });
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    for (let seq = 0n; seq < 8n; seq += 1n) {
+      expect(outcome.value.authorization.nonce).not.toBe(nonceFor(1n, seq));
+    }
+  });
+
+  it("rejects a malformed body", async () => {
+    for (const body of [null, {}, { goalId: 1 }, { goalId: "abc" }, { goalId: "" }]) {
+      const outcome = await signer.sweep(body);
+      expect(outcome.ok).toBe(false);
+      if (outcome.ok) return;
+      expect(outcome.status).toBe(400);
+    }
   });
 });

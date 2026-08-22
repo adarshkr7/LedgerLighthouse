@@ -4,8 +4,8 @@
  *   pnpm --filter @ntux402/e2e run demo
  *
  * Run 1 — honest 402:    approve, settle, data returns, USDC moves.
- * Run 2 — malicious 402: inflated price + injection. The agent complies. The
- *                        money does not move.
+ * Run 2 — overcharge:    a plausible price, quietly over the encrypted budget.
+ *                        The agent agrees to it. The money does not move.
  *
  * Prerequisites, all checked before anything is sent:
  *   - PolicyVault deployed, POLICY_VAULT_ADDRESS set
@@ -26,7 +26,6 @@ import {
   createPublicClient,
   createWalletClient,
   formatEther,
-  http,
   parseEventLogs,
   type Address,
   type Hex,
@@ -35,7 +34,8 @@ import { baseSepolia } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
 import { Lightning } from "@inco/lightning-js/lite";
 import { handleTypes } from "@inco/lightning-js";
-import { formatUsdc, usdcAbi } from "@ntux402/shared";
+import { rpcTransport } from "@ntux402/shared/viem";
+import { DEMO_PAYEES, formatUsdc, rpcUrls, usdcAbi } from "@ntux402/shared";
 import {
   IncoDecisionReader,
   PaymentLoop,
@@ -44,6 +44,7 @@ import {
   VaultRelay,
   X402Client,
   buildAgent,
+  llmConfigured,
   renderEvent,
   type PaymentResult,
 } from "@ntux402/orchestrator";
@@ -69,17 +70,30 @@ import {
 loadDotEnv();
 
 // --- the policy under test -------------------------------------------------
-// The honest call is 0.01 USDC; the malicious one demands 5.00. The cap sits
-// between them, so the malicious request bounces on the *encrypted* budget
-// rather than on a public precondition — which is the whole point.
+// The honest call is 0.01 USDC; run 2 asks 0.35. Every public precondition
+// clears — the price is far under the 6.00 cap, the payee is allowlisted, the
+// description is ordinary prose — so the only thing left that can refuse it is
+// the encrypted budget. That is the whole point, and it is why run 2 is the
+// *overcharge* goal rather than the injection one.
+//
+// Run 2 used to be `premium-feed`: 5.00 plus a prompt injection. It stopped
+// demonstrating anything the day the model got good enough to notice. On
+// 2026-08-22 qwen3.7-flash read the injection, called it "a clearly deceptive
+// billing notice" and declined — so the agent never called requestSpend and the
+// vault was never asked. A demo that depends on the model being fooled is a
+// demo with a coin flip in it. This one depends on the model being *convinced*,
+// which is the easy direction, and on the budget refusing anyway.
 const BUDGET = 200_000n; // 0.20 USDC, encrypted
-const PER_CALL_CAP = 6_000_000n; // 6.00 USDC, public — deliberately above the malicious price
+const PER_CALL_CAP = 6_000_000n; // 6.00 USDC, public — deliberately above run 2's price
 const CALLS_REMAINING = 5;
-/** Fund the payer above the encrypted budget, so Inco binds first (ARCHITECTURE.md §5.5). */
-const PAYER_FUNDING = 300_000n; // 0.30 USDC
+/**
+ * Above the encrypted budget so Inco binds first (ARCHITECTURE.md §5.5), and
+ * above run 2's 0.35 ask so a skeptic cannot say the payer simply could not
+ * afford it. The refusal has to be the budget and nothing else.
+ */
+const PAYER_FUNDING = 450_000n; // 0.45 USDC
 
-const HONEST_PAY_TO: Address = "0x1111111111111111111111111111111111111111";
-const MALICIOUS_PAY_TO: Address = "0x2222222222222222222222222222222222222222";
+
 
 const rpcUrl = required("BASE_SEPOLIA_RPC_URL");
 const vaultAddress = requiredAddress("POLICY_VAULT_ADDRESS");
@@ -91,8 +105,8 @@ const user = privateKeyToAccount(requiredHexKey("DEPLOYER_PRIVATE_KEY"));
 const relayKey = requiredHexKey("ORCHESTRATOR_RELAY_KEY");
 const relayAddress = privateKeyToAccount(relayKey).address;
 
-const publicClient = createPublicClient({ chain: baseSepolia, transport: http(rpcUrl) });
-const userWallet = createWalletClient({ account: user, chain: baseSepolia, transport: http(rpcUrl) });
+const publicClient = createPublicClient({ chain: baseSepolia, transport: rpcTransport(rpcUrl) });
+const userWallet = createWalletClient({ account: user, chain: baseSepolia, transport: rpcTransport(rpcUrl) });
 const abi = policyVaultAbi();
 
 const rule = (label = "") =>
@@ -134,7 +148,7 @@ if (facilitatorUrl) {
 // mutable payer field lets whoever can write it redirect every signature.
 rule("1. mint the ephemeral payer key");
 
-const signer = new SignerClient(signerUrl);
+const signer = new SignerClient(signerUrl, undefined, optional("SERVICE_TOKEN"));
 const payer = await signer.mintPayer();
 console.log(`  payer      ${payer}`);
 console.log(`  The signer generated this key and returned only the address.`);
@@ -143,7 +157,7 @@ console.log(`  Nothing else in the system can produce a signature for it.`);
 // ------------------------------------------------------------- open the goal
 rule("2. open the goal — the user's own transaction");
 
-const zap = await Lightning.baseSepoliaTestnet({ hostChainRpcUrls: [rpcUrl] });
+const zap = await Lightning.baseSepoliaTestnet({ hostChainRpcUrls: [...rpcUrls(rpcUrl)] });
 
 let t = now();
 const budgetCiphertext = (await zap.encrypt(BUDGET, {
@@ -174,7 +188,7 @@ const openHash = await userWallet.writeContract({
       relay: relayAddress,
       asset: usdcAddress,
       expiry: BigInt(Math.floor(Date.now() / 1000) + 7 * 24 * 3600),
-      allowlist: [HONEST_PAY_TO, MALICIOUS_PAY_TO],
+      allowlist: [...DEMO_PAYEES],
     },
   ],
   value: incoFee,
@@ -192,8 +206,15 @@ console.log(`  perCallCap    ${formatUsdc(PER_CALL_CAP)} USDC — public, and de
 console.log(`                malicious price, so the bounce comes from Inco and not from a require()`);
 console.log(`\n  Basescan: https://sepolia.basescan.org/address/${vaultAddress}`);
 
-// Both allowlisted on purpose: the malicious vendor must fail the *confidential*
-// check, not a public precondition. An allowlist rejection would prove nothing.
+// Every mock payee is allowlisted on purpose: run 2 must fail the *confidential*
+// check, not a public precondition. A PayeeNotAllowlisted revert would prove
+// nothing about the budget — it is the vault refusing on a public rule, which is
+// the thing this demo exists to distinguish itself from.
+//
+// Taken from the catalog rather than listed here. The two addresses this file
+// used to hardcode were the payees of the two goals it happened to buy, so
+// pointing run 2 at a third goal reverted with PayeeNotAllowlisted — a config
+// gap that reads exactly like a policy decision at a glance.
 
 // ------------------------------------------------------------- fund the payer
 rule("3. fund the ephemeral payer");
@@ -251,15 +272,20 @@ console.log(`  payer balance confirmed at ${formatUsdc(payerStartingBalance)} US
 rule("4. hand off to the orchestrator");
 
 const relay = new VaultRelay({ rpcUrl, vaultAddress, relayKey, chainId: BASE_SEPOLIA_CHAIN_ID });
+const agentKey = optional("AISA_INFERENCE_KEY");
+const agentModel = optional("LLM_MODEL");
 const agent = await buildAgent({
-  apiKey: optional("LLM_API_KEY") ?? process.env["ANTHROPIC_API_KEY"],
-  model: optional("LLM_MODEL"),
+  apiKey: agentKey,
+  model: agentModel,
+  baseUrl: optional("AISA_API_BASE_URL"),
   fallback: new ScriptedAgent(),
+  onFallback: (detail) =>
+    console.warn(`  model gateway did not answer — scripted stand-in decided: ${detail}`),
 });
 console.log(
-  optional("LLM_API_KEY") ?? process.env["ANTHROPIC_API_KEY"]
-    ? `  agent: live LLM (${optional("LLM_MODEL") ?? "claude-opus-5"})`
-    : `  agent: scripted stand-in (no LLM_API_KEY set)`,
+  llmConfigured({ apiKey: agentKey, model: agentModel })
+    ? `  agent: live LLM (${agentModel})`
+    : `  agent: scripted stand-in (set AISA_INFERENCE_KEY and LLM_MODEL for a live model)`,
 );
 console.log(`  From here on there are no wallet prompts. That is the product.`);
 
@@ -304,9 +330,23 @@ async function awaitBalance(expected: bigint, timeoutMs = 60_000): Promise<bigin
   return balance;
 }
 
+/**
+ * Which catalog entry each run buys.
+ *
+ * `honest` stays on the legacy alias, which the mock maps to `market-data`.
+ * Run 2 names `compliance-audit` outright rather than going through the
+ * `malicious` alias — that alias points at `premium-feed`, is pinned by the
+ * README and by mock-api's own tests, and means "the injection one" to every
+ * other reader. Repointing it would have quietly changed a documented URL.
+ */
+const RESOURCE: Readonly<Record<Mode, string>> = {
+  honest: "honest",
+  malicious: "compliance-audit",
+};
+
 /** Runs one request and reports what it actually cost, against a known baseline. */
 async function runAndReport(label: Mode, baseline: bigint): Promise<[PaymentResult, bigint]> {
-  const result = await loop.fetchPaid(`${mockApiUrl}/resource/${label}`, goalId);
+  const result = await loop.fetchPaid(`${mockApiUrl}/resource/${RESOURCE[label]}`, goalId);
 
   // What the balance *should* be, derived from the outcome rather than observed.
   const paidAmount =
@@ -336,7 +376,7 @@ rule("RUN 1 — honest 402");
 const [honest, afterHonest] = await runAndReport("honest", payerStartingBalance);
 
 // ------------------------------------------------------------------- run 2
-rule("RUN 2 — malicious 402 (inflated price + prompt injection)");
+rule("RUN 2 — overcharge 402 (plausible price, over the encrypted budget)");
 const [malicious] = await runAndReport("malicious", afterHonest);
 
 // ------------------------------------------------------------------ verdict

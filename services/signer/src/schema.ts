@@ -124,3 +124,56 @@ export function parseSignRequest(raw: unknown): SchemaResult<SignRequest> {
 
   return { ok: true, value: { goalId: goalId.value, seq: seq.value } };
 }
+
+/**
+ * The sweep body: `{ goalId }` and nothing else.
+ *
+ * Separate from `parseSignRequest` rather than reusing it with an optional
+ * `seq`, so that "a sweep cannot carry a destination or an amount" is visible
+ * in the type rather than being a property of how the handler happens to read
+ * it.
+ */
+export function parseSweepRequest(raw: unknown): SchemaResult<{ goalId: bigint }> {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    return { ok: false, error: `body: expected an object, got ${raw === null ? "null" : typeof raw}` };
+  }
+
+  const body = raw as Record<string, unknown>;
+
+  /*
+   * Refused, not ignored.
+   *
+   * An earlier version read `goalId` and let everything else fall on the floor,
+   * on the reasoning that ignoring a field is as safe as rejecting it. For this
+   * service it is not. Non-negotiable #2 is explicit — terms fields "must not be
+   * in the schema at all", and specifically "not 'validate and ignore them'" —
+   * because the argument the signer rests on is that its API has no way to
+   * express a destination or an amount. A body carrying `to` and `value` that
+   * still returns a signature undermines that argument even when the values
+   * were discarded, and it is the reading of the code, not the runtime
+   * behaviour, that a reviewer checks.
+   */
+  const extra = Object.keys(body).filter((k) => k !== "goalId");
+  if (extra.length > 0) {
+    const terms = extra.filter((k) => FORBIDDEN_HINTS.has(k));
+    if (terms.length > 0) {
+      return {
+        ok: false,
+        error:
+          `refused: the request carries payment terms (${terms.join(", ")}). ` +
+          `A sweep accepts (goalId) only. The destination is the goal owner recorded on chain ` +
+          `and the amount is the payer's whole balance; neither is a caller's to choose.`,
+      };
+    }
+    return {
+      ok: false,
+      error: `refused: unknown field(s) ${extra.join(", ")}. A sweep accepts (goalId) only.`,
+    };
+  }
+
+  const goalId = body["goalId"];
+  if (typeof goalId !== "string" || !/^[0-9]{1,32}$/.test(goalId)) {
+    return { ok: false, error: "body.goalId: expected a decimal string" };
+  }
+  return { ok: true, value: { goalId: BigInt(goalId) } };
+}

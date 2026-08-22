@@ -1,18 +1,22 @@
 /**
- * The payment path, as a numbered exhibition strip.
+ * The payment path, as a grid of stage cards.
  *
- * Swiss International Style: flat bordered panels sharing edges, the focused
- * one inverted to solid black — no blur, no scale, no glow. The one departure
- * from pure black/white is the "AI Agent" stage, which flashes the accent red
- * only while focused: that is the one moment the injection actually lands,
- * and red-as-warning is the single legitimate non-CTA use the palette allows.
- * Every other stage inverts in plain black, because certainty needs no colour.
+ * Laid out the way the reference site lays out selected work: large flat
+ * rectangles on the section's own background, a rule above each title, and a
+ * mono tag row underneath. The first card is deliberately wider than the rest
+ * — an even 7-up grid reads as a table of contents, and the first stage is
+ * the one the reader has to accept before any of the others mean anything.
  *
- * The pager is a numbered index row rather than dots, so position is legible
- * at a glance rather than requiring someone to count filled circles.
+ * Hover borrows Canvas UI's "Peel": a second layer lifts in from the bottom
+ * edge and covers the card, carrying the line that actually makes the stage
+ * matter. Peeling rather than fading is what keeps the two layers legible as
+ * *two* — a crossfade at this size just looks like the text is broken.
+ *
+ * The hostile stage carries `data-kind="hostile"` and turns brand orange on
+ * hover. That is the single non-CTA use of colour on the page, and it is
+ * spent on the one stage an attacker can actually reach. Nothing else here
+ * needs a colour to be understood.
  */
-
-import { useCallback, useEffect, useRef, useState } from "react";
 
 export type StageKind = "user" | "cipher" | "hostile" | "settle";
 
@@ -21,14 +25,16 @@ export interface FlowStep {
   readonly label: string;
   readonly note: string;
   readonly kind: StageKind;
-  /** The line that makes this stage matter. Shown only while focused. */
+  /** The line that makes this stage matter. Revealed by the peel. */
   readonly detail: string;
+  /** Mono tags under the title, in the reference site's bracketed style. */
+  readonly tags: readonly string[];
 }
 
 /**
  * Deliberately the real pipeline, in order, with the honest names. A deck that
- * said "AI decides" where the system says "confidential policy evaluates" would
- * be the one place on this page that oversells.
+ * said "AI decides" where the system says "confidential policy evaluates"
+ * would be the one place on this page that oversells.
  */
 export const FLOW_STEPS: readonly FlowStep[] = [
   {
@@ -36,35 +42,45 @@ export const FLOW_STEPS: readonly FlowStep[] = [
     label: "User Wallet",
     note: "Signs once. Never in the loop.",
     kind: "user",
-    detail: "Three signatures total: open the goal, fund the payer, close it. Nothing during a run.",
+    detail:
+      "Three signatures total: open the goal, fund the payer, close it. Nothing during a run.",
+    tags: ["HUMAN", "EIP-1193"],
   },
   {
     id: "goal",
     label: "Encrypted Goal",
     note: "Budget encrypted in the browser.",
     kind: "cipher",
-    detail: "The ciphertext is bound to your address. On chain it is an opaque bytes32 handle.",
+    detail:
+      "The ciphertext is bound to your address. On chain it is an opaque bytes32 handle.",
+    tags: ["CIPHERTEXT", "BYTES32"],
   },
   {
     id: "agent",
     label: "AI Agent",
     note: "Reads vendor text. Holds no key.",
     kind: "hostile",
-    detail: "This is where the injection lands. The agent can be fully convinced — it holds only a gas key.",
+    detail:
+      "This is where the injection lands. The agent can be fully convinced — it holds only a gas key.",
+    tags: ["UNTRUSTED", "NO SPEND AUTHORITY"],
   },
   {
     id: "policy",
     label: "Confidential Policy",
     note: "Evaluated inside a TEE.",
     kind: "cipher",
-    detail: "The debit is applied before the answer is knowable, because you cannot branch on a secret.",
+    detail:
+      "The debit is applied before the answer is knowable, because you cannot branch on a secret.",
+    tags: ["INCO", "TEE"],
   },
   {
     id: "record",
     label: "Finalized Record",
     note: "Decision committed on chain.",
     kind: "cipher",
-    detail: "The attestation is verified against the handle the contract stored, not one the caller supplies.",
+    detail:
+      "The attestation is verified against the handle the contract stored, not one the caller supplies.",
+    tags: ["ATTESTED", "HANDLE-MATCHED"],
   },
   {
     id: "payer",
@@ -72,6 +88,7 @@ export const FLOW_STEPS: readonly FlowStep[] = [
     note: "Key derived in an enclave.",
     kind: "settle",
     detail: "Per goal, holding only what you funded. No operator can extract the key.",
+    tags: ["PER-GOAL", "CAPPED"],
   },
   {
     id: "settle",
@@ -79,116 +96,38 @@ export const FLOW_STEPS: readonly FlowStep[] = [
     note: "EIP-3009 on Base Sepolia.",
     kind: "settle",
     detail: "Gasless, single-use, and shaped exactly as the chain froze it.",
+    tags: ["X402", "EIP-3009"],
   },
 ];
 
-/** Long enough to read the detail line, short enough to hold attention. */
-const DWELL_MS = 3600;
-
-function usePrefersReducedMotion(): boolean {
-  const [reduced, setReduced] = useState(false);
-  useEffect(() => {
-    const q = window.matchMedia("(prefers-reduced-motion: reduce)");
-    setReduced(q.matches);
-    const on = (e: MediaQueryListEvent) => setReduced(e.matches);
-    q.addEventListener("change", on);
-    return () => q.removeEventListener("change", on);
-  }, []);
-  return reduced;
-}
-
 export function Flow() {
-  const reduced = usePrefersReducedMotion();
-  const [active, setActive] = useState(0);
-  const [held, setHeld] = useState(false);
-  const trackRef = useRef<HTMLDivElement>(null);
-
-  // Auto-advance, suspended while a pointer is over the deck or focus is inside
-  // it — advancing under someone who is reading is the thing that makes a
-  // carousel hostile.
-  useEffect(() => {
-    if (reduced || held) return;
-    const t = window.setInterval(() => setActive((i) => (i + 1) % FLOW_STEPS.length), DWELL_MS);
-    return () => window.clearInterval(t);
-  }, [reduced, held]);
-
-  // Keep the focused card centred. `scrollIntoView` on the element rather than a
-  // computed transform, so it stays correct when the cards reflow.
-  useEffect(() => {
-    const track = trackRef.current;
-    const card = track?.children[active] as HTMLElement | undefined;
-    if (!track || !card) return;
-    const offset = card.offsetLeft - (track.clientWidth - card.clientWidth) / 2;
-    track.scrollTo({ left: offset, behavior: reduced ? "auto" : "smooth" });
-  }, [active, reduced]);
-
-  const onKey = useCallback((e: React.KeyboardEvent) => {
-    if (e.key === "ArrowRight") setActive((i) => (i + 1) % FLOW_STEPS.length);
-    if (e.key === "ArrowLeft") setActive((i) => (i - 1 + FLOW_STEPS.length) % FLOW_STEPS.length);
-  }, []);
-
   return (
-    <div
-      className="deck"
-      onMouseEnter={() => setHeld(true)}
-      onMouseLeave={() => setHeld(false)}
-      onFocusCapture={() => setHeld(true)}
-      onBlurCapture={() => setHeld(false)}
-    >
-      <div className="deck-grid" aria-hidden="true" />
-
-      <p className="deck-counter">
-        Stage {String(active + 1).padStart(2, "0")} of {String(FLOW_STEPS.length).padStart(2, "0")}
-      </p>
-
-      <div
-        className="deck-track"
-        ref={trackRef}
-        role="group"
-        aria-label="How a payment moves through the system"
-        tabIndex={0}
-        onKeyDown={onKey}
-      >
-        {FLOW_STEPS.map((step, i) => {
-          const distance = Math.abs(i - active);
-          return (
-            <article
-              key={step.id}
-              className="deck-card"
-              data-stage={step.kind}
-              data-focused={i === active ? "true" : undefined}
-              // Drives scale, blur and dimming. Clamped, because a card six
-              // places away should not be more degraded than one three away.
-              style={{ ["--d" as string]: String(Math.min(distance, 3)) }}
-              aria-current={i === active ? "step" : undefined}
-            >
-              <div className="deck-body">
-                <p className="deck-kicker">
-                  <span className="deck-idx">{String(i + 1).padStart(2, "0")}</span>
-                  {step.note}
-                </p>
-                <h3 className="deck-title">{step.label}</h3>
-                <p className="deck-detail">{step.detail}</p>
-              </div>
-            </article>
-          );
-        })}
-      </div>
-
-      <div className="deck-pager">
-        {FLOW_STEPS.map((step, i) => (
-          <button
-            key={step.id}
-            type="button"
-            className="deck-num"
-            data-on={i === active ? "true" : undefined}
-            aria-label={`Stage ${i + 1}: ${step.label}`}
-            onClick={() => setActive(i)}
-          >
-            {String(i + 1).padStart(2, "0")}
-          </button>
-        ))}
-      </div>
-    </div>
+    <ol className="gf-work">
+      {FLOW_STEPS.map((step, i) => (
+        <li className="gf-work-card" key={step.id} data-kind={step.kind}>
+          {/* Focusable so the peel is reachable without a pointer; the card is
+              not a link, so a plain tabindex is the honest control here. */}
+          <div className="gf-work-inner" tabIndex={0}>
+            <div className="gf-work-face">
+              <span className="gf-work-n">{String(i + 1).padStart(2, "0")}</span>
+              <h3 className="gf-work-title">{step.label}</h3>
+              <p className="gf-work-note">{step.note}</p>
+              <p className="gf-work-tags">
+                {step.tags.map((tag, t) => (
+                  <span key={tag}>
+                    {t > 0 ? <i aria-hidden="true">—</i> : null}[{tag}]
+                  </span>
+                ))}
+              </p>
+            </div>
+            {/* The peel layer. Not aria-hidden: the detail is real content and
+                a keyboard reader should get it in order. */}
+            <div className="gf-work-peel">
+              <p>{step.detail}</p>
+            </div>
+          </div>
+        </li>
+      ))}
+    </ol>
   );
 }

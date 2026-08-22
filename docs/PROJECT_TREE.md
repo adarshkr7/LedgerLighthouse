@@ -88,7 +88,7 @@ NTU_x402/
 │   │   │   ├── render.ts                   Console rendering for PaymentEvents
 │   │   │   ├── agent/
 │   │   │   │   ├── index.ts                Re-exports; llm.js deliberately excluded so the
-│   │   │   │   │                             offline path never loads the Anthropic SDK
+│   │   │   │   │                             offline path never loads the gateway client
 │   │   │   │   ├── factory.ts              Picks LLM when a key is present, scripted otherwise
 │   │   │   │   ├── llm.ts                  The LLM agent — and the component the demo attacks
 │   │   │   │   └── scripted.ts             Deterministic stand-in reproducing injection compliance

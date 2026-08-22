@@ -14,7 +14,7 @@ import { readFileSync } from "node:fs";
 import { loadDotEnv, optional } from "@ntux402/shared/node";
 import { USDC_BASE_SEPOLIA } from "@ntux402/shared";
 
-import type { Trace } from "./step.js";
+import { VENDOR_ATTESTED_STEPS, type Trace } from "./step.js";
 import { verifyTrace } from "./verify.js";
 
 loadDotEnv();
@@ -75,6 +75,24 @@ if (result.valid) {
       ? "  VALID — the hash chain is intact and every attestation matches the chain.\n"
       : "  VALID (offline) — the hash chain is intact. On-chain claims were not checked.\n",
   );
+
+  /*
+   * Said out loud, because "VALID" above is otherwise read as covering the
+   * whole file. A `vendor-upstream` step is protected from editing like any
+   * other, and is a third party's account of an HTTP call no RPC can reach.
+   * Leaving a reader to infer that from the step type would be letting the
+   * verifier take credit for a check it cannot perform.
+   */
+  const vendorSteps = trace.steps.filter((s) =>
+    VENDOR_ATTESTED_STEPS.includes(s.type),
+  ).length;
+  if (vendorSteps > 0) {
+    console.log(
+      `  NOTE — ${vendorSteps} step(s) are vendor-attested: their contents cannot be edited\n` +
+        `         without breaking the chain, but nothing here confirms they are true. They\n` +
+        `         describe off-chain calls no RPC can reach.\n`,
+    );
+  }
   process.exit(0);
 }
 

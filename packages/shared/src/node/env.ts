@@ -39,7 +39,22 @@ export function loadDotEnv(path?: string): void {
     const key = trimmed.slice(0, eq).trim();
     let value = trimmed.slice(eq + 1).trim();
     // Strip an inline comment only when the value is unquoted.
-    if (!/^["']/.test(value)) value = value.split(/\s+#/)[0]!.trim();
+    if (!/^["']/.test(value)) {
+      /*
+       * `KEY=            # explanation` is an *empty* value, and the split on
+       * `\s+#` cannot see that: by this point the line has been trimmed, so the
+       * `#` sits at position 0 with no preceding whitespace to match, and the
+       * whole comment came back as though someone had configured it.
+       *
+       * Every blank line in .env.example is written that way, so a freshly
+       * copied .env used to hand `required()` a sentence of prose. The failure
+       * that produced was "ORCHESTRATOR_RELAY_KEY must be a 32-byte hex private
+       * key" — for a key the operator had quite correctly left blank, and
+       * instead of the "Missing ..., copy .env.example and fill it in" message
+       * that file explicitly points them at.
+       */
+      value = value.startsWith("#") ? "" : value.split(/\s+#/)[0]!.trim();
+    }
     value = value.replace(/^(["'])(.*)\1$/, "$2");
     if (value !== "" && process.env[key] === undefined) process.env[key] = value;
   }
@@ -64,6 +79,23 @@ export function requiredAddress(name: string): Address {
   const raw = required(name);
   if (!/^0x[0-9a-fA-F]{40}$/.test(raw)) {
     throw new Error(`${name} must be a 20-byte hex address, got ${JSON.stringify(raw)}`);
+  }
+  return raw as Address;
+}
+
+/**
+ * An address that may legitimately be unset, but must be an address when set.
+ *
+ * The middle ground `optional()` cannot express. A blank value means the
+ * feature is off; a malformed one means someone tried to turn it on and got it
+ * wrong, and silently treating that as "off" hides the typo behind a feature
+ * that just quietly never appears.
+ */
+export function optionalAddress(name: string): Address | undefined {
+  const raw = optional(name);
+  if (raw === undefined) return undefined;
+  if (!/^0x[0-9a-fA-F]{40}$/.test(raw)) {
+    throw new Error(`${name} must be a 20-byte hex address when set, got ${JSON.stringify(raw)}`);
   }
   return raw as Address;
 }

@@ -1,0 +1,53 @@
+{
+  "query": "base sepolia usdc contract address",
+  "follow_up_questions": null,
+  "answer": null,
+  "images": [],
+  "results": [
+    {
+      "url": "https://www.7blocklabs.com/blog/usdc-contract-address-on-base-and-base-usdc-address-variants-avoiding-fake-contract-traps",
+      "title": "USDC Contract Address on Base: How to Spot Fake Contract... | 7BlockLabs",
+      "content": "+ When you're dealing with live traffic, make sure to use a production node provider like Alchemy, QuickNode, or CDP. More info can be found here: (docs.base.org)\n Testnet address (Base Sepolia): 0x036CbD53842c5426634e7929541eC2318f3dCF7e. Just a reminder--don’t use this in production. You can verify it here: (developers.circle.com) [...] USDC (Base mainnet): 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913 (developers.circle.com)\n USDC (Base Sepolia testnet): 0x036CbD53842c5426634e7929541eC2318f3dCF7e (developers.circle.com)\n USDbC (bridged, legacy on Base): 0xd9aAEc86B65D86f6A7B5B1b0c42FFA531710b6CA (basescan.org)\n Base chain ID: 8453 (0x2105); Dev RPC:  (just a heads up, this isn’t for production use) (docs.base.org)\n Permit2 (Uniswap) on Base: 0x000000000022D473030F116dDEE9F6B43aC78BA3 (docs.base.org) [...] The only native USDC on the Base mainnet is at 0x833589…2913. Make sure to lock this in your config and treat any changes like a production incident. (developers.circle.com)\n USDbC (0xd9aAEc…) represents the older bridged USDC. You can accept it for unwinds and deposits, but it’s best to build on the native USDC. (basescan.org)\n Don’t forget to verify on BaseScan: FiatTokenProxy is set at 6 decimals, and be sure to subscribe to the proxy Upgraded events. (basescan.org)",
+      "score": 0.8018276,
+      "raw_content": null,
+      "id": "2e968f-00"
+    },
+    {
+      "url": "https://sepolia.basescan.org/token/0x5deac602762362fe5f135fa5904351916053cf70",
+      "title": "ERC-20 Token | Address: 0x5deac602...16053cf70 | BaseScan Sepolia",
+      "content": "Token Contract (WITH 18 Decimals). 0x5deac602762362fe5f135fa5904351916053cf70. Transfers; Holders; Contract.",
+      "score": 0.76321954,
+      "raw_content": null,
+      "id": "b01f39-01"
+    },
+    {
+      "url": "https://developers.circle.com/stablecoins/usdc-contract-addresses",
+      "title": "USDC contract addresses - Circle Docs",
+      "content": "| Blockchain | Token Address |\n --- |\n| Algorand Testnet | `10458941` |\n| Aptos Testnet | `0x69091fbab5f7d635ee7ac5098cf0c1efbe31d68fec0f2cd565e8d168daf52832` |\n| Arbitrum Sepolia | `0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d` |\n| Arc Testnet | `0x3600000000000000000000000000000000000000` |\n| Avalanche Fuji | `0x5425890298aed601595a70AB815c96711a31Bc65` |\n| Base Sepolia | `0x036CbD53842c5426634e7929541eC2318f3dCF7e` |\n| Celo Sepolia | `0x01C5C0122039549AD1493B8220cABEdD739BC44E` | [...] | Starknet Sepolia | `0x0512feAc6339Ff7889822cb5aA2a86C848e9D392bB0E3E237C008674feeD8343` |\n| Stellar Testnet | `USDC-GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5` |\n| Sui Testnet | `0xa1ec7fc00a6f40db9693ad1415d0c193ad3906494428cf252621037bd7117e29::usdc::USDC` |\n| Unichain Sepolia | `0x31d0220469e10c4E71834a79b1f276d740d3768F` |\n| World Chain Sepolia | `0x66145f38cBAC35Ca6F1Dfb4914dF98F1614aeA88` |\n| X Layer Testnet | `0xDec90b78111Ba2fc6FC6d84d8B9ec159A2d4b9B3` | [...] | Linea Sepolia | `0xFEce4462D57bD51A6A552365A011b95f0E16d9B7` |\n| Monad Testnet | `0x534b2f3A21130d7a60830c2Df862319e593943A3` |\n| Morph Hoodi Testnet | `0x7433b41C6c5e1d58D4Da99483609520255ab661B` |\n| NEAR Testnet | `3e2210e1184b45b64c8a434c0a7e7b23cc04ea7eb7a6c3c32520d03d4afcb8af` |\n| Noble Testnet | `uusdc` |\n| OP Sepolia | `0x5fd84259d66Cd46123540766Be93DFE6D43130D7` |\n| Pharos Testnet | `0xcfC8330f4BCAB529c625D12781b1C19466A9Fc8B` |",
+      "score": 0.643173,
+      "raw_content": null,
+      "id": "4b20bb-02"
+    },
+    {
+      "url": "https://help.coinify.com/hc/en-us/articles/10101842554012-Sandbox-testing-Setting-up-a-Sepolia-testnet-and-USDC-token",
+      "title": "Sandbox testing: Setting up a Sepolia testnet and USDC token – Coinify",
+      "content": "Coinify Help Center home page\n\n# Sandbox testing: Setting up a Sepolia testnet and USDC token\n\nIn this article we will:\n\nThe goal is to enable to you complete the Trades in Coinify's Sandbox environment and to receive the testnet USDC to your wallet.\n\nFollow the next steps to get set up:\n\n`Add to Metamask`\n\n4. Now, we will add Coinify's USDC token contract to the Sepolia testnet:\n\n`+ Import tokens`\n\n`0x746d7b1dfcD1Cc2f4b7d09F3F1B9A21764FBeB33`\n`Token contract address`\n`Add custom token` [...] `Import token`\n\nAnd that’s about it. Use your Metamask wallet address (displayed on the top of the browser extension) and provide it as a destination address when creating a trade in the Sandbox environment:\n\nOnce the trade completes, you’ll receive the relevant webhook and Sepolia USDC in your wallet.\n\n## Related articles",
+      "score": 0.55709904,
+      "raw_content": null,
+      "id": "3c909e-03"
+    },
+    {
+      "url": "https://docs.chain.link/ccip/directory/testnet/token/USDC",
+      "title": "USDC Cross-Chain Token - CCIP Testnet Networks | Chainlink Documentation",
+      "content": "| Network | Name | Symbol | Decimals | Token address | Token pool type | Token pool address |\n ---  ---  --- \n|  | USD Coin | USDC | 6 | 0x75faf1...46AA4d | Burn/Mint | 0x849b91...C2aEa8 |\n|  | USD Coin | USDC | 6 | 0x542589...31Bc65 | Burn/Mint | 0x41B4c8...3e6541 |\n|  | USDC | USDC | 6 | 0x036CbD...3dCF7e | Burn/Mint | 0x08FE8C...C1AE36 |\n|  | USDC | USDC | 6 | 0x1c7D4B...9C7238 | Burn/Mint | 0x0A5962...32c92D |\n|  | USDC | USDC | 6 | 0xbE57BA...aea09a | Burn/Mint | 0xc1E1c4...DA67F1 | [...] |  | USDC | USDC | 6 | 0x5fd842...3130D7 | Burn/Mint | 0x206dA6...759c65 |\n|  | USDC | USDC | 6 | 0x41E94E...0e7582 | Burn/Mint | 0xFD47fe...07F910 |\n|  | USD Coin | USDC | 6 | 4zMMC9sr...JDncDU | Burn/Mint | 7hCNZAWQ...a3C5zL |\n|  | USDC | USDC | 6 | 0x31d022...d3768F | Burn/Mint | 0xB45B9e...e86311 | [...] Documentation Home\n\n  \n\nCCIP DirectoryUSDC\n\nSearch icon\n\n# USDCUSD Coin\n\nListed Networks (9)\n\nSearch icon",
+      "score": 0.1465877,
+      "raw_content": null,
+      "id": "322903-04"
+    }
+  ],
+  "response_time": 2.36,
+  "usage": {
+    "credits": 1
+  },
+  "request_id": "24919ca4-8247-47ae-b3f3-dec01d00e679"
+}

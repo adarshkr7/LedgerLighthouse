@@ -5,9 +5,26 @@
  * It is deliberately, aggressively dumb. One question — "is `(goalId, seq)`
  * finalized-approved on chain?" — and if the answer is yes it signs exactly what
  * the chain froze. It has no policy of its own, no notion of price, and no way
- * to be told one. Compromising it permits re-signing spends that were *already*
- * approved; it does not permit inventing new ones. That bound is the reason it
- * is an acceptable assumption, and it only holds while the checks below do.
+ * to be told one.
+ *
+ * ## What compromising it would permit
+ *
+ * For `sign()`: re-signing spends that were *already* approved, and nothing
+ * else. It cannot invent one.
+ *
+ * For `sweep()`: producing a transfer of a payer's whole balance **to that
+ * goal's owner**, for goals that are already closed. This is a real widening
+ * and is stated rather than buried — a sweep is the one authorization here the
+ * confidential policy never approved. Three things bound it, and they are the
+ * reason it is acceptable:
+ *
+ *   - the destination is `goal.owner` read from the vault, so the worst
+ *     outcome is that someone returns a user's money to that user early;
+ *   - it requires `goal.open == false`, and only the owner can close a goal,
+ *     so an attacker holding the signer cannot reach an open goal at all;
+ *   - the amount is the payer's balance, not a caller's number.
+ *
+ * Both bounds only hold while the checks below do.
  *
  * Read `refuse()` as the specification. Every branch is a way the signature must
  * not happen.
@@ -29,7 +46,7 @@ import {
 } from "@ntux402/shared";
 
 import type { KeyStore } from "./keystore.js";
-import { parseSignRequest, type SignRequest } from "./schema.js";
+import { parseSignRequest, parseSweepRequest, type SignRequest } from "./schema.js";
 import type { VaultReader } from "./vault.js";
 
 export interface SignerConfig {
@@ -89,6 +106,154 @@ export class AuthorizationSigner {
       eip712Version: options.config.eip712Version ?? USDC_EIP712_VERSION,
       verifyDomainOnChain: options.config.verifyDomainOnChain ?? true,
       now: options.config.now ?? (() => Math.floor(Date.now() / 1000)),
+    };
+  }
+
+  /**
+   * Signs an authorization returning the payer's whole USDC balance to the
+   * goal owner.
+   *
+   * ## How this keeps the signer's one invariant
+   *
+   * The security argument for this service is that no route accepts an amount,
+   * a payee or a token — so no caller can direct a payment. A sweep is a
+   * payment, so it has to earn its place under the same rule, and it does:
+   * the caller supplies `goalId` and nothing else.
+   *
+   *   - the **payee** is `goal.owner`, read from the vault;
+   *   - the **amount** is the payer's entire balance, read from the token;
+   *   - the **token** is the one this signer is configured for, asserted
+   *     against `goal.asset` exactly as `sign()` does.
+   *
+   * A caller who wants to move a different amount somewhere else has no way to
+   * express it, which is the property that matters.
+   *
+   * ## Why the goal must be closed
+   *
+   * A sweep and a spend both draw on the same balance. Sweeping an open goal
+   * could empty the payer between `finalizeDecision` and settlement, turning an
+   * approved spend into a failed transfer — the policy would have said yes and
+   * the money would be gone. `closeGoal` is the owner's own signature and the
+   * point after which no new spend can be requested, so it is the correct
+   * precondition.
+   *
+   * ## Replay safety comes from the nonce, not from byte-identity
+   *
+   * `sign()` reproduces a byte-identical authorization on retry because it
+   * reads a validity window the vault froze. A sweep has no vault record and so
+   * no frozen window; the one here is derived from the local clock, which means
+   * two sweeps signed a minute apart are *different* authorizations with
+   * different signatures.
+   *
+   * That is safe, but for a narrower reason than byte-identity, and the
+   * distinction matters enough to state: the **nonce** is clock-independent,
+   * derived from `(goalId, "SWEEP", amount)`. EIP-3009 marks a nonce used at
+   * settlement, so however many sweep authorizations get signed for the same
+   * balance, at most one can ever execute. A retry after a dropped response is
+   * therefore safe without being identical.
+   *
+   * The tuple shape differs from the vault's `(uint256, uint64)` spend nonce,
+   * so a sweep nonce cannot collide with a spend nonce for the same goal.
+   */
+  async sweep(goalIdRaw: unknown): Promise<SignOutcome> {
+    const parsed = parseSweepRequest(goalIdRaw);
+    if (!parsed.ok) return refuse(400, parsed.error);
+    const { goalId } = parsed.value;
+
+    const chainId = await this.#vault.chainId();
+    if (chainId !== this.#config.chainId) {
+      return refuse(503, `refused: RPC reports chain ${chainId}, expected ${this.#config.chainId}.`);
+    }
+
+    const goal = await this.#vault.goal(goalId);
+    if (!goal) return refuse(404, `refused: goal ${goalId} does not exist.`);
+
+    if (!isAddressEqual(goal.asset, this.#config.usdcAddress)) {
+      return refuse(
+        409,
+        `refused: goal ${goalId} is denominated in ${goal.asset}, but this signer only signs ` +
+          `for ${this.#config.usdcAddress}.`,
+      );
+    }
+
+    if (goal.open) {
+      return refuse(
+        409,
+        `refused: goal ${goalId} is still open. Close it first — sweeping a goal that can still ` +
+          `spend could empty the payer underneath an already-approved authorization.`,
+      );
+    }
+
+    const account = await this.#keys.signerFor(goal.payer);
+    if (!account) {
+      return refuse(404, `refused: no key held for payer ${goal.payer}.`);
+    }
+
+    const amount = await this.#vault.tokenBalance(this.#config.usdcAddress, goal.payer);
+    if (amount === 0n) {
+      return refuse(409, `refused: payer ${goal.payer} holds no ${this.#config.usdcAddress}.`);
+    }
+
+    const now = BigInt(this.#config.now());
+    const nonce = keccak256(
+      encodeAbiParameters(
+        [{ type: "uint256" }, { type: "string" }, { type: "uint256" }],
+        [goalId, "SWEEP", amount],
+      ),
+    );
+
+    const domain = {
+      name: this.#config.eip712Name,
+      version: this.#config.eip712Version,
+      chainId: this.#config.chainId,
+      verifyingContract: this.#config.usdcAddress,
+    } as const;
+
+    if (this.#config.verifyDomainOnChain) {
+      const onChain = await this.#vault.tokenDomainSeparator(this.#config.usdcAddress);
+      const local = domainSeparator({ domain });
+      if (onChain.toLowerCase() !== local.toLowerCase()) {
+        return refuse(500, `refused: EIP-712 domain mismatch. Token reports ${onChain}.`);
+      }
+    }
+
+    const message: TransferAuthorization = {
+      from: goal.payer,
+      to: goal.owner,
+      value: amount,
+      validAfter: now - 1n,
+      validBefore: now + 3600n,
+      nonce,
+    };
+
+    const signature = await account.signTypedData({
+      domain,
+      types: TRANSFER_WITH_AUTHORIZATION_TYPES,
+      primaryType: "TransferWithAuthorization",
+      message,
+    });
+
+    return {
+      ok: true,
+      value: {
+        goalId: goalId.toString(),
+        // Not a vault seq: a sweep has no spend record. Reported as such rather
+        // than borrowing a number that would look like one.
+        seq: "sweep",
+        token: this.#config.usdcAddress,
+        chainId: this.#config.chainId,
+        authorization: {
+          from: message.from,
+          to: message.to,
+          value: message.value.toString(),
+          validAfter: message.validAfter.toString(),
+          validBefore: message.validBefore.toString(),
+          nonce: message.nonce,
+        },
+        signature,
+        // No vault terms hash exists for a sweep; the zero hash says so.
+        termsHash: `0x${"00".repeat(32)}`,
+      },
     };
   }
 

@@ -1,7 +1,14 @@
 /**
- * Right-column panels: the verdict, the guarantee grid, and the evidence
- * drawer. All read-only projections of the event stream — none of them read the
- * chain or hold state beyond a toggle.
+ * The verdict, the guarantee grid, and the evidence list. All read-only
+ * projections of the event stream — none of them read the chain or hold state
+ * beyond a fetch.
+ *
+ * `GuaranteeList` and `EvidenceBody` deliberately render *bodies* only: no
+ * card, no header, no disclosure toggle. Both now live inside `Modal`, which
+ * already supplies the frame and the title, and a panel that draws its own
+ * chrome cannot be placed inside another one without doubling every border.
+ * The evidence drawer's open/closed state went with the toggle — a dialog is
+ * either up or it is not.
  *
  * The attacker-text panel lives in `ModelInput.tsx`, which needs layout
  * measurement these do not.
@@ -9,7 +16,7 @@
 
 import { useState } from "react";
 
-import { Card, Copyable, Field, TxLink, truncate } from "./primitives.js";
+import { Copyable, Field, TxLink, truncate } from "./primitives.js";
 import { ORCHESTRATOR_URL } from "../lib/config.js";
 import type { PaymentEvent, RunResult } from "../lib/run.js";
 
@@ -110,88 +117,81 @@ const GUARANTEES = [
   ["Independent loss cap", "The payer holds only what was funded."],
 ] as const;
 
-export function Guarantees() {
+export function GuaranteeList() {
   return (
-    <Card title="Guarantees">
-      <ul className="d-guarantees">
-        {GUARANTEES.map(([title, note]) => (
-          <li key={title} className="d-guarantee">
-            <span className="d-guarantee-title">{title}</span>
-            <span className="d-caption">{note}</span>
-          </li>
-        ))}
-      </ul>
-    </Card>
+    <ul className="d-guarantees">
+      {GUARANTEES.map(([title, note]) => (
+        <li key={title} className="d-guarantee">
+          <span className="d-guarantee-title">{title}</span>
+          <span className="d-caption">{note}</span>
+        </li>
+      ))}
+    </ul>
   );
 }
 
-export function EvidenceDrawer({
+/**
+ * How many of the three evidence artefacts a run has produced so far.
+ *
+ * Exported because the console shows this count on the button that opens the
+ * evidence dialog — a control that opens an empty drawer is a control that
+ * wastes a click, and this is what lets the button say so up front.
+ */
+export function evidenceCount(events: readonly PaymentEvent[]): number {
+  return [
+    find(events, "spend-requested"),
+    find(events, "decision-finalized"),
+    find(events, "settled"),
+  ].filter(Boolean).length;
+}
+
+export function EvidenceBody({
   events,
   goalId,
 }: {
   events: readonly PaymentEvent[];
   goalId: string | undefined;
 }) {
-  const [open, setOpen] = useState(false);
-
   const spend = find(events, "spend-requested");
   const finalized = find(events, "decision-finalized");
   const settled = find(events, "settled");
-  const count = [spend, finalized, settled].filter(Boolean).length;
 
   return (
-    <Card>
-      <button
-        type="button"
-        className="d-drawer-toggle"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-        aria-controls="evidence-body"
-      >
-        <span className="d-card-title">Evidence</span>
-        <span className="d-caption">
-          {count === 0 ? "nothing yet" : open ? "hide" : `show ${count}`}
-        </span>
-      </button>
-
-      {open ? (
-        <div id="evidence-body" className="d-drawer-body">
-          <Field label="Decision handle">
-            {spend ? (
-              <Copyable value={spend.spend.decisionHandle} display={truncate(spend.spend.decisionHandle)} />
-            ) : (
-              <span className="d-muted">—</span>
-            )}
-          </Field>
-          <Field label="Terms hash">
-            {spend ? (
-              <Copyable value={spend.spend.termsHash} display={truncate(spend.spend.termsHash)} />
-            ) : (
-              <span className="d-muted">—</span>
-            )}
-          </Field>
-          <Field label="Validity window">
-            {spend ? (
-              <span className="d-mono">
-                {spend.spend.validAfter} .. {spend.spend.validBefore}
-              </span>
-            ) : (
-              <span className="d-muted">—</span>
-            )}
-          </Field>
-          <TxLink label="Commit tx" hash={spend?.spend.commitTx} />
-          <TxLink label="Finalize tx" hash={finalized?.txHash} />
-          <TxLink label="Settlement tx" hash={settled?.settlement.transaction} />
-          {settled?.settlement.simulated ? (
-            <p className="d-caption">
-              Settlement was stubbed — the payload was validated but no USDC moved.
-            </p>
-          ) : null}
-
-          <TraceDownload goalId={goalId} />
-        </div>
+    <>
+      <Field label="Decision handle">
+        {spend ? (
+          <Copyable value={spend.spend.decisionHandle} display={truncate(spend.spend.decisionHandle)} />
+        ) : (
+          <span className="d-muted">—</span>
+        )}
+      </Field>
+      <Field label="Terms hash">
+        {spend ? (
+          <Copyable value={spend.spend.termsHash} display={truncate(spend.spend.termsHash)} />
+        ) : (
+          <span className="d-muted">—</span>
+        )}
+      </Field>
+      <Field label="Validity window">
+        {spend ? (
+          <span className="d-mono">
+            {spend.spend.validAfter} .. {spend.spend.validBefore}
+          </span>
+        ) : (
+          <span className="d-muted">—</span>
+        )}
+      </Field>
+      <TxLink label="Commit tx" hash={spend?.spend.commitTx} />
+      <TxLink label="Finalize tx" hash={finalized?.txHash} />
+      <TxLink label="Settlement tx" hash={settled?.settlement.transaction} />
+      {settled?.settlement.simulated ? (
+        <p className="d-caption">
+          Settlement was stubbed — the payload was validated but no USDC moved.
+        </p>
       ) : null}
-    </Card>
+
+      <TraceDownload goalId={goalId} />
+    </>
   );
 }
 

@@ -6,15 +6,26 @@
  * the resource server finds it.
  */
 
-import { loadDotEnv, required, requiredAddress, requiredHexKey } from "@ntux402/shared/node";
+import {
+  bindHost,
+  createLogger,
+  describeGuard,
+  loadDotEnv,
+  required,
+  requiredAddress,
+  requiredHexKey,
+} from "@ntux402/shared/node";
 import { NETWORK_BASE_SEPOLIA } from "@ntux402/shared";
 import { createPublicClient, formatEther, http } from "viem";
 import { baseSepolia } from "viem/chains";
 
 import { Facilitator } from "./facilitator.js";
 import { createFacilitatorServer } from "./http.js";
+import { rpcTransport } from "@ntux402/shared/viem";
 
 loadDotEnv();
+
+const log = createLogger("facilitator");
 
 const port = Number(process.env["FACILITATOR_PORT"] ?? 8403);
 const chainId = Number(process.env["CHAIN_ID"] ?? 84532);
@@ -31,19 +42,45 @@ const facilitator = new Facilitator({
 const server = createFacilitatorServer({
   facilitator,
   network: NETWORK_BASE_SEPOLIA,
-  log: (line) => console.log(`[facilitator] ${line}`),
+  log: (line) => log.info(line),
 });
 
-const client = createPublicClient({ chain: baseSepolia, transport: http(rpcUrl) });
-const balance = await client.getBalance({ address: facilitator.settlerAddress });
+const client = createPublicClient({ chain: baseSepolia, transport: rpcTransport(rpcUrl) });
 
-server.listen(port, () => {
-  console.log(`[facilitator] listening on http://127.0.0.1:${port}`);
-  console.log(`[facilitator] settler ${facilitator.settlerAddress}  ${formatEther(balance)} ETH (gas)`);
-  if (balance < 500_000_000_000_000n) {
-    console.warn(
-      "[facilitator] WARNING: low gas balance. Settlement will fail. " +
-        "Faucet: https://www.alchemy.com/faucets/base-sepolia",
-    );
-  }
+/*
+ * Listen first, read the gas balance after.
+ *
+ * The balance is a diagnostic: it is printed, and it warns when settlement is
+ * likely to fail. It is not a precondition for serving. It used to be read at
+ * the top level with `await` and no catch, one line above `listen()` — so a
+ * single flaky response from the public RPC rejected at module scope, took the
+ * process down before the port ever opened, and the whole demo stack lost its
+ * facilitator to a transient upstream blip. `sepolia.base.org` answering
+ * "no backend is currently healthy to serve traffic" is a normal Tuesday for a
+ * free public endpoint, and it must not be fatal.
+ *
+ * So the order is inverted and the read is non-fatal. A facilitator that is up
+ * but cannot say how much gas it has is strictly more useful than one that is
+ * not up.
+ */
+server.listen(port, bindHost(), () => {
+  log.info(`listening on http://${bindHost()}:${port}`, { guard: describeGuard() });
+  log.info("settler", { address: facilitator.settlerAddress });
 });
+
+void client.getBalance({ address: facilitator.settlerAddress }).then(
+  (balance) => {
+    log.info("gas balance", { eth: formatEther(balance) });
+    if (balance < 500_000_000_000_000n) {
+      log.warn(
+        "low gas balance — settlement will fail. " +
+          "Faucet: https://www.alchemy.com/faucets/base-sepolia",
+      );
+    }
+  },
+  (error: unknown) => {
+    log.warn("could not read gas balance from the RPC; serving anyway", {
+      detail: error instanceof Error ? error.message.split("\n")[0] : String(error),
+    });
+  },
+);

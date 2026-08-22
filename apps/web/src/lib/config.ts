@@ -6,20 +6,42 @@
  * trusting connection-time state is how you write to the wrong chain.
  */
 
-import { http, createConfig } from "wagmi";
+import { createConfig } from "wagmi";
 import { baseSepolia } from "wagmi/chains";
 import { injected } from "wagmi/connectors";
+import { rpcUrls } from "@ntux402/shared";
+import { rpcTransport } from "@ntux402/shared/viem";
 
 export const CHAIN = baseSepolia;
 export const CHAIN_ID = baseSepolia.id; // 84532
 
+const env = import.meta.env;
+
+/**
+ * RPC endpoints for the browser.
+ *
+ * This used to be a bare `http()`, which resolves to the chain's default public
+ * endpoint — and every service meanwhile read a configured list. The gap only
+ * shows under load: `sepolia.base.org` answers some methods while returning
+ * `-32011 no backend is currently healthy` for `eth_call`, so the console fails
+ * on a contract read while the backend, pointed elsewhere, is perfectly fine.
+ *
+ * Comma-separated, and more than one entry builds a viem `fallback` — the same
+ * transport `@ntux402/shared/viem` gives the services. The default keeps the
+ * chain's own endpoint as a second choice rather than the only one.
+ */
+export const RPC_URL: string =
+  (env["VITE_RPC_URL"] as string | undefined) ??
+  "https://base-sepolia-rpc.publicnode.com,https://sepolia.base.org";
+
+/** For SDKs that want the list rather than a transport — Inco's, in particular. */
+export const RPC_URLS: readonly string[] = rpcUrls(RPC_URL);
+
 export const wagmiConfig = createConfig({
   chains: [baseSepolia],
   connectors: [injected()],
-  transports: { [baseSepolia.id]: http() },
+  transports: { [baseSepolia.id]: rpcTransport(RPC_URL) },
 });
-
-const env = import.meta.env;
 
 export const ORCHESTRATOR_URL: string =
   (env["VITE_ORCHESTRATOR_URL"] as string | undefined) ?? "http://127.0.0.1:8404";
@@ -31,6 +53,17 @@ export interface OrchestratorConfig {
   readonly relayAddress: `0x${string}`;
   readonly signerUrl: string;
   readonly mockApiUrl: string;
+  /** Live-search vendor. Absent when it is not configured — the picker greys those goals out. */
+  readonly vendorAisaUrl?: string | undefined;
+  /**
+   * The live vendor's payee, which is **not** in the shared catalog.
+   *
+   * It is the operator's own address, so it cannot be compiled into this
+   * bundle. It has to be unioned into the allowlist when a goal is opened, or
+   * every live spend reverts `PayeeNotAllowlisted` — the correct failure, and a
+   * thoroughly confusing one to watch.
+   */
+  readonly vendorAisaPayee?: `0x${string}` | undefined;
   /** "stub" means payloads are validated but no money moves. Shown, never hidden. */
   readonly settlement: "live" | "stub";
   readonly agent: "llm" | "scripted";

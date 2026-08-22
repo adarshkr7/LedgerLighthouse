@@ -4,6 +4,7 @@
  *
  *   POST /payer           -> { address }        mint an ephemeral payer key
  *   POST /authorizations  -> { goalId, seq }    sign the finalized record
+ *   POST /sweeps          -> { goalId }         return the payer balance to the owner
  *
  * There is no route that accepts an amount, a payee or a token, because there is
  * no code path that would know what to do with one. `node:http` rather than a
@@ -12,27 +13,33 @@
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 
+import { RateLimiter, corsHeaders, rejected } from "@ntux402/shared/node";
+
 import type { AuthorizationSigner } from "./service.js";
 
 /** Bounded so a hostile body cannot be used to exhaust memory. */
 const MAX_BODY_BYTES = 8 * 1024;
 
-/**
- * Dev-only CORS, so the demo UI can mint a payer address from the browser.
+/*
+ * CORS is now an allowlist (localhost plus `CORS_ORIGINS`) rather than `*`, and
+ * the process binds loopback unless told otherwise. See `guard.ts`.
  *
- * Worth being precise about what this does and does not expose. `POST /payer`
- * generates a key and returns an address — a cross-origin caller can create
- * unused keys, which costs nothing and grants nothing. `POST /authorizations`
+ * Worth restating what these routes do and do not expose, because it is easy to
+ * over-read the risk. `POST /payer` generates a key and returns an address — a
+ * caller can create unused keys, which grants nothing. `POST /authorizations`
  * takes only `(goalId, seq)` and signs only what the chain already finalized as
- * approved, so reaching it from another origin confers no authority that
- * reaching it from this one would not. The key never crosses this boundary in
- * either direction. In production this belongs behind an allowlist anyway.
+ * approved. The key never crosses this boundary in either direction.
+ *
+ * What was genuinely wrong was unbounded key *minting*: every call writes a new
+ * private key to the file store, so a loop grew the file without limit. That is
+ * what the limiter below is for.
  */
-const CORS = {
-  "access-control-allow-origin": "*",
-  "access-control-allow-methods": "GET, POST, OPTIONS",
-  "access-control-allow-headers": "content-type",
-} as const;
+
+/** Key minting is cheap to call and expensive to serve. */
+const MINT_LIMIT = new RateLimiter({ windowMs: 60_000, max: 30 });
+
+/** Signing is chain-read-bound; the limit is generous but not absent. */
+const SIGN_LIMIT = new RateLimiter({ windowMs: 60_000, max: 120 });
 
 async function readBody(req: IncomingMessage): Promise<string> {
   const chunks: Buffer[] = [];
@@ -46,10 +53,15 @@ async function readBody(req: IncomingMessage): Promise<string> {
   return Buffer.concat(chunks).toString("utf8");
 }
 
-function send(res: ServerResponse, status: number, body: unknown): void {
+function send(
+  res: ServerResponse,
+  status: number,
+  body: unknown,
+  cors: Record<string, string> = {},
+): void {
   const payload = JSON.stringify(body);
   res.writeHead(status, {
-    ...CORS,
+    ...cors,
     "content-type": "application/json",
     "content-length": Buffer.byteLength(payload),
   });
@@ -67,33 +79,78 @@ export function createSignerServer(options: SignerServerOptions): Server {
   const log = options.log ?? (() => {});
 
   return createServer((req, res) => {
+    /*
+     * Computed once, out here rather than inside the async frame, so the
+     * `.catch()` below can reach it too. It could not before, and a crash
+     * therefore answered without CORS headers -- which the browser reports as
+     * an opaque "Failed to fetch" rather than the 500 and its message. That is
+     * precisely the failure this project spent an afternoon misdiagnosing: the
+     * service was up and answering, and the only thing wrong was that the
+     * answer was unreadable.
+     */
+    const cors = corsHeaders(req);
+
     void (async () => {
       const path = (req.url ?? "/").split("?")[0];
 
       if (req.method === "OPTIONS") {
-        res.writeHead(204, CORS);
+        res.writeHead(204, cors);
         res.end();
         return;
       }
 
+      // Unguarded on purpose: a liveness probe that needs a credential is a
+      // liveness probe that reports the credential rather than the service.
       if (req.method === "GET" && path === "/health") {
-        send(res, 200, { ok: true, service: "authorization-signer" });
+        send(res, 200, { ok: true, service: "authorization-signer" }, cors);
         return;
       }
 
       if (req.method === "POST" && path === "/payer") {
+        if (rejected(req, res, { limiter: MINT_LIMIT })) return;
         const { address } = await signer.mintPayer();
         log(`POST /payer -> ${address}`);
-        send(res, 201, { address });
+        send(res, 201, { address }, cors);
         return;
       }
 
-      if (req.method === "POST" && path === "/authorizations") {
+      if (req.method === "POST" && path === "/sweeps") {
+        if (rejected(req, res, { limiter: SIGN_LIMIT })) return;
         let raw: string;
         try {
           raw = await readBody(req);
         } catch (e) {
-          send(res, 413, { error: e instanceof Error ? e.message : String(e) });
+          send(res, 413, { error: e instanceof Error ? e.message : String(e) }, cors);
+          return;
+        }
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(raw === "" ? "null" : raw);
+        } catch {
+          send(res, 400, { error: "body: not valid JSON" }, cors);
+          return;
+        }
+        const outcome = await signer.sweep(parsed);
+        if (!outcome.ok) {
+          log(`POST /sweeps -> ${outcome.status} ${outcome.error}`);
+          send(res, outcome.status, { error: outcome.error }, cors);
+          return;
+        }
+        log(
+          `POST /sweeps -> 200 signed goal ${outcome.value.goalId} ` +
+            `value=${outcome.value.authorization.value} to=${outcome.value.authorization.to}`,
+        );
+        send(res, 200, outcome.value, cors);
+        return;
+      }
+
+      if (req.method === "POST" && path === "/authorizations") {
+        if (rejected(req, res, { limiter: SIGN_LIMIT })) return;
+        let raw: string;
+        try {
+          raw = await readBody(req);
+        } catch (e) {
+          send(res, 413, { error: e instanceof Error ? e.message : String(e) }, cors);
           return;
         }
 
@@ -101,27 +158,27 @@ export function createSignerServer(options: SignerServerOptions): Server {
         try {
           parsed = JSON.parse(raw === "" ? "null" : raw);
         } catch {
-          send(res, 400, { error: "body: not valid JSON" });
+          send(res, 400, { error: "body: not valid JSON" }, cors);
           return;
         }
 
         const outcome = await signer.signRaw(parsed);
         if (!outcome.ok) {
           log(`POST /authorizations -> ${outcome.status} ${outcome.error}`);
-          send(res, outcome.status, { error: outcome.error });
+          send(res, outcome.status, { error: outcome.error }, cors);
           return;
         }
         log(
           `POST /authorizations -> 200 signed (${outcome.value.goalId}, ${outcome.value.seq}) ` +
             `value=${outcome.value.authorization.value}`,
         );
-        send(res, 200, outcome.value);
+        send(res, 200, outcome.value, cors);
         return;
       }
 
-      send(res, 404, { error: "not found" });
+      send(res, 404, { error: "not found" }, cors);
     })().catch((e: unknown) => {
-      send(res, 500, { error: e instanceof Error ? e.message : String(e) });
+      send(res, 500, { error: e instanceof Error ? e.message : String(e) }, cors);
     });
   });
 }

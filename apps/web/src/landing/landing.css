@@ -1,1205 +1,1564 @@
 /*
- * LedgerLighthouse — landing surface: Swiss International Style.
+ * LedgerLighthouse — landing surface.
  *
- * Objective, gridded, brutally precise. The design recedes; type, weight,
- * scale and position carry every decision that colour or shadow would
- * otherwise be doing. Depth comes from pattern and border, never from blur or
- * glow — nothing here has a box-shadow, a backdrop-filter, or a radius.
+ * Editorial agency layout, modelled directly on the reference build: a
+ * 12-column grid inside a 1–2rem margin, sections alternating between ink and
+ * bone, one neo-grotesque for display and one monospace for every label,
+ * index and tag. No shadows anywhere. The only radius on the page belongs to
+ * the pill buttons, and it is a full one.
  *
- * Five tokens, and nothing else:
+ * ## Tone, not theme
  *
- *   --sw-bg       #FFFFFF   the canvas
- *   --sw-fg       #000000   text, borders, structure
- *   --sw-muted    #F2F2F2   secondary surfaces, for rhythm
- *   --sw-accent   #FF3000   the one signal colour — warnings, CTAs, emphasis
- *   --sw-border   #000000   same as fg; named separately because a border is
- *                           a structural decision, not a text-colour one
+ * There is no light/dark switch here. Each section declares a *tone* —
+ * `.gf-ink` or `.gf-bone` — and a tone is a complete recolouring of the same
+ * eight tokens. That is why nothing below this token block ever names a
+ * literal colour: a component dropped into either tone inherits the right one
+ * without knowing which it landed in, and adding a third tone later is one
+ * class rather than a sweep. The two `@media (prefers-color-scheme)` blocks
+ * that a theme would need do not exist, on purpose — the alternation *is* the
+ * composition, and letting the OS invert it would destroy the rhythm the page
+ * is built out of.
  *
- * Scoped entirely under `.landing`, deliberately — the console (App.tsx,
- * dashboard.css) is a different product surface with its own dark pixel/neon
- * identity that nothing here should touch. `body:has(.landing)` in
- * styles.css switches off the console's CRT overlay and forces white when
- * this page is mounted; everything else stays local to this file.
+ * ## Fluid type
+ *
+ * Every display size is `clamp(min, min + delta * slope, max)` where the slope
+ * is the viewport's progress from 375px to 1600px. One `--gf-slope` drives the
+ * whole scale, so the ratios between headline, subhead and body hold at every
+ * width and there is not a single typographic breakpoint in this file.
+ *
+ * Scoped entirely under `.gf`, deliberately — the console (App.tsx,
+ * dashboard.css) is a different product surface with its own identity that
+ * nothing here should touch.
  */
 
-.landing {
-  --sw-bg: #ffffff;
-  --sw-fg: #000000;
-  --sw-muted: #f2f2f2;
-  --sw-accent: #ff3000;
-  --sw-border: #000000;
-  --sw-font: "Inter", "Inter Fallback", ui-sans-serif, system-ui, Helvetica, Arial, sans-serif;
-  --sw-ease: cubic-bezier(0, 0, 0.2, 1);
-  --sw-max: 90rem;
-  --sw-pad: 2rem;
-  --sw-b: 3px;
-  /* Height of the sticky nav's inner row — its --sw-b border sits below that,
-     so the full occluded strip is `--sw-nav + --sw-b`. Declared once because
-     three unrelated things measure from it: the nav itself, the hero's fill
-     height, and every section's scroll clearance. */
-  --sw-nav: 4.5rem;
+.gf {
+  /* ---- tone: bone (default) ------------------------------------------- */
+  --gf-bg: #eeeeee;
+  --gf-fg: #141314;
+  --gf-bg-muted: #f7f7f7;
+  --gf-fg-muted: #696869;
+  --gf-brand: #fb460d;
+  --gf-border: rgba(0, 0, 0, 0.2);
+  --gf-border-muted: rgba(0, 0, 0, 0.1);
+  --gf-surface: #d5d5d5;
+
+  /* ---- type ------------------------------------------------------------ */
+  --gf-sans: "Geist", "Inter", ui-sans-serif, system-ui, Helvetica, Arial, sans-serif;
+  --gf-mono: "Geist Mono", "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* Viewport progress from 375px to 1600px, as a length. Every clamp below
+     multiplies this by its own delta. */
+  --gf-slope: calc((100vw - 375px) / 1225);
+
+  --gf-t-display: clamp(48px, calc(48px + 80 * var(--gf-slope)), 128px);
+  --gf-t-h1: clamp(32px, calc(32px + 64 * var(--gf-slope)), 96px);
+  --gf-t-h2: clamp(36px, calc(36px + 28 * var(--gf-slope)), 64px);
+  --gf-t-h3: clamp(28px, calc(28px + 20 * var(--gf-slope)), 48px);
+  --gf-t-h4: clamp(28px, calc(28px + 4 * var(--gf-slope)), 32px);
+  --gf-t-sub: clamp(20px, calc(20px + 4 * var(--gf-slope)), 24px);
+  --gf-t-body-lg: clamp(18px, calc(18px + 2 * var(--gf-slope)), 20px);
+  --gf-t-body: 16px;
+  --gf-t-body-sm: 14px;
+  --gf-t-accent: clamp(14px, calc(14px + 2 * var(--gf-slope)), 16px);
+  --gf-t-accent-sm: clamp(12px, calc(12px + 2 * var(--gf-slope)), 14px);
+
+  /* ---- layout ---------------------------------------------------------- */
+  --gf-cols: 12;
+  --gf-gutter: 1rem;
+  --gf-margin: 1rem;
+  --gf-max: 1920px;
+  --gf-header: 104px;
+  --gf-pad: 52px;
+
+  /* ---- motion ---------------------------------------------------------- */
+  --gf-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --gf-ease-quart: cubic-bezier(0.25, 1, 0.5, 1);
+  --gf-ease-in-out: cubic-bezier(0.76, 0, 0.24, 1);
 
   position: relative;
-  background: var(--sw-bg);
-  color: var(--sw-fg);
-  font-family: var(--sw-font);
-  font-size: 16px;
+  background: var(--gf-bg);
+  color: var(--gf-fg);
+  font-family: var(--gf-sans);
+  font-size: var(--gf-t-body);
+  font-weight: 400;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+  overflow-x: clip;
 }
 
-.landing * {
+@media (min-width: 640px) {
+  .gf {
+    --gf-margin: 1.5rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .gf {
+    --gf-margin: 2rem;
+    --gf-pad: 88px;
+  }
+}
+
+.gf * {
   box-sizing: border-box;
 }
 
-/* Swiss red selection — the one place the accent gets to be a fill rather
-   than a line, because a selection highlight is by definition transient. */
-.landing ::selection {
-  background: var(--sw-accent);
-  color: #fff;
+.gf ::selection {
+  background: var(--gf-brand);
+  color: #eeeeee;
 }
 
-/* --------------------------------------------------------------- textures */
-
-/*
- * Four pattern utilities, applied strategically rather than everywhere — a
- * pattern on every surface stops reading as texture and starts reading as
- * wallpaper. Never laid over pure black or the accent; always over white or
- * muted grey, per the source guidance.
+/* ---- tones --------------------------------------------------------------
+ *
+ * A tone is applied to a section, and every token it overrides cascades to
+ * everything inside. `color-scheme` follows so form controls and the ambient
+ * scrollbar in that region match rather than fight.
  */
 
-/* 24×24 grid lines, ~3% black. The hero's structural skeleton, made visible. */
-.sw-grid {
-  background-image:
-    repeating-linear-gradient(to right, rgba(0, 0, 0, 0.05) 0 1px, transparent 1px 24px),
-    repeating-linear-gradient(to bottom, rgba(0, 0, 0, 0.05) 0 1px, transparent 1px 24px);
+.gf-ink {
+  --gf-bg: #141314;
+  --gf-fg: #eeeeee;
+  --gf-bg-muted: #1a1a1a;
+  --gf-fg-muted: #818081;
+  --gf-brand: #fd551d;
+  --gf-border: rgba(238, 238, 238, 0.1);
+  --gf-border-muted: rgba(238, 238, 238, 0.05);
+  --gf-surface: #333333;
+  color-scheme: dark;
 }
 
-/* 16×16 dot matrix, ~4% black. Print-technique texture for section headers. */
-.sw-dots {
-  background-image: radial-gradient(rgba(0, 0, 0, 0.14) 1px, transparent 1.4px);
-  background-size: 16px 16px;
+.gf-bone {
+  --gf-bg: #eeeeee;
+  --gf-fg: #141314;
+  --gf-bg-muted: #f7f7f7;
+  --gf-fg-muted: #696869;
+  --gf-brand: #fb460d;
+  --gf-border: rgba(0, 0, 0, 0.2);
+  --gf-border-muted: rgba(0, 0, 0, 0.1);
+  --gf-surface: #d5d5d5;
+  color-scheme: light;
 }
 
-/* 45° stripes, 10px pitch, ~2% black. Directional energy on a muted panel. */
-.sw-diagonal {
-  background-image: repeating-linear-gradient(
-    45deg,
-    rgba(0, 0, 0, 0.05) 0 1px,
-    transparent 1px 10px
-  );
+/* ==========================================================================
+ * Layout primitives
+ * ========================================================================== */
+
+.gf-container {
+  width: calc(100vw - var(--gf-margin) * 2);
+  max-width: var(--gf-max);
+  margin-inline: auto;
 }
 
-/* Fractal noise via inline SVG, ~1.5% opacity. Paper grain across the whole
-   page rather than a dead-flat digital white. */
-.landing {
+.gf-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--gf-cols), minmax(0, 1fr));
+  gap: var(--gf-gutter);
+}
+
+.gf-sec {
   position: relative;
+  background: var(--gf-bg);
+  color: var(--gf-fg);
+  padding-block: var(--gf-pad);
+  /* Sections are the scroll targets, so the sticky header's height is
+     subtracted here rather than at every call site. */
+  scroll-margin-top: var(--gf-header);
 }
-
-.landing::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  opacity: 0.4;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E");
-}
-
-.landing > * {
-  position: relative;
-  z-index: 1;
-}
-
-/* ------------------------------------------------------------------ motion */
 
 /*
- * Instant, mechanical, snappy. 150–200ms, ease-out or linear, never a spring.
- * Entrances are a small vertical settle, not a soft materialisation.
+ * Collapse the seam between same-tone neighbours.
+ *
+ * Section padding is sized so that a tone change reads as a deliberate break.
+ * Where two sections share a tone there is no visible edge between them, so
+ * the two paddings merely sum into a gap twice the size of every other one,
+ * with nothing in it. One of them goes.
  */
-.landing.js-reveal .lp-reveal {
-  opacity: 0;
-  transform: translate3d(0, 14px, 0);
+.gf-bone + .gf-bone,
+.gf-ink + .gf-ink {
+  padding-top: 0;
 }
 
-.landing.js-reveal .lp-reveal[data-seen] {
-  opacity: 1;
-  transform: none;
-  transition:
-    opacity 320ms var(--sw-ease),
-    transform 320ms var(--sw-ease);
+/* ==========================================================================
+ * Typography
+ * ========================================================================== */
+
+.gf-display {
+  margin: 0;
+  font-size: var(--gf-t-display);
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: -0.035em;
 }
 
-@keyframes lp-fade-up {
-  from {
-    opacity: 0;
-    transform: translate3d(0, 12px, 0);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
+.gf-h1 {
+  margin: 0;
+  font-size: var(--gf-t-h1);
+  font-weight: 400;
+  line-height: 1.1;
+  letter-spacing: -0.035em;
 }
 
-.lp-in {
-  animation: lp-fade-up 380ms var(--sw-ease) both;
+.gf-h2 {
+  margin: 0;
+  font-size: var(--gf-t-h2);
+  font-weight: 500;
+  line-height: 1.125;
+  letter-spacing: -0.05em;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .landing.js-reveal .lp-reveal,
-  .lp-in {
-    opacity: 1;
-    transform: none;
-    animation: none;
-    transition: none;
-  }
+.gf-h3 {
+  margin: 0;
+  font-size: var(--gf-t-h3);
+  font-weight: 500;
+  line-height: 1.083;
+  letter-spacing: -0.05em;
 }
 
-/* --------------------------------------------------------------------- nav */
-
-.lp-nav {
-  position: sticky;
-  top: 0;
-  z-index: 40;
-  background: rgba(255, 255, 255, 0.78);
-  -webkit-backdrop-filter: blur(18px) saturate(1.1);
-  backdrop-filter: blur(18px) saturate(1.1);
-  border-bottom: var(--sw-b) solid var(--sw-border);
-}
-
-.lp-nav-inner {
-  max-width: var(--sw-max);
-  margin: 0 auto;
-  padding: 0 var(--sw-pad);
-  height: var(--sw-nav);
-  display: flex;
-  align-items: center;
-  gap: 1.5rem;
-}
-
-.lp-nav-brand {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  margin-inline-end: auto;
-}
-
-.lp-nav-name {
-  font-size: 0.9rem;
-  font-weight: 800;
-  letter-spacing: 0.02em;
+.gf-mono {
+  font-family: var(--gf-mono);
+  font-size: var(--gf-t-accent-sm);
+  font-weight: 400;
+  letter-spacing: -0.02em;
   text-transform: uppercase;
 }
 
-.lp-nav-links {
-  display: flex;
-  gap: 0.25rem;
+.gf-dim {
+  color: var(--gf-fg-muted);
 }
 
-/*
- * These are `<button>`s, not anchors — the jump is handed to Lenis so it can
- * be smoothed, and a fragment href would both bypass that and rewrite the URL
- * (see NAV_LINKS in Landing.tsx). Hence the button reset on the first three
- * lines; everything after it is the link styling they had as anchors.
- */
-.lp-nav-link {
-  appearance: none;
+.gf-lede {
+  max-width: 52ch;
+  margin: 24px 0 0;
+  font-size: var(--gf-t-body-lg);
+  line-height: 1.4;
+  color: var(--gf-fg-muted);
+}
+
+.gf-note {
+  margin: 20px 0 0;
+  font-family: var(--gf-mono);
+  font-size: var(--gf-t-accent-sm);
+  color: var(--gf-brand);
+}
+
+/* Section head: title on the left of the grid, mono tag pinned right. */
+.gf-head {
+  align-items: end;
+  margin-bottom: 36px;
+}
+
+.gf-head-title {
+  grid-column: span 12;
+}
+
+.gf-head-tag {
+  display: none;
+}
+
+@media (min-width: 1024px) {
+  .gf-head-title {
+    grid-column: span 8;
+  }
+
+  .gf-head-tag {
+    display: block;
+    grid-column: 11 / span 2;
+    margin: 0;
+    text-align: right;
+  }
+
+  .gf-head {
+    margin-bottom: 56px;
+  }
+}
+
+/* A rule with a label sitting on it — the reference site's section divider. */
+.gf-rule-label {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin: 0 0 32px;
+  padding-top: 18px;
+  border-top: 1px solid var(--gf-border);
+  color: var(--gf-fg-muted);
+}
+
+/* ==========================================================================
+ * Controls
+ * ========================================================================== */
+
+.gf-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 26px;
+  border: 1px solid var(--gf-fg);
+  border-radius: 9999px;
+  background: var(--gf-fg);
+  color: var(--gf-bg);
+  font-family: var(--gf-mono);
+  font-size: var(--gf-t-accent-sm);
+  letter-spacing: -0.02em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition:
+    background 0.3s var(--gf-ease-out),
+    color 0.3s var(--gf-ease-out),
+    border-color 0.3s var(--gf-ease-out);
+}
+
+.gf-pill:hover:not(:disabled) {
+  background: var(--gf-brand);
+  border-color: var(--gf-brand);
+  color: #eeeeee;
+}
+
+.gf-pill:disabled {
+  cursor: progress;
+  opacity: 0.55;
+}
+
+.gf-pill-sm {
+  padding: 10px 18px;
+}
+
+/* A text link that draws its own underline on hover, left to right. */
+.gf-text-link {
+  position: relative;
+  padding: 0 0 2px;
   border: 0;
   background: none;
-  position: relative;
-  display: inline-block;
-  padding: 0.6rem 0.9rem;
-  font-family: var(--sw-font);
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
+  color: var(--gf-fg);
+  font-family: var(--gf-mono);
+  font-size: var(--gf-t-accent-sm);
+  letter-spacing: -0.02em;
   text-transform: uppercase;
-  color: var(--sw-fg);
   text-decoration: none;
   cursor: pointer;
-  transition: color 150ms var(--sw-ease);
 }
 
-/* A drawn underline that snaps in from the left rather than fading — motion
-   with mechanical intent, matching "instant, geometric" from the brief. */
-.lp-nav-link::after {
+.gf-text-link::after {
   content: "";
   position: absolute;
-  left: 0.9rem;
-  right: 0.9rem;
-  bottom: 0.35rem;
-  height: 2px;
-  background: var(--sw-accent);
+  inset-inline: 0;
+  bottom: 0;
+  height: 1px;
+  background: currentColor;
   transform: scaleX(0);
   transform-origin: left;
-  transition: transform 150ms var(--sw-ease);
+  transition: transform 0.4s var(--gf-ease-out);
 }
 
-.lp-nav-link:hover {
-  color: var(--sw-accent);
-}
-
-.lp-nav-link:hover::after {
+.gf-text-link:hover::after,
+.gf-text-link:focus-visible::after {
   transform: scaleX(1);
 }
 
-@media (max-width: 52rem) {
-  .lp-nav-links {
-    display: none;
-  }
-}
-
-/* ----------------------------------------------------------------- buttons */
-
-/*
- * Two shapes, both rectangular, both defined by a thick border — never a
- * radius, never a shadow. Hover is a full, instant colour swap, not a fade:
- * primary switches to the accent (the brief's "hover: invert or switch to
- * Swiss Red"), secondary inverts to black (the brief's "invert colours").
- */
-.lp-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  padding: 1rem 1.75rem;
-  border: var(--sw-b) solid var(--sw-fg);
-  background: var(--sw-fg);
-  color: var(--sw-bg);
-  font-family: var(--sw-font);
-  font-size: 0.78rem;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  text-decoration: none;
-  cursor: pointer;
-  transition: background 150ms linear, color 150ms linear, border-color 150ms linear;
-}
-
-.lp-btn:hover {
-  background: var(--sw-accent);
-  border-color: var(--sw-accent);
-  color: #fff;
-}
-
-.lp-btn:active {
-  transform: translateY(1px);
-}
-
-.lp-btn[data-connecting] {
-  cursor: progress;
-  background: var(--sw-bg);
-  color: var(--sw-fg);
-  border-color: var(--sw-fg);
-}
-
-.lp-btn:disabled {
-  pointer-events: none;
-}
-
-.lp-btn-ghost {
-  background: var(--sw-bg);
-  color: var(--sw-fg);
-  border-color: var(--sw-fg);
-}
-
-.lp-btn-ghost:hover {
-  background: var(--sw-fg);
-  border-color: var(--sw-fg);
-  color: var(--sw-bg);
-}
-
-.lp-btn:focus-visible,
-.lp-nav-link:focus-visible,
-.lp-footer-links a:focus-visible,
-.deck-num:focus-visible {
-  outline: 2px solid var(--sw-accent);
+.gf :is(button, a):focus-visible {
+  outline: 2px solid var(--gf-brand);
   outline-offset: 3px;
 }
 
-/* ------------------------------------------------------------- shared type */
-
 /*
- * The numbered section label — the single most Swiss move available: every
- * major section is a numbered exhibit, prefix in the accent, label in bold
- * uppercase black. It replaces the soft pill-eyebrow entirely.
- */
-.lp-eyebrow {
-  display: flex;
-  align-items: baseline;
-  gap: 0.85rem;
-  margin: 0 0 1.5rem;
-  font-size: 0.72rem;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-}
-
-.lp-num {
-  color: var(--sw-accent);
-  font-variant-numeric: tabular-nums;
-}
-
-.lp-h2 {
-  margin: 0 0 3rem;
-  font-family: var(--sw-font);
-  font-size: clamp(2.4rem, 5vw, 4.2rem);
-  line-height: 0.98;
-  letter-spacing: -0.03em;
-  font-weight: 800;
-  text-transform: uppercase;
-  max-width: 16ch;
-}
-
-/* ------------------------------------------------------------------ layout */
-
-.lp-section {
-  position: relative;
-  max-width: var(--sw-max);
-  margin: 0 auto;
-  padding: 6rem var(--sw-pad);
-  border-bottom: 1px solid var(--sw-fg);
-  /* The nav is sticky, so without this, arriving at #flow, #guarantees or
-     #security lands the heading half-hidden underneath it. This is the only
-     declaration of that clearance: the platform applies it to external deep
-     links, and useSmoothScroll reads it back off the element to offset Lenis,
-     which does not honour it on its own. */
-  scroll-margin-top: calc(var(--sw-nav) + var(--sw-b));
-}
-
-@media (max-width: 52rem) {
-  .landing {
-    --sw-pad: 1.25rem;
-  }
-  .lp-section {
-    padding: 4rem var(--sw-pad);
-  }
-}
-
-/* -------------------------------------------------------------------- hero */
-
-/*
- * Full-bleed and full-height: the photograph is the first frame of the page,
- * so it fills everything the nav is not covering rather than sizing itself to
- * the copy. Height came from padding alone before, which meant a fixed ~680px
- * band and a strip of the next section showing under it on any display taller
- * than a laptop.
+ * Touch targets for the text-only controls.
  *
- * `svh` is the *small* viewport height — mobile browsers measure it with the
- * URL bar expanded, so the hero does not grow and reflow as that bar retracts.
- * The `vh` line above it is the fallback for engines that do not know `svh`.
+ * The brand mark, the two ghost links and the footer links are bare type with
+ * no padding, so they measure 18-20px tall — under the 24px WCAG 2.2 minimum
+ * (2.5.8), and well under what a thumb wants. Padding them would work and
+ * would also move them: the ghost link sits on a baseline next to a pill, and
+ * the footer links are a tight 12px-gap stack whose rhythm is the design.
  *
- * The padding stays as a floor: on a short viewport the copy outgrows the
- * min-height and the hero simply gets taller, which is the correct failure.
+ * So the hit area is grown with a pseudo-element instead. It is absolutely
+ * positioned and therefore contributes no layout at all, and because it
+ * belongs to the control, a press anywhere in it still targets the control.
+ *
+ * The vertical inset is capped at 6px on the footer stack specifically: those
+ * links are 12px apart, so anything larger would make neighbouring hit areas
+ * overlap and the top link would start swallowing presses meant for the one
+ * below it.
  */
-.lp-hero {
+.gf-text-link,
+.gf-brand,
+.gf-footer-links a {
   position: relative;
-  isolation: isolate;
-  overflow: hidden;
-  display: flex;
-  align-items: center;
-  width: 100%;
-  min-height: calc(100vh - var(--sw-nav) - var(--sw-b));
-  min-height: calc(100svh - var(--sw-nav) - var(--sw-b));
-  margin: 0;
-  padding: 5rem 0 6rem;
-  border-bottom: var(--sw-b) solid var(--sw-border);
 }
 
-/* The photograph, full-bleed behind the whole hero — not a contained panel.
-   Pushed to high-contrast black and white: a Swiss photographic treatment is
-   bold and desaturated, never a soft colour wash. */
-.lp-hero-bg {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  background-image: url("/lighthouse.webp");
-  background-size: cover;
-  background-position: 68% 38%;
-  filter: grayscale(1) contrast(1.4) brightness(0.75);
-}
-
-/* A flat black scrim, not a gradient standing in for layout — it exists for
-   one reason, keeping the headline legible, and is honest about that: heavy
-   where the copy sits, thin enough on the right that the photograph itself
-   still reads. */
-.lp-hero-scrim {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  background: linear-gradient(
-    100deg,
-    rgba(0, 0, 0, 0.88) 0%,
-    rgba(0, 0, 0, 0.82) 38%,
-    rgba(0, 0, 0, 0.5) 62%,
-    rgba(0, 0, 0, 0.3) 100%
-  );
-}
-
-/* `width: 100%` because a flex item shrink-to-fits by default, which would
-   collapse this to the headline's width and strand it left of centre. */
-.lp-hero-copy {
-  position: relative;
-  z-index: 2;
-  width: 100%;
-  max-width: calc(var(--sw-max) - (var(--sw-pad) * 2));
-  margin: 0 auto;
-  padding: 0 var(--sw-pad);
-}
-
-/* Massive, tight, uppercase — "let words be images." White, because the
-   surface behind it is now a dark photograph rather than the page's white
-   canvas; every other headline on this page stays black on white. */
-.lp-headline {
-  margin: 0 0 1.8rem;
-  font-size: clamp(3rem, 7.4vw, 6.6rem);
-  line-height: 0.92;
-  letter-spacing: -0.035em;
-  font-weight: 900;
-  text-transform: uppercase;
-  max-width: 13ch;
-  color: #fff;
-}
-
-.lp-headline em,
-.lp-cta-title em {
-  font-style: normal;
-  color: var(--sw-accent);
-}
-
-.lp-sub {
-  margin: 0 0 2.4rem;
-  padding-left: 0;
-  font-size: 1.05rem;
-  line-height: 1.6;
-  font-weight: 500;
-  color: rgba(255, 255, 255, 0.72);
-  max-width: 38ch;
-}
-
-.lp-actions {
-  display: flex;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-}
-
-/* Inverted from the page default: a solid black button would all but
-   disappear against a dark photograph, so inside the hero specifically the
-   primary is white-on-black-text and the ghost is a white outline. Nowhere
-   else on the page needs this — everywhere else is white already. */
-.lp-hero .lp-btn {
-  background: #fff;
-  border-color: #fff;
-  color: #000;
-}
-
-.lp-hero .lp-btn:hover {
-  background: var(--sw-accent);
-  border-color: var(--sw-accent);
-  color: #fff;
-}
-
-.lp-hero .lp-btn-ghost {
-  background: transparent;
-  border-color: rgba(255, 255, 255, 0.7);
-  color: #fff;
-}
-
-.lp-hero .lp-btn-ghost:hover {
-  background: #fff;
-  border-color: #fff;
-  color: #000;
-}
-
-.lp-connect-note {
-  margin: 1.2rem 0 0;
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--sw-accent);
-}
-
-/* Everywhere else on the page, an eyebrow's index sits over white and reads in
-   black with a red numeral. Inside the hero it sits over a dark photo, so both
-   halves invert to stay legible without touching the shared rule. */
-.lp-hero .lp-eyebrow {
-  color: rgba(255, 255, 255, 0.85);
-}
-
-@media (max-width: 60rem) {
-  .lp-hero {
-    padding: 4rem 0 4.5rem;
-  }
-  .lp-hero-bg {
-    background-position: 78% center;
-  }
-  .lp-hero-scrim {
-    background: linear-gradient(
-      to bottom,
-      rgba(0, 0, 0, 0.86) 0%,
-      rgba(0, 0, 0, 0.72) 55%,
-      rgba(0, 0, 0, 0.86) 100%
-    );
-  }
-  .lp-hero-copy {
-    max-width: none;
-    padding: 0 var(--sw-pad);
-  }
-  .lp-headline {
-    max-width: none;
-  }
-}
-
-/* ------------------------------------------------------------- trust strip */
-
-.lp-trust {
-  max-width: var(--sw-max);
-  margin: 0 auto;
-  padding: 1.4rem var(--sw-pad);
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0;
-  border-bottom: 1px solid var(--sw-fg);
-}
-
-.lp-trust-item {
-  padding: 0.4rem 1.4rem 0.4rem 0;
-  margin-right: 1.4rem;
-  border-right: 1px solid rgba(0, 0, 0, 0.25);
-  font-size: 0.68rem;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
-
-.lp-trust-item:last-child {
-  border-right: 0;
-  margin-right: 0;
-}
-
-.lp-trust-item::before {
-  content: none;
-}
-
-/* ------------------------------------------------------------ feature grid */
-
-.lp-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0;
-  border: var(--sw-b) solid var(--sw-border);
-}
-
-/*
- * Each card is defined purely by its border, sharing edges with its
- * neighbours (negative margin pulls the shared border into one line rather
- * than doubling it). Hover is a full colour inversion to the accent — bold,
- * immediate, exactly the brief's "Feature Cards: colour inversion on hover".
- */
-.lp-card {
-  position: relative;
-  padding: 2.25rem 1.9rem;
-  background: var(--sw-bg);
-  border: var(--sw-b) solid var(--sw-border);
-  margin: 0 0 calc(var(--sw-b) * -1) calc(var(--sw-b) * -1);
-  display: flex;
-  flex-direction: column;
-  gap: 1.1rem;
-  min-width: 0;
-  transition: background 150ms linear, color 150ms linear;
-}
-
-.lp-card:hover {
-  background: var(--sw-accent);
-  color: #fff;
-}
-
-.lp-card-icon {
-  display: grid;
-  place-items: center;
-  width: 2.75rem;
-  height: 2.75rem;
-  border: 2px solid currentColor;
-  color: var(--sw-fg);
-}
-
-.lp-card:hover .lp-card-icon {
-  color: #fff;
-}
-
-.lp-card-title {
-  margin: 0;
-  font-size: 1.1rem;
-  font-weight: 800;
-  letter-spacing: -0.01em;
-  text-transform: uppercase;
-}
-
-.lp-card-body {
-  margin: 0;
-  font-size: 0.86rem;
-  line-height: 1.65;
-  color: rgba(0, 0, 0, 0.6);
-}
-
-.lp-card:hover .lp-card-body {
-  color: rgba(255, 255, 255, 0.85);
-}
-
-@media (max-width: 60rem) {
-  .lp-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 40rem) {
-  .lp-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
-/* -------------------------------------------------------------- comparison */
-
-.lp-compare {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  border: var(--sw-b) solid var(--sw-border);
-}
-
-.lp-col {
-  padding: 2.25rem 2rem;
-  min-width: 0;
-  background: var(--sw-bg);
-}
-
-.lp-col + .lp-col {
-  border-left: var(--sw-b) solid var(--sw-border);
-}
-
-/* The favourable column is weighted with the muted fill and a diagonal
-   texture — asymmetric emphasis through pattern and fill, never through hue,
-   per "depth comes from pattern, not colour-coding." */
-.lp-col-emphasis {
-  background: var(--sw-muted);
-}
-
-.lp-col-title {
-  margin: 0 0 1.6rem;
-  font-size: 0.72rem;
-  font-weight: 800;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
-.lp-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 1.1rem;
-}
-
-.lp-list-item {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.85rem;
-  font-size: 0.92rem;
-  font-weight: 500;
-  line-height: 1.5;
-}
-
-/* The failure column is marked with the accent — a warning glyph, the one
-   legitimate non-CTA use of red the brief allows ("a stop sign"). The
-   favourable column is marked in plain black: certainty needs no colour. */
-.lp-mark {
-  flex-shrink: 0;
-  width: 1rem;
-  height: 1rem;
-  margin-top: 0.15rem;
-  border: 2px solid var(--sw-accent);
-}
-
-.lp-mark-on {
-  border-color: var(--sw-fg);
-  background: var(--sw-fg);
-}
-
-@media (max-width: 46rem) {
-  .lp-compare {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .lp-col + .lp-col {
-    border-left: 0;
-    border-top: var(--sw-b) solid var(--sw-border);
-  }
-}
-
-/* ------------------------------------------------------- execution preview */
-
-.lp-preview {
-  border: var(--sw-b) solid var(--sw-border);
-  background: var(--sw-bg);
-}
-
-.lp-preview-head {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  flex-wrap: wrap;
-  padding: 1rem 1.3rem;
-  border-bottom: var(--sw-b) solid var(--sw-border);
-  background: var(--sw-fg);
-  color: var(--sw-bg);
-}
-
-.lp-status {
-  font-size: 0.64rem;
-  font-weight: 800;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  padding: 0.3rem 0.65rem;
-  background: var(--sw-bg);
-  color: var(--sw-fg);
-}
-
-.lp-preview-title {
-  font-size: 0.82rem;
-  font-weight: 700;
-}
-
-.lp-preview-sub {
-  margin-inline-start: auto;
-  font-size: 0.7rem;
-  color: rgba(255, 255, 255, 0.6);
-}
-
-.lp-metrics {
-  margin: 0;
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  border-bottom: var(--sw-b) solid var(--sw-border);
-}
-
-.lp-metric {
-  padding: 1.3rem 1.3rem;
-  min-width: 0;
-  border-right: 1px solid var(--sw-fg);
-}
-
-.lp-metric:last-child {
-  border-right: 0;
-}
-
-.lp-metric dt {
-  font-size: 0.6rem;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: rgba(0, 0, 0, 0.5);
-  margin-bottom: 0.5rem;
-}
-
-.lp-metric dd {
-  margin: 0;
-  font-size: 1.6rem;
-  font-weight: 800;
-  letter-spacing: -0.02em;
-}
-
-/* The connecting sequence is drawn as a transit line — a solid accent rule
-   running behind numbered black stops, the brief's own "transit map" vibe
-   made literal. */
-.lp-timeline {
-  position: relative;
-  list-style: none;
-  margin: 0;
-  padding: 1.4rem 1.3rem;
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  counter-reset: tl;
-}
-
-.lp-timeline::before {
+.gf-text-link::before,
+.gf-brand::before,
+.gf-footer-links a::before {
   content: "";
   position: absolute;
-  left: 1.85rem;
-  top: 1.9rem;
-  bottom: 1.9rem;
-  width: 2px;
-  background: var(--sw-accent);
+  inset: -8px -4px;
 }
 
-.lp-timeline-item {
-  position: relative;
-  counter-increment: tl;
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  font-size: 0.84rem;
-  font-weight: 600;
+.gf-footer-links a::before {
+  inset: -6px -8px;
 }
 
-.lp-timeline-item::before {
-  content: counter(tl, decimal-leading-zero);
-  position: relative;
-  z-index: 1;
-  font-size: 0.62rem;
-  font-weight: 800;
-  color: var(--sw-bg);
-  background: var(--sw-fg);
-  padding: 0.35rem 0.5rem;
-  flex-shrink: 0;
+/* ==========================================================================
+ * Header
+ * ========================================================================== */
+
+.gf-header {
+  position: fixed;
+  inset-inline: 0;
+  top: 0;
+  z-index: 90;
+  padding-block: 20px;
+  pointer-events: none;
+  /*
+   * Recoloured from `data-tone`, which `useHeaderTone` sets from whichever
+   * section is currently crossing the header's midline. Two tokens carry it:
+   * `--gf-hdr-fg` for the mark and controls, `--gf-hdr-veil` for the scrim
+   * that keeps them legible over busy content directly underneath.
+   *
+   * The transition is slow on purpose. The crossing happens at one exact
+   * scroll position, and an instant swap there reads as a flicker — 0.45s
+   * spans enough of the section boundary that the change looks like the
+   * header is being lit by the section rather than switching state.
+   */
+  --gf-hdr-fg: #eeeeee;
+  --gf-hdr-veil: rgba(20, 19, 20, 0.75);
+  background: linear-gradient(to bottom, var(--gf-hdr-veil), transparent);
+  transition:
+    background 0.45s var(--gf-ease-out),
+    color 0.45s var(--gf-ease-out);
 }
 
-@media (max-width: 46rem) {
-  .lp-metrics {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .lp-metric:nth-child(2) {
-    border-right: 0;
-  }
-  .lp-preview-sub {
-    margin-inline-start: 0;
-    width: 100%;
-  }
+.gf-header[data-tone="bone"] {
+  --gf-hdr-fg: #141314;
+  --gf-hdr-veil: rgba(238, 238, 238, 0.8);
 }
 
-/* ------------------------------------------------------------------- prose */
-
-.lp-prose {
-  display: flex;
-  flex-direction: column;
-  border-top: var(--sw-b) solid var(--sw-border);
-}
-
-.lp-prose p {
-  counter-increment: pr;
-  margin: 0;
-  padding: 1.8rem 1.5rem 1.8rem 5rem;
-  position: relative;
-  border-bottom: 1px solid var(--sw-fg);
-  font-size: 1.05rem;
-  font-weight: 500;
-  line-height: 1.6;
-}
-
-.lp-prose {
-  counter-reset: pr;
-}
-
-.lp-prose p::before {
-  content: counter(pr, decimal-leading-zero);
-  position: absolute;
-  left: 1.5rem;
-  top: 1.7rem;
-  font-size: 0.85rem;
-  font-weight: 800;
-  color: var(--sw-accent);
-  font-variant-numeric: tabular-nums;
-}
-
-/* --------------------------------------------------------------------- CTA */
-
-.lp-cta {
-  max-width: var(--sw-max);
-  margin: 0 auto;
-  padding: 7rem var(--sw-pad);
-  text-align: left;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2rem;
-  border-bottom: var(--sw-b) solid var(--sw-border);
-}
-
-.lp-cta-title {
-  margin: 0;
-  font-size: clamp(2.4rem, 5.6vw, 4.6rem);
-  line-height: 0.96;
-  letter-spacing: -0.03em;
-  font-weight: 900;
-  text-transform: uppercase;
-  max-width: 18ch;
-}
-
-.lp-cta-note {
-  margin: 0;
-  font-size: 0.68rem;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: rgba(0, 0, 0, 0.5);
-}
-
-/* ------------------------------------------------------------------ footer */
-
-.lp-footer {
-  max-width: var(--sw-max);
-  margin: 0 auto;
-  padding: 2rem var(--sw-pad) 3rem;
+.gf-header-in {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 1.5rem;
-  flex-wrap: wrap;
+  gap: 24px;
+  pointer-events: auto;
 }
 
-.lp-footer-links {
-  display: flex;
-  gap: 1.8rem;
-}
-
-.lp-footer-links a {
-  font-size: 0.7rem;
-  font-weight: 700;
-  letter-spacing: 0.1em;
+.gf-brand {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--gf-hdr-fg);
+  transition: color 0.45s var(--gf-ease-out);
+  font-family: var(--gf-mono);
+  font-size: var(--gf-t-accent);
+  font-weight: 500;
+  letter-spacing: -0.03em;
   text-transform: uppercase;
-  color: var(--sw-fg);
-  text-decoration: none;
-  transition: color 150ms linear;
+  cursor: pointer;
 }
 
-.lp-footer-links a:hover {
-  color: var(--sw-accent);
+.gf-nav {
+  display: none;
+  gap: 28px;
 }
 
-.lp-footer-note {
-  margin: 0;
+@media (min-width: 900px) {
+  .gf-nav {
+    display: flex;
+  }
+}
+
+.gf-nav-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  /* `color-mix` rather than a second token: the muted nav colour is always
+     the header foreground at 55%, in both tones. */
+  color: color-mix(in srgb, var(--gf-hdr-fg) 55%, transparent);
+  font-family: var(--gf-mono);
+  font-size: var(--gf-t-accent-sm);
+  letter-spacing: -0.02em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: color 0.45s var(--gf-ease-out);
+}
+
+.gf-nav-link:hover {
+  color: var(--gf-hdr-fg);
+}
+
+.gf-header .gf-pill {
+  border-color: color-mix(in srgb, var(--gf-hdr-fg) 25%, transparent);
+  background: transparent;
+  color: var(--gf-hdr-fg);
+  transition:
+    background 0.3s var(--gf-ease-out),
+    border-color 0.45s var(--gf-ease-out),
+    color 0.45s var(--gf-ease-out);
+}
+
+.gf-header .gf-pill:hover {
+  background: var(--gf-hdr-fg);
+  border-color: var(--gf-hdr-fg);
+  /* The inverse of the foreground, whichever tone is active. */
+  color: color-mix(in srgb, var(--gf-hdr-fg) 0%, var(--gf-hdr-veil) 100%);
+}
+
+/* ==========================================================================
+ * Hero
+ * ========================================================================== */
+
+.gf-hero {
+  min-height: 100svh;
   display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding-block: 0;
+  overflow: hidden;
+}
+
+.gf-hero-in {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  /* The header is only the mark and one pill on a phone, so it does not need
+     the full desktop clearance reserved under it. */
+  padding-top: 88px;
+  padding-bottom: 28px;
+}
+
+.gf-hero-grid {
+  flex: 1;
   align-items: center;
-  gap: 0.6rem;
-  font-size: 0.66rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: rgba(0, 0, 0, 0.55);
 }
 
-/* -------------------------------------------------------------- brand mark */
-
-.lh-mark-beam {
-  opacity: 0.7;
+.gf-hero-copy {
+  position: relative;
+  z-index: 2;
+  grid-column: span 12;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  align-items: flex-start;
 }
 
-.lh-mark-live .lh-mark-beam {
-  animation: lh-blink 1.1s steps(2, end) infinite;
+.gf-hero-sub {
+  max-width: 34rem;
+  margin: 0;
+  font-size: var(--gf-t-body-lg);
+  line-height: 1.4;
+  color: var(--gf-fg-muted);
 }
 
-@keyframes lh-blink {
-  0%,
-  49% {
-    opacity: 0.35;
-  }
-  50%,
-  100% {
-    opacity: 1;
-  }
+.gf-hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 24px;
 }
-
-@media (prefers-reduced-motion: reduce) {
-  .lh-mark-live .lh-mark-beam {
-    animation: none;
-  }
-}
-
-/* -------------------------------------------------------------- flow deck */
 
 /*
- * The seven-stage sequence as a numbered exhibition strip rather than a
- * carousel: flat bordered panels sharing edges, the focused one inverted to
- * solid black. No blur, no scale, no glow — the only card that departs from
- * pure black/white is the "AI Agent" stage when focused, which flashes the
- * accent, because that is the one moment the brief's "stop sign" reading of
- * red actually applies: this is where the injection lands.
+ * The ASCII canvas.
+ *
+ * On a phone this is a band under the copy, not a wash behind it. Ghosting a
+ * character grid behind the subheading at low opacity does not read as
+ * texture at this size — the glyphs are the same order of size as the body
+ * text sitting on them, and the paragraph becomes genuinely hard to read.
+ * The mark is 2.6:1, so a short full-width band is its natural shape anyway.
  */
-.deck {
-  position: relative;
-  border: var(--sw-b) solid var(--sw-border);
-  background: var(--sw-bg);
+.gf-hero-object {
+  grid-column: span 12;
+  /* Just over the mark's own height at this width (343 / 2.6 = 132), so the
+     fit is limited by width and the band carries no dead space. */
+  height: 140px;
 }
 
-.deck-grid {
-  display: none;
+@media (min-width: 1024px) {
+  .gf-hero-in {
+    padding-top: calc(var(--gf-header) + 24px);
+    padding-bottom: 32px;
+  }
+
+  .gf-hero-copy {
+    grid-column: span 7;
+    gap: 32px;
+  }
+
+  .gf-hero-object {
+    position: relative;
+    inset: auto;
+    /* Starts at 8, because `.gf-hero-copy` above spans 1-7. Overlapping them
+       does not stack the two — grid pushes the second item onto a new row,
+       and the hero silently grows past 100svh. */
+    grid-column: 8 / span 5;
+    grid-row: 1;
+    /* The mark is 2.6:1 and fills the column width, so it needs 564/2.6 =
+       217px. Anything taller is empty grid above and below it. */
+    height: min(26svh, 232px);
+  }
 }
 
-.deck-counter {
+.gf-hero-stack {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 24px;
+  padding-top: 28px;
+}
+
+.gf-stack-marks {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 20px;
+}
+
+.gf-mark {
+  font-family: var(--gf-mono);
+  font-size: var(--gf-t-accent);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--gf-fg-muted);
+  transition: color 0.3s var(--gf-ease-out);
+}
+
+.gf-mark:hover {
+  color: var(--gf-fg);
+}
+
+.gf-hero-rule {
+  height: 1px;
+  background: var(--gf-border);
+}
+
+/* ==========================================================================
+ * Stats
+ * ========================================================================== */
+
+.gf-stats-grid {
+  row-gap: 36px;
+}
+
+.gf-stat {
+  grid-column: span 12;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 20px;
+  border-top: 1px solid var(--gf-border);
+}
+
+@media (min-width: 768px) {
+  .gf-stat {
+    grid-column: span 4;
+  }
+}
+
+.gf-stat-n {
+  display: inline-flex;
+  align-items: baseline;
+  font-size: var(--gf-t-display);
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: -0.035em;
+  font-variant-numeric: tabular-nums;
+}
+
+.gf-stat-label {
+  color: var(--gf-fg-muted);
+}
+
+/* ==========================================================================
+ * Process — interactive step list + gallery
+ *
+ * Two columns that have to agree on height: the list on the left drives the
+ * frame on the right, so nothing in the list may change size when a step
+ * activates. Every active-state property here is therefore paint-only —
+ * colour, opacity, a transform — and never a height, a margin or a font size.
+ * ========================================================================== */
+
+.pr {
+  display: grid;
+  grid-template-columns: repeat(var(--gf-cols), minmax(0, 1fr));
+  gap: 40px var(--gf-gutter);
+}
+
+.pr-steps {
+  grid-column: span 12;
   margin: 0;
-  padding: 0.9rem 1.3rem;
-  border-bottom: var(--sw-b) solid var(--sw-border);
-  font-size: 0.68rem;
-  font-weight: 800;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  background: var(--sw-muted);
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--gf-border);
 }
 
-.deck-track {
-  display: flex;
-  overflow-x: auto;
-  scrollbar-width: none;
-  scroll-snap-type: x mandatory;
-}
-
-.deck-track::-webkit-scrollbar {
-  display: none;
-}
-
-.deck-track:focus-visible {
-  outline: 2px solid var(--sw-accent);
-  outline-offset: -4px;
-}
-
-.deck-card {
+.pr-step {
   position: relative;
-  flex: 0 0 20rem;
-  min-height: 18rem;
-  display: flex;
-  align-items: flex-end;
-  scroll-snap-align: start;
-  background: var(--sw-bg);
-  border-right: 1px solid var(--sw-fg);
-  transition: background 200ms linear, color 200ms linear;
+  padding-block: 20px 22px;
+  border-bottom: 1px solid var(--gf-border);
 }
 
-.deck-card:last-child {
-  border-right: 0;
+/* The active marker: a brand rule down the inner edge, wiped in from the top
+   rather than faded, so a fast pass down the list reads as one travelling
+   mark instead of four blinking ones. */
+.pr-step::before {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  left: -12px;
+  width: 2px;
+  background: var(--gf-brand);
+  transform: scaleY(0);
+  transform-origin: top;
+  transition: transform 0.4s var(--gf-ease-quart);
 }
 
-.deck-card[data-focused] {
-  background: var(--sw-fg);
-  color: var(--sw-bg);
+.pr-step[data-active]::before {
+  transform: scaleY(1);
 }
 
-/* The one scripted exception: the hostile stage, and only while focused. */
-.deck-card[data-stage="hostile"][data-focused] {
-  background: var(--sw-accent);
-}
-
-.deck-bloom,
-.deck-ticks {
-  display: none;
-}
-
-.deck-body {
-  position: relative;
-  padding: 1.7rem;
-  width: 100%;
-}
-
-.deck-kicker {
+.pr-btn {
   display: flex;
   align-items: baseline;
-  gap: 0.65rem;
-  margin: 0 0 0.9rem;
-  font-size: 0.66rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: rgba(0, 0, 0, 0.55);
+  gap: 16px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
-.deck-card[data-focused] .deck-kicker {
-  color: rgba(255, 255, 255, 0.7);
+.pr-n {
+  flex: none;
+  color: var(--gf-fg-muted);
+  transition: color 0.35s var(--gf-ease-out);
 }
 
-.deck-idx {
-  font-weight: 800;
-  color: var(--sw-accent);
+.pr-step[data-active] .pr-n {
+  color: var(--gf-brand);
 }
 
-.deck-card[data-focused] .deck-idx {
-  color: var(--sw-bg);
-}
-
-.deck-title {
-  margin: 0 0 0.8rem;
-  font-size: 1.6rem;
-  line-height: 1.05;
-  letter-spacing: -0.02em;
-  font-weight: 800;
-  text-transform: uppercase;
-}
-
-.deck-detail {
-  margin: 0;
-  max-width: 30ch;
-  font-size: 0.82rem;
-  line-height: 1.55;
+.pr-title {
+  font-size: var(--gf-t-h4);
   font-weight: 500;
-  opacity: 0;
-  transform: translateY(6px);
-  transition: opacity 220ms var(--sw-ease) 80ms, transform 220ms var(--sw-ease) 80ms;
+  line-height: 1.25;
+  letter-spacing: -0.025em;
+  color: var(--gf-fg-muted);
+  transition:
+    color 0.35s var(--gf-ease-out),
+    transform 0.45s var(--gf-ease-quart);
 }
 
-.deck-card[data-focused] .deck-detail {
+.pr-step[data-active] .pr-title {
+  color: var(--gf-fg);
+  transform: translateX(6px);
+}
+
+.pr-body {
+  max-width: 46ch;
+  margin: 10px 0 0 calc(2ch + 16px);
+  color: var(--gf-fg-muted);
+  opacity: 0.55;
+  transition: opacity 0.35s var(--gf-ease-out);
+}
+
+.pr-step[data-active] .pr-body {
   opacity: 1;
-  transform: none;
-  color: rgba(255, 255, 255, 0.85);
+}
+
+/* ---- gallery ------------------------------------------------------------ */
+
+/*
+ * On a phone the frame goes *above* the list and sticks.
+ *
+ * Stacked in DOM order it lands ~780px below the first step, so tapping a
+ * step changes a picture that is nowhere on screen — the interaction gives no
+ * feedback at all, which is worse than having no gallery. `order` moves it
+ * visually without moving it in the DOM, so the list still reads first to
+ * assistive tech, and the frame holds no focusable elements so tab order is
+ * unaffected.
+ */
+.pr-gallery {
+  grid-column: span 12;
+  order: -1;
+  position: sticky;
+  top: 68px;
+  z-index: 1;
+  margin: 0;
+  /* The section background, so the list scrolls *under* the sticky frame
+     rather than showing through around it. */
+  background: var(--gf-bg);
+  padding-bottom: 12px;
+}
+
+.pr-frame {
+  position: relative;
+  /*
+   * Fixed shape, because the four screenshots are not the same shape and a
+   * frame that resized per step would move the whole section on hover.
+   *
+   * Below the two-column breakpoint the frame is sticky, and 16:10 of the
+   * full container width is a lot of screen to pin: 450px on a tablet, and
+   * 433px on a landscape phone only 360px tall — taller than the viewport,
+   * which makes sticky meaningless and hides the list it exists to
+   * illustrate. So the height is the 16:10 height *or* 38% of the viewport,
+   * whichever is smaller, and the frame simply gets wider than 16:10 on a
+   * short screen. `object-fit: contain` letterboxes it, which these
+   * mixed-aspect screenshots were already relying on.
+   *
+   * Written as an explicit height rather than `aspect-ratio` + `max-height`:
+   * a max constraint on one axis *transfers through* an aspect ratio to the
+   * other (CSS Sizing 4 §5), so `max-height` shrinks the width to match and
+   * the frame comes out 219px wide instead of letterboxed. Computing the
+   * height from the known container width avoids the ratio entirely.
+   */
+  height: min(calc((100vw - var(--gf-margin) * 2) * 0.625), 38svh);
+  overflow: hidden;
+  border: 1px solid var(--gf-border);
+  background: var(--gf-bg-muted);
+}
+
+.pr-frame img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  /* `contain`, not `cover`: these are dense UI screenshots, and cropping one
+     to fill the frame cuts off the panel that makes the step legible. The
+     letterboxing is the honest cost. */
+  object-fit: contain;
+  object-position: center;
+  /* Overrides the global `image-rendering: pixelated` from styles.css, which
+     would hard-edge every downscaled screenshot here. */
+  image-rendering: auto;
+  opacity: 0;
+  transform: scale(1.012);
+  transition:
+    opacity 0.5s var(--gf-ease-out),
+    transform 0.7s var(--gf-ease-quart);
+}
+
+.pr-frame img[data-active] {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.pr-index {
+  position: absolute;
+  right: 12px;
+  bottom: 10px;
+  padding: 4px 8px;
+  background: var(--gf-fg);
+  color: var(--gf-bg);
+}
+
+.pr-cap {
+  margin-top: 14px;
+  color: var(--gf-fg-muted);
+}
+
+@media (min-width: 1024px) {
+  .pr-steps {
+    grid-column: span 5;
+  }
+
+  .pr-frame {
+    /* Two columns: the frame sits beside the list rather than pinned over it,
+       so it gets its ratio back and derives height from its own column. */
+    aspect-ratio: 16 / 10;
+    height: auto;
+  }
+
+  .pr-gallery {
+    grid-column: 7 / span 6;
+    /* Back to source order beside the list, where there is room for both. */
+    order: 0;
+    padding-bottom: 0;
+    /* Holds the frame in view while the list is read. The list is short
+       enough that this rarely engages, but it costs nothing and it is what
+       keeps the frame anchored on a short viewport. */
+    top: calc(var(--gf-header) + 24px);
+    align-self: start;
+  }
+
+  .pr-step {
+    padding-block: 24px 26px;
+  }
+}
+
+/* ==========================================================================
+ * Payment path — work cards with a peel
+ * ========================================================================== */
+
+.gf-work {
+  display: grid;
+  grid-template-columns: repeat(var(--gf-cols), minmax(0, 1fr));
+  gap: var(--gf-gutter);
+  margin: 40px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.gf-work-card {
+  grid-column: span 12;
+}
+
+@media (min-width: 640px) {
+  .gf-work-card {
+    grid-column: span 6;
+  }
+}
+
+@media (min-width: 1024px) {
+  .gf-work-card {
+    grid-column: span 4;
+  }
+
+  /* The first stage is the one everything else depends on, so it gets the
+     wide slot rather than an equal share. */
+  .gf-work-card:first-child {
+    grid-column: span 8;
+  }
+}
+
+.gf-work-inner {
+  position: relative;
+  display: block;
+  height: 100%;
+  min-height: 208px;
+  padding: 22px;
+  border: 1px solid var(--gf-border);
+  background: var(--gf-bg-muted);
+  overflow: hidden;
+  cursor: default;
+  transition:
+    border-color 0.4s var(--gf-ease-out),
+    background 0.4s var(--gf-ease-out);
+}
+
+.gf-work-inner:hover,
+.gf-work-inner:focus {
+  border-color: var(--gf-fg-muted);
 }
 
 /*
- * The pager is a numbered index row rather than dots — "01 02 03…", the
- * active one underlined in the accent. Functional and legible from across a
- * room, which decorative dots are not.
+ * `:focus`, not `:focus-visible`, on the peel.
+ *
+ * `:focus-visible` is the right selector for a focus *ring* — it is what
+ * keeps a ring off the screen for a mouse user who just clicked. It is the
+ * wrong selector for revealing content, because it never matches a touch
+ * focus: tapping a card on a phone focuses it and `:focus-visible` stays
+ * false, so the detail line would be unreachable on every touch device.
+ * There is no hover there to fall back on.
+ *
+ * So the peel opens on plain `:focus` and the ring stays on
+ * `:focus-visible` (see the shared rule near the top of this file). The cost
+ * is that a mouse click on a card leaves the peel open until focus moves,
+ * which is the same thing the hover was already doing under the cursor.
  */
-.deck-pager {
+
+.gf-work-face {
   display: flex;
-  align-items: stretch;
-  border-top: var(--sw-b) solid var(--sw-border);
+  flex-direction: column;
+  height: 100%;
 }
 
-.deck-num {
-  flex: 1;
-  padding: 0.85rem 0;
+.gf-work-n {
+  font-family: var(--gf-mono);
+  font-size: var(--gf-t-accent-sm);
+  color: var(--gf-fg-muted);
+}
+
+.gf-work-title {
+  margin: auto 0 8px;
+  padding-top: 36px;
+  font-size: var(--gf-t-h4);
+  font-weight: 500;
+  line-height: 1.15;
+  letter-spacing: -0.03em;
+  text-transform: uppercase;
+}
+
+.gf-work-note {
+  margin: 0 0 16px;
+  font-size: var(--gf-t-body-sm);
+  color: var(--gf-fg-muted);
+}
+
+.gf-work-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  font-family: var(--gf-mono);
+  font-size: var(--gf-t-accent-sm);
+  color: var(--gf-fg-muted);
+}
+
+.gf-work-tags i {
+  margin-right: 8px;
+  font-style: normal;
+}
+
+/*
+ * The peel. Anchored to the bottom edge and rotated back on the X axis, so it
+ * swings up into place like a flap rather than sliding — the rotation is what
+ * sells it as a second physical layer.
+ */
+.gf-work-peel {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  padding: 24px;
+  background: var(--gf-fg);
+  color: var(--gf-bg);
+  transform-origin: bottom center;
+  transform: rotateX(-92deg);
+  opacity: 0;
+  transition:
+    transform 0.55s var(--gf-ease-quart),
+    opacity 0.2s linear 0.05s;
+}
+
+.gf-work-inner:hover .gf-work-peel,
+.gf-work-inner:focus .gf-work-peel {
+  transform: rotateX(0deg);
+  opacity: 1;
+}
+
+.gf-work-peel p {
+  margin: 0;
+  font-size: var(--gf-t-body);
+  line-height: 1.4;
+  letter-spacing: -0.01em;
+}
+
+/*
+ * The hostile stage. Brand orange on hover, and a short glitch burst on the
+ * title — spent on the one stage an attacker can actually reach. Every other
+ * stage inverts in plain ink, because certainty needs no colour.
+ */
+.gf-work-card[data-kind="hostile"] .gf-work-peel {
+  background: var(--gf-brand);
+  color: #141314;
+}
+
+.gf-work-card[data-kind="hostile"] .gf-work-inner:hover {
+  border-color: var(--gf-brand);
+}
+
+.gf-work-card[data-kind="hostile"] .gf-work-inner:hover .gf-work-title {
+  animation: gf-glitch 0.62s steps(2, end) 1;
+}
+
+/* Broadcast glitch: a chromatic split that stutters and resolves. Canvas UI
+   does this as a shader over the rasterised element; at one short burst on one
+   heading, two text-shadows and a transform are indistinguishable from it. */
+@keyframes gf-glitch {
+  0% {
+    transform: translate(0);
+    text-shadow: none;
+  }
+  20% {
+    transform: translate(-3px, 1px);
+    text-shadow:
+      2px 0 var(--gf-brand),
+      -2px 0 rgba(0, 229, 255, 0.75);
+  }
+  40% {
+    transform: translate(3px, -1px);
+    text-shadow:
+      -3px 0 var(--gf-brand),
+      3px 0 rgba(0, 229, 255, 0.6);
+  }
+  60% {
+    transform: translate(-2px, 0);
+    text-shadow:
+      1px 0 rgba(0, 229, 255, 0.7),
+      -1px 0 var(--gf-brand);
+  }
+  80% {
+    transform: translate(1px, 1px);
+    text-shadow: none;
+  }
+  100% {
+    transform: translate(0);
+    text-shadow: none;
+  }
+}
+
+/* ==========================================================================
+ * Guarantees
+ * ========================================================================== */
+
+.gf-bounds {
+  display: grid;
+  grid-template-columns: repeat(var(--gf-cols), minmax(0, 1fr));
+  gap: 0 var(--gf-gutter);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.gf-bound {
+  grid-column: span 12;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-block: 26px;
+  border-top: 1px solid var(--gf-border);
+}
+
+@media (min-width: 768px) {
+  .gf-bound {
+    grid-column: span 6;
+  }
+}
+
+@media (min-width: 1200px) {
+  .gf-bound {
+    grid-column: span 4;
+    padding-block: 32px;
+  }
+}
+
+.gf-bound-icon {
+  display: block;
+  color: var(--gf-brand);
+}
+
+.gf-bound-title {
+  margin: 0;
+  font-family: var(--gf-mono);
+  font-size: var(--gf-t-accent);
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+
+.gf-bound-body {
+  margin: 0;
+  max-width: 38ch;
+  color: var(--gf-fg-muted);
+}
+
+/* ==========================================================================
+ * Questions
+ * ========================================================================== */
+
+.gf-questions {
+  overflow: hidden;
+}
+
+.gf-questions-in {
+  position: relative;
+  z-index: 1;
+}
+
+.ac {
+  border-top: 1px solid var(--gf-border);
+}
+
+.ac-row {
+  border-bottom: 1px solid var(--gf-border);
+}
+
+.ac-h {
+  margin: 0;
+}
+
+.ac-btn {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 20px;
+  width: 100%;
+  padding: 22px 0;
   border: 0;
-  border-right: 1px solid var(--sw-fg);
-  background: var(--sw-bg);
+  background: none;
+  color: var(--gf-fg);
+  text-align: left;
   cursor: pointer;
-  font-family: var(--sw-font);
-  font-size: 0.74rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  color: rgba(0, 0, 0, 0.45);
-  transition: color 150ms linear, background 150ms linear;
 }
 
-.deck-num:last-child {
-  border-right: 0;
+.ac-n {
+  font-family: var(--gf-mono);
+  font-size: var(--gf-t-accent-sm);
+  color: var(--gf-fg-muted);
 }
 
-.deck-num:hover {
-  color: var(--sw-fg);
-  background: var(--sw-muted);
+.ac-q {
+  font-family: var(--gf-mono);
+  font-size: var(--gf-t-accent);
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  text-transform: uppercase;
+  transition: color 0.3s var(--gf-ease-out);
 }
 
-.deck-num[data-on] {
-  color: var(--sw-bg);
-  background: var(--sw-fg);
+.ac-btn:hover .ac-q {
+  color: var(--gf-brand);
 }
 
-@media (max-width: 60rem) {
-  .deck-card {
-    flex-basis: 16rem;
-    min-height: 16rem;
+/* A plus that rotates into a minus. Two rules, so it is a single element in
+   two states rather than two glyphs being swapped. */
+.ac-sign {
+  position: relative;
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+
+.ac-sign i {
+  position: absolute;
+  inset: 50% 0 auto;
+  height: 1px;
+  background: currentColor;
+  transition: transform 0.45s var(--gf-ease-quart);
+}
+
+.ac-sign i:last-child {
+  transform: rotate(90deg);
+}
+
+.ac-row[data-open] .ac-sign i:last-child {
+  transform: rotate(0deg);
+}
+
+.ac-panel {
+  overflow: hidden;
+  transition: height 0.5s var(--gf-ease-quart);
+}
+
+.ac-inner {
+  padding: 0 0 26px;
+}
+
+.ac-inner p {
+  max-width: 62ch;
+  margin: 0;
+  margin-left: calc(20px + 2ch);
+  font-size: var(--gf-t-body);
+  line-height: 1.55;
+  color: var(--gf-fg-muted);
+}
+
+/* ==========================================================================
+ * CTA
+ * ========================================================================== */
+
+.gf-cta {
+  overflow: hidden;
+}
+
+.gf-cta-grid {
+  row-gap: 40px;
+  align-items: end;
+}
+
+.gf-cta-title {
+  grid-column: span 12;
+}
+
+.gf-cta-side {
+  grid-column: span 12;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+@media (min-width: 1024px) {
+  .gf-cta-title {
+    grid-column: span 7;
   }
-  .deck-title {
-    font-size: 1.3rem;
+
+  .gf-cta-side {
+    grid-column: 9 / span 4;
   }
 }
 
-@media (max-width: 34rem) {
-  .deck-card {
-    flex-basis: 13.5rem;
+.gf-cta-lede {
+  margin: 0;
+  font-size: var(--gf-t-sub);
+  line-height: 1.333;
+  color: var(--gf-fg-muted);
+}
+
+/* ==========================================================================
+ * Footer
+ * ========================================================================== */
+
+.gf-footer {
+  min-height: 66svh;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding-bottom: 32px;
+}
+
+.gf-footer-in {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  gap: 40px;
+}
+
+.gf-footer-marquee {
+  border-block: 1px solid var(--gf-border);
+}
+
+.gf-footer-grid {
+  flex: 1;
+  align-content: center;
+  row-gap: 36px;
+}
+
+.gf-footer-statement {
+  grid-column: span 12;
+}
+
+.gf-footer-links {
+  grid-column: span 12;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+@media (min-width: 1024px) {
+  .gf-footer-statement {
+    grid-column: span 8;
+  }
+
+  .gf-footer-links {
+    grid-column: 11 / span 2;
+    align-items: flex-end;
   }
 }
+
+.gf-footer-links a {
+  font-family: var(--gf-mono);
+  font-size: var(--gf-t-accent-sm);
+  text-transform: uppercase;
+  text-decoration: none;
+  color: var(--gf-fg-muted);
+  transition: color 0.3s var(--gf-ease-out);
+}
+
+.gf-footer-links a:hover {
+  color: var(--gf-fg);
+}
+
+.gf-footer-base {
+  display: flex;
+  justify-content: space-between;
+  padding-top: 24px;
+  border-top: 1px solid var(--gf-border);
+}
+
+/* ==========================================================================
+ * fx — shared primitives for the components in ./fx
+ * ========================================================================== */
+
+/* ---- SplitLines ---------------------------------------------------------
+ * The mask is the effect. `.fx-line` clips; `.fx-line-in` starts fully below
+ * its own box and rises into it, so the type is uncovered rather than flown
+ * in. `overflow: hidden` on an inline-block also clips descenders, which is
+ * why the box is padded a little taller than the line box and pulled back up
+ * with a negative margin.
+ */
+.fx-line {
+  display: block;
+  overflow: hidden;
+  padding-bottom: 0.14em;
+  margin-bottom: -0.14em;
+}
+
+.fx-line-in {
+  display: block;
+  transform: translateY(105%);
+  opacity: 0;
+  transition:
+    transform 0.95s var(--gf-ease-quart),
+    opacity 0.6s linear;
+}
+
+[data-seen] > .fx-line > .fx-line-in {
+  transform: translateY(0);
+  opacity: 1;
+}
+
+/* ---- DecryptText --------------------------------------------------------
+ * The ghost reserves the settled width and is invisible; the live span is
+ * absolutely positioned over it. Without the ghost, every scramble frame
+ * would be a different width and the whole row would jitter.
+ */
+.fx-decrypt-ghost {
+  visibility: hidden;
+}
+
+.fx-decrypt-live {
+  position: absolute;
+  inset: 0;
+  white-space: nowrap;
+}
+
+.gf-bound-title,
+.gf-head-tag {
+  position: relative;
+}
+
+.gf-bound-title > span,
+.gf-head-tag > span {
+  position: relative;
+  display: inline-block;
+}
+
+/* ---- Odometer ----------------------------------------------------------- */
+
+.fx-odo-reels {
+  display: inline-flex;
+}
+
+.fx-odo-place {
+  display: inline-block;
+  height: 1em;
+  overflow: hidden;
+  /* No fixed width. An inline-block shrink-wraps its widest block child, and
+     the ten stacked digits are all one advance wide under the tabular-nums
+     set on `.gf-stat-n` — so the place measures itself and stays correct if
+     the face ever changes. */
+}
+
+.fx-odo-strip {
+  display: block;
+  transition: transform 1.5s var(--gf-ease-quart);
+}
+
+.fx-odo-digit {
+  display: block;
+  height: 1em;
+  line-height: 1;
+}
+
+.fx-odo-fix {
+  display: inline-block;
+}
+
+/* ---- Marquee ------------------------------------------------------------ */
+
+.fx-marquee {
+  display: flex;
+  overflow: hidden;
+  padding-block: 20px;
+  user-select: none;
+}
+
+.fx-marquee-track {
+  display: flex;
+  flex: none;
+  min-width: 100%;
+  animation-name: fx-marquee;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+.fx-marquee-row {
+  display: flex;
+  flex: none;
+  gap: 48px;
+  padding-right: 48px;
+}
+
+.fx-marquee-item {
+  flex: none;
+}
+
+@keyframes fx-marquee {
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+/* ---- AsciiObject / GlyphRain / RippleField ------------------------------ */
+
+.fx-ascii,
+.fx-rain {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.fx-ascii canvas,
+.fx-rain canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  /* These canvases draw text, and the global `image-rendering: pixelated` in
+     styles.css would render every glyph with hard-edged upscaling. */
+  image-rendering: auto;
+}
+
+/*
+ * The rain is a texture, not a layer of content, and there is body copy on top
+ * of it — so it is masked out of the lower two thirds of its section rather
+ * than run at a flat alpha across the whole thing. At 0.4 everywhere the
+ * falling glyphs were legible enough to compete with the answers underneath
+ * them, which is the failure mode this effect has to avoid: an accordion is
+ * something people read, not something they glance at.
+ *
+ * What is left is rain behind the section heading, thinning to nothing by the
+ * time the first question starts.
+ */
+.fx-rain {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  opacity: 0.34;
+  pointer-events: none;
+  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 18%, transparent 58%);
+  mask-image: linear-gradient(to bottom, #000 0%, #000 18%, transparent 58%);
+}
+
+.fx-ripple {
+  position: relative;
+}
+
+.fx-ripple > canvas {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  width: 100%;
+  height: 100%;
+  image-rendering: auto;
+  pointer-events: none;
+}
+
+/* ==========================================================================
+ * Reduced motion
+ *
+ * The canvases opt out in script — a frozen frame of falling rain is worse
+ * than no rain. What is left here is the DOM-side motion: entrances settle
+ * instantly rather than never arriving, and the marquee and peel stop.
+ * ========================================================================== */
 
 @media (prefers-reduced-motion: reduce) {
-  .deck-card,
-  .deck-detail {
+  .fx-line-in {
+    transform: none;
+    opacity: 1;
     transition: none;
+  }
+
+  .fx-marquee-track {
+    animation: none;
+  }
+
+  .fx-odo-strip {
+    transition: none;
+  }
+
+  .gf-work-peel {
+    transition: opacity 0.15s linear;
+    transform: none;
+  }
+
+  .gf-work-card[data-kind="hostile"] .gf-work-inner:hover .gf-work-title {
+    animation: none;
   }
 }

@@ -1,0 +1,41 @@
+# What may enter a Docker build context. Allowlist, not blocklist.
+#
+# The signer image is the one artifact in this repo that runs inside a TEE, and
+# the whole claim about it is that nobody can extract a key from it. A build
+# context assembled by exclusion gets that wrong the first time someone adds a
+# file: `.env`, `.keys/`, and every `*.bak` in the tree would have been in scope
+# by default. Starting from `*` means a new secret is out unless someone
+# deliberately lets it in.
+#
+# It also fixes a real break. Without this file the runtime stage copied the
+# host's `node_modules` over the one `pnpm install` had just built, and on
+# Windows those are symlinks to `D:/CODE/...` — paths with no meaning in a Linux
+# container. The image built cleanly and then died at boot on
+# `Cannot find package '@ntux402/shared'`.
+
+# Ignore everything...
+*
+
+# ...then re-admit exactly what services/signer/Dockerfile copies.
+!pnpm-lock.yaml
+!pnpm-workspace.yaml
+!package.json
+!tsconfig.base.json
+!packages/shared
+!services/signer
+
+# Build output and installed trees are produced inside the image, never carried
+# into it. `dist/` is gitignored, so a fresh clone has none and relying on the
+# host's copy makes the image depend on whoever built it last.
+**/node_modules
+**/dist
+**/.vite
+**/*.tsbuildinfo
+
+# Nothing below is needed to run the signer, and none of it should be within
+# reach of a COPY in an enclave image.
+**/.env
+**/.env.*
+**/*.bak
+**/.keys
+**/.git

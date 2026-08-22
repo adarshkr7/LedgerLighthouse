@@ -10,9 +10,10 @@
  * demo does. Read-only; it holds no key and sends no transaction.
  */
 
+import { rpcTransport } from "@ntux402/shared/viem";
 import { OnChainVaultReader } from "@ntux402/signer";
 import { USDC_BASE_SEPOLIA, formatUsdc } from "@ntux402/shared";
-import { createPublicClient, http, type Address } from "viem";
+import { createPublicClient, type Address } from "viem";
 import { baseSepolia } from "viem/chains";
 
 import { loadDotEnv, policyVaultAbi, required, requiredAddress } from "./config.js";
@@ -23,7 +24,7 @@ const rpcUrl = required("BASE_SEPOLIA_RPC_URL");
 const vaultAddress = requiredAddress("POLICY_VAULT_ADDRESS");
 
 const reader = new OnChainVaultReader({ rpcUrl, vaultAddress });
-const client = createPublicClient({ chain: baseSepolia, transport: http(rpcUrl) });
+const client = createPublicClient({ chain: baseSepolia, transport: rpcTransport(rpcUrl) });
 const abi = policyVaultAbi();
 
 console.log(`\nPolicyVault ${vaultAddress}`);

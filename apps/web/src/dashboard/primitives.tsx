@@ -7,28 +7,6 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 
 import { explorer } from "../lib/config.js";
 
-export function Card({
-  title,
-  aside,
-  children,
-}: {
-  title?: string;
-  aside?: ReactNode;
-  children: ReactNode;
-}) {
-  return (
-    <section className="d-card">
-      {title ? (
-        <header className="d-card-head">
-          <h2 className="d-card-title">{title}</h2>
-          {aside}
-        </header>
-      ) : null}
-      {children}
-    </section>
-  );
-}
-
 /** Label above value. Captions carry the meaning; prose is kept out of the UI. */
 export function Field({ label, children }: { label: string; children: ReactNode }) {
   return (

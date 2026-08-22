@@ -18,9 +18,20 @@ import {
   parsePaymentRequirements,
 } from "@ntux402/shared";
 
+import { RateLimiter, corsHeaders, rejected } from "@ntux402/shared/node";
+
 import type { Facilitator } from "./facilitator.js";
 
 const MAX_BODY_BYTES = 32 * 1024;
+
+/*
+ * `POST /settle` spends this service's gas on behalf of whoever calls it. The
+ * authorization it submits is signed, so nobody can make it move funds they do
+ * not control — but they can make it burn gas, one failed transaction at a
+ * time. The limiter is the bound on that; the loopback default is the reason it
+ * rarely matters.
+ */
+const SETTLE_LIMIT = new RateLimiter({ windowMs: 60_000, max: 60 });
 
 async function readJson(req: IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = [];
@@ -35,9 +46,15 @@ async function readJson(req: IncomingMessage): Promise<unknown> {
   return JSON.parse(text === "" ? "null" : text);
 }
 
-function send(res: ServerResponse, status: number, body: unknown): void {
+function send(
+  res: ServerResponse,
+  status: number,
+  body: unknown,
+  cors: Record<string, string> = {},
+): void {
   const payload = JSON.stringify(body);
   res.writeHead(status, {
+    ...cors,
     "content-type": "application/json",
     "content-length": Buffer.byteLength(payload),
   });
@@ -55,21 +72,43 @@ export function createFacilitatorServer(options: FacilitatorServerOptions): Serv
   const log = options.log ?? (() => {});
 
   return createServer((req, res) => {
+    /*
+     * Computed once, out here rather than inside the async frame, so the
+     * `.catch()` below can reach it too. It could not before, and a crash
+     * therefore answered without CORS headers -- which the browser reports as
+     * an opaque "Failed to fetch" rather than the 500 and its message. That is
+     * precisely the failure this project spent an afternoon misdiagnosing: the
+     * service was up and answering, and the only thing wrong was that the
+     * answer was unreadable.
+     */
+    const cors = corsHeaders(req);
+
     void (async () => {
       const path = (req.url ?? "/").split("?")[0];
 
+      if (req.method === "OPTIONS") {
+        res.writeHead(204, cors);
+        res.end();
+        return;
+      }
+
+      // Everything but the two probes is guarded.
+      if (path !== "/health" && path !== "/supported") {
+        if (rejected(req, res, { limiter: SETTLE_LIMIT })) return;
+      }
+
       if (req.method === "GET" && path === "/health") {
-        send(res, 200, { ok: true, service: "x402-facilitator", settler: facilitator.settlerAddress });
+        send(res, 200, { ok: true, service: "x402-facilitator", settler: facilitator.settlerAddress }, cors);
         return;
       }
 
       if (req.method === "GET" && path === "/supported") {
-        send(res, 200, { kinds: [{ x402Version: X402_VERSION, scheme: SCHEME_EXACT, network }] });
+        send(res, 200, { kinds: [{ x402Version: X402_VERSION, scheme: SCHEME_EXACT, network }] }, cors);
         return;
       }
 
       if (req.method !== "POST" || (path !== "/verify" && path !== "/settle")) {
-        send(res, 404, { error: "not found" });
+        send(res, 404, { error: "not found" }, cors);
         return;
       }
 
@@ -77,31 +116,31 @@ export function createFacilitatorServer(options: FacilitatorServerOptions): Serv
       try {
         body = await readJson(req);
       } catch (e) {
-        send(res, 400, { error: e instanceof Error ? e.message : String(e) });
+        send(res, 400, { error: e instanceof Error ? e.message : String(e) }, cors);
         return;
       }
 
       if (typeof body !== "object" || body === null) {
-        send(res, 400, { error: "body: expected an object" });
+        send(res, 400, { error: "body: expected an object" }, cors);
         return;
       }
       const envelope = body as Record<string, unknown>;
 
       const payment = parsePaymentPayload(envelope["paymentPayload"]);
       if (!payment.ok) {
-        send(res, 400, { error: payment.error });
+        send(res, 400, { error: payment.error }, cors);
         return;
       }
       const requirements = parsePaymentRequirements(envelope["paymentRequirements"]);
       if (!requirements.ok) {
-        send(res, 400, { error: requirements.error });
+        send(res, 400, { error: requirements.error }, cors);
         return;
       }
 
       if (path === "/verify") {
         const result = await facilitator.verify(payment.value, requirements.value);
         log(`POST /verify -> ${result.isValid ? "valid" : `invalid: ${result.invalidReason}`}`);
-        send(res, 200, result);
+        send(res, 200, result, cors);
         return;
       }
 
@@ -113,9 +152,9 @@ export function createFacilitatorServer(options: FacilitatorServerOptions): Serv
             : `failed: ${result.errorReason}`
         }`,
       );
-      send(res, result.success ? 200 : 402, result);
+      send(res, result.success ? 200 : 402, result, cors);
     })().catch((e: unknown) => {
-      send(res, 500, { error: e instanceof Error ? e.message : String(e) });
+      send(res, 500, { error: e instanceof Error ? e.message : String(e) }, cors);
     });
   });
 }

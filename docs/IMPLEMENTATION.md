@@ -160,7 +160,8 @@ SIGNER_ROFL_SOCKET=           # /run/rofl-appd.sock inside a ROFL container; bla
 SIGNER_ROFL_INDEX_PATH=       # companion address -> key_id map; non-secret
 ORCHESTRATOR_RELAY_KEY=       # gas only
 FACILITATOR_PRIVATE_KEY=      # gas only
-LLM_API_KEY=                  # unset falls back to the scripted agent
+AISA_INFERENCE_KEY=           # inference only; unset falls back to the scripted agent
+LLM_MODEL=                    # gateway model id; no default
 ```
 
 `USDC_ADDRESS` carries a real value deliberately — it is a public testnet address, and a blank makes

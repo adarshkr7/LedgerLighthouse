@@ -48,6 +48,7 @@ import {
   type SettleResponse,
   type VerifyResponse,
 } from "@ntux402/shared";
+import { rpcTransport } from "@ntux402/shared/viem";
 
 export interface FacilitatorConfig {
   readonly rpcUrl: string;
@@ -74,12 +75,12 @@ export class Facilitator {
     this.#settler = account.address;
     this.#public = createPublicClient({
       chain: baseSepolia,
-      transport: http(config.rpcUrl),
+      transport: rpcTransport(config.rpcUrl),
     }) as PublicClient;
     this.#wallet = createWalletClient({
       account,
       chain: baseSepolia,
-      transport: http(config.rpcUrl),
+      transport: rpcTransport(config.rpcUrl),
     });
   }
 

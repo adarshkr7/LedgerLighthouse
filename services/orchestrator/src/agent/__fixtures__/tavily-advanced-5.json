@@ -1,0 +1,53 @@
+{
+  "query": "base sepolia usdc contract address",
+  "follow_up_questions": null,
+  "answer": null,
+  "images": [],
+  "results": [
+    {
+      "url": "https://sepolia.basescan.org/token/0x5deac602762362fe5f135fa5904351916053cf70",
+      "title": "ERC-20 Token | Address: 0x5deac602...16053cf70 | BaseScan Sepolia",
+      "content": "Base Sepolia USDC (USDC) Total Supply 1,000,000,000 USDC. Token Contract (WITH 18 Decimals) A token is a representation of an on-chain or off-chain asset. The",
+      "score": 0.8215175,
+      "raw_content": null,
+      "id": "bee2f6-00"
+    },
+    {
+      "url": "https://sepolia.basescan.org/token/0x26df8d79c4faca88d0212f0bd7c4a4d1e8955f0e?a=0xc364914bdc210b9f97926894029d340f4c8d727c",
+      "title": "ERC-20 Token | Address: 0x26df8d79...1e8955f0e",
+      "content": "Token USDC (USDC) ERC-20. Total Supply 1,148,105,000 USDC. Token Contract (WITH 18 Decimals) can be attached to this address. 2026 (BASE-Sepolia-A)",
+      "score": 0.78944516,
+      "raw_content": null,
+      "id": "584610-01"
+    },
+    {
+      "url": "https://www.7blocklabs.com/blog/usdc-contract-address-on-base-and-base-usdc-address-variants-avoiding-fake-contract-traps",
+      "title": "USDC Contract Address on Base: How to Spot Fake ... - 7BlockLabs",
+      "content": "+ When you're dealing with live traffic, make sure to use a production node provider like Alchemy, QuickNode, or CDP. More info can be found here: (docs.base.org)\n Testnet address (Base Sepolia): 0x036CbD53842c5426634e7929541eC2318f3dCF7e. Just a reminder--don’t use this in production. You can verify it here: (developers.circle.com) [...] ## Appendix: Copy/paste essentials for your playbooks\n\n USDC (Base mainnet): 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913 (developers.circle.com)\n USDC (Base Sepolia testnet): 0x036CbD53842c5426634e7929541eC2318f3dCF7e (developers.circle.com)\n USDbC (bridged, legacy on Base): 0xd9aAEc86B65D86f6A7B5B1b0c42FFA531710b6CA (basescan.org)\n Base chain ID: 8453 (0x2105); Dev RPC:  (just a heads up, this isn’t for production use) (docs.base.org)\n Permit2 (Uniswap) on Base: 0x000000000022D473030F116dDEE9F6B43aC78BA3 (docs.base.org)\n CCTP V2: Base domain id 6; this one supports Fast Transfer and Hooks. (developers.circle.com)\n USDC token facts on BaseScan: “Token Contract (WITH 6 Decimals)”, verified FiatTokenProxy. (basescan.org) [...] ## TL;DR risk checklist\n\n The only native USDC on the Base mainnet is at 0x833589…2913. Make sure to lock this in your config and treat any changes like a production incident. (developers.circle.com)\n USDbC (0xd9aAEc…) represents the older bridged USDC. You can accept it for unwinds and deposits, but it’s best to build on the native USDC. (basescan.org)\n Don’t forget to verify on BaseScan: FiatTokenProxy is set at 6 decimals, and be sure to subscribe to the proxy Upgraded events. (basescan.org)\n If you need to move USDC across chains, use CCTP V2 (Fast Transfer) instead of random bridges. It’s a smoother ride! (circle.com)\n Go for EIP‑2612/Permit2 flows and enable USDC-for-gas to make everything a bit easier on Base. Trust me, it’ll cut down on friction! (circle.com)",
+      "score": 0.78473216,
+      "raw_content": null,
+      "id": "4c0b87-02"
+    },
+    {
+      "url": "https://orderly.network/docs/build-on-omnichain/addresses",
+      "title": "Smart Contract Addresses - Orderly",
+      "content": "## ​ Base\n\n| Contract Name | Mainnet Address | Testnet Address (Sepolia) |\n --- \n| USDC | 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913 | 0x036CbD53842c5426634e7929541eC2318f3dCF7e |\n| Vault | 0x816f722424b49cf1275cc86da9840fbd5a6167e9 | 0xdc7348975aE9334DbdcB944DDa9163Ba8406a0ec |\n| VaultProxyAdmin | 0xA2eA0a58b083c492AdC91A687FAc8B53AdB7c0Fd | 0xe014a38501cF2B8139dED0b60Ed4FbD02C113b59 |\n| VaultCrossChainManager | 0xa0a07a78c7d31E6f8698F48Fc9219f9a3030f38C | 0xc8E38C1Fd1422f49DB592BAe619080EA5Deb50e0 |\n| CrossChainRelay | 0x173B47eDBeCa665125edc24C509bfE545CDA60a9 | 0x25eB1e506608ab7eb8f91802e1dae6963848ED25 |\n\n## ​ Mantle [...] ## ​ Optimism\n\n| Contract Name | Mainnet Address | Testnet Address (Sepolia) |\n --- \n| USDC | 0x0b2c639c533813f4aa9d7837caf62653d097ff85 | 0x5fd84259d66Cd46123540766Be93DFE6D43130D7 |\n| Vault | 0x816f722424b49cf1275cc86da9840fbd5a6167e9 | 0xEfF2896077B6ff95379EfA89Ff903598190805EC |\n| VaultProxyAdmin | 0xA2eA0a58b083c492AdC91A687FAc8B53AdB7c0Fd | 0xEfD0cbED3f520cb59c6Cf8cE428a44978C18F8Fb |\n| VaultCrossChainManager | 0xa0a07a78c7d31E6f8698F48Fc9219f9a3030f38C | 0x6C14bf583C142B66EC59F8fc725B255e3a94BAA3 |\n| CrossChainRelay | 0x173B47eDBeCa665125edc24C509bfE545CDA60a9 | 0x09a766D6bcA1Fd8FdB6c09b76084719cF94d041b |\n\n## ​ Base [...] | Contract Name | Mainnet Address | Testnet Address (Sepolia) |\n --- \n| USDC | 0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48 | 0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238 |\n| USDT | 0xdAC17F958D2ee523a2206206994597C13D831ec7 | 0x01a6810727db185bbf7f30ec158c3ac8b8112627 |\n| YUSD | 0x4274cd7277c7bb0806bd5fe84b9adae466a8da0a |\n| deUSD | 0x15700b564ca08d9439c58ca5053166e8317aa138 |\n| WBTC | 0x2260fac5e5542a773aa44fbcfedf7c193bc2c599 |\n| USD1 | 0x8d0d000ee44948fc98c9b98a4fa4921476f08b0d |\n| Vault | 0x816f722424b49cf1275cc86da9840fbd5a6167e9 | 0x0EaC556c0C2321BA25b9DC01e4e3c95aD5CDCd2f |\n| VaultProxyAdmin | 0xa2ea0a58b083c492adc91a687fac8b53adb7c0fd | 0xa3BB1F1Aa238AF13528965f069fD0a4F1595d8e9 |",
+      "score": 0.75852895,
+      "raw_content": null,
+      "id": "31a5d5-03"
+    },
+    {
+      "url": "https://sepolia.etherscan.io/token/0xf08a50178dfcde18524640ea6618a1f965821715",
+      "title": "ERC-20 Token | Address: 0xf08a5017...965821715 | Etherscan Sepolia",
+      "content": "Sepolia Testnet\n\n Site Settings\n\n Ethereum Mainnet\n\n Sepolia Testnet\n Hoodi Testnet\n\n Beacon Chain ETH2\n\n# Token\n\n USD Coin (USDC)\n\n### Overview\n\n#### Max Total Supply\n\n2,614,516,000 USDC\n\n#### Holders\n\n27,175\n\n#### Total Transfers\n\n-\n\n### Market\n\n#### Onchain Market Cap\n\n-\n\n#### Circulating Supply Market Cap\n\n-\n\n### Other Info\n\n#### Token Contract (WITH 6 Decimals)\n\n0xf08a50178dfcde18524640ea6618a1f965821715\n\n Holders\n Transfers\n Contract\n\nLoading...\n\nLoading\n\nLoading...\n\nLoading\n\nLoading...\n\nLoading\n\nClick here to  update the token information / general information\n\n| # | Exchange | Pair | Price | 24H Volume | % Volume |\n ---  ---  --- |\n\nAre you the contract creator? Verify and Publish your contract source code today!\n\nDecompile Bytecode [...] b60405180910390f35b61018c610187366004610d17565b6103a4565b6040519015158152602001610170565b6101a560005481565b604051908152602001610170565b61018c6101c1366004610d41565b6103bb565b6101d96101d4366004610d7d565b610433565b005b6101a57f6e71edae12b1b97f4d1f60370fef10105fa2faae0126114a169c64845d6126c981565b61020a600681565b60405160ff9091168152602001610170565b6101a57ff5ef049a10050cded82c82ab29872d516ad9ee1723bb9180c144bf9fd54f8a1f81565b61018c610251366004610d17565b610487565b6101a5610264366004610d7d565b60016020526000908152604090205481565b6101a5610284366004610d7d565b60046020526000908152604090205481565b6005546102a9906001600160a01b031681565b6040516001600160a01b039091168152602001610170565b610163604051806040016040528060048152602001635553444360e01b81525081565b6101d96102f2366004610d7d565b6104dc565b61018c61030536600 [...] ```",
+      "score": 0.6932451,
+      "raw_content": null,
+      "id": "d8cbce-04"
+    }
+  ],
+  "response_time": 3.15,
+  "usage": {
+    "credits": 2
+  },
+  "request_id": "65ef2856-3da8-4fde-b52a-455cba91d179"
+}

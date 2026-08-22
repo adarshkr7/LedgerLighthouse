@@ -11,7 +11,7 @@
 <p align="center">
   <a href="https://youtu.be/jCm6Ps4TSdg"><img alt="Watch the demo" src="https://img.shields.io/badge/demo-watch-ff3000" /></a>
   <a href="https://github.com/adarshkr7/LedgerLighthouse/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/adarshkr7/LedgerLighthouse/actions/workflows/ci.yml/badge.svg" /></a>
-  <a href="https://github.com/adarshkr7/LedgerLighthouse/actions/workflows/ci.yml"><img alt="234 tests passing" src="https://img.shields.io/badge/tests-234%20passing-2f5c4a" /></a>
+  <a href="https://github.com/adarshkr7/LedgerLighthouse/actions/workflows/ci.yml"><img alt="307 tests passing" src="https://img.shields.io/badge/tests-307%20passing-2f5c4a" /></a>
   <a href="https://sepolia.basescan.org/address/0x0C759D06a1c14F43852D7b078Db2f8C342F15921"><img alt="Live on Base Sepolia" src="https://img.shields.io/badge/live-Base%20Sepolia-0052ff" /></a>
   <img alt="x402 v1" src="https://img.shields.io/badge/x402-v1-16150f" />
   <img alt="Inco Lightning 1.0.2" src="https://img.shields.io/badge/Inco%20Lightning-1.0.2-7c382e" />
@@ -75,7 +75,7 @@ Running code, not a design document. Every item below is exercised by the test s
 ### Payment path — x402 v1
 
 - **Schema-first 402 parsing** — amount, payee and asset taken from structured fields; vendor prose routed only to the model
-- **LLM agent** on Anthropic, with a scripted offline fallback that reproduces injection compliance — [`services/orchestrator/src/agent/`](services/orchestrator/src/agent/)
+- **LLM agent** over an OpenAI-compatible gateway — any model it serves, no vendor SDK in the untrusted component — with a scripted offline fallback that reproduces injection compliance — [`services/orchestrator/src/agent/`](services/orchestrator/src/agent/)
 - **Nine-stage payment loop** in which a rejection is terminal and first-class, never retried — [`services/orchestrator/src/pay/payment-loop.ts`](services/orchestrator/src/pay/payment-loop.ts)
 - **Non-discretionary Authorization Signer** accepting `(goalId, seq)` and nothing else, with 8 specified refusal codes
 - **Self-hosted x402 facilitator** exposing `/verify`, `/settle`, `/supported` — [`services/facilitator/`](services/facilitator/)
@@ -92,14 +92,27 @@ Running code, not a design document. Every item below is exercised by the test s
 
 - **Web console** — MetaMask goal opening, payer funding, live SSE timeline — [`apps/web/`](apps/web/)
 - **Shared demo catalog** imported by vendor, orchestrator and UI, so charged and displayed prices cannot drift
-- **CI-enforced import boundary** preventing the orchestrator from reaching the signer — [`scripts/check-boundary.mjs`](scripts/check-boundary.mjs)
-- **Eight operator scripts** — keygen, fund, balances, preflight, demo, tee-check, state, whois
+- **CI-enforced import boundary** preventing the orchestrator from reaching the signer *or the vendor's API key* — [`scripts/check-boundary.mjs`](scripts/check-boundary.mjs)
+- **Nine operator scripts** — keygen, fund, balances, preflight, showtime, demo, tee-check, state, whois
+- **`showtime`** — demo-day readiness in one command: six services, both RPC endpoints exercised with `eth_call`, balances, both API keys, and the settings whose absence turns a live run into a stub without saying so
 - **`pnpm verify`** mirrors CI exactly, with a pre-push hook available via `.githooks`
+
+### Live search — real money, real API
+
+- **`services/vendor-aisa`** — an x402 resource server in front of AIsa's paid search. GET in, POST out, so the payment loop needs no change to buy from a Bearer-key API
+- **Measured pricing** — 0.01 / 0.02 USDC against a metered upstream cost of $0.008 / $0.016, pinned in the shared catalog with a `verifiedOn` date
+- **`/verify` before the upstream call**, so a payment that will fail at settlement cannot make us spend first
+- **Spend ceiling in money, persisted** — restarting is not a way past it
+- **CI-enforced key boundary** — the orchestrator may not import the vendor or name its credential
+
+### Verifiability, anchored
+
+- **`TraceAnchor`** deployed at [`0x065d5e16160159cAB7D841818aBc92b4E85D5818`](https://sepolia.basescan.org/address/0x065d5e16160159cAB7D841818aBc92b4E85D5818) — every completed run commits its Merkle root, so a trace proves *when* it said what it says
+- **Vendor-attested steps are marked as such**, and the verifier rejects one that claims an on-chain attestation it cannot have
 
 ### Written and tested, not yet live
 
-- **`TraceAnchor`** — 3 passing tests, but no runtime path calls it, so Merkle roots are not yet anchored on chain — [`contracts/src/TraceAnchor.sol`](contracts/src/TraceAnchor.sol)
-- **ROFL enclave deployment** — the key-derivation path is implemented and tested; the container is not deployed, so the running demo uses the file store. Deployment needs the `oasis` CLI, a digest-pinned `linux/amd64` image, and ~150 TEST ROSE
+- **ROFL enclave deployment** — the key-derivation path is implemented and covered by 12 tests; the container is not deployed, so the running demo uses the file store. Deployment needs the `oasis` CLI, a digest-pinned `linux/amd64` image, and ~150 TEST ROSE — step by step in [`docs/ROFL_RUNBOOK.md`](docs/ROFL_RUNBOOK.md)
 
 ---
 
@@ -225,7 +238,7 @@ flowchart LR
     MK -->|"verify · settle"| FAC
     FAC -->|"transferWithAuthorization"| USDC
     OR --> TR
-    TR -.->|"Merkle root — anchoring not yet wired"| TA
+    TR -->|"Merkle root — anchored per run"| TA
 
     classDef fe    fill:#1e3a5f,stroke:#4a9eff,color:#d0e8ff
     classDef untr  fill:#3a1a1a,stroke:#ef5350,color:#f5d0d0
@@ -527,8 +540,9 @@ cp .env.example .env
 | `SIGNER_KEY_STORE_PATH` | Local mode | Where per-goal payer keys live. Blank = in-memory. Ignored when ROFL is set |
 | `SIGNER_ROFL_SOCKET` | ROFL only | `/run/rofl-appd.sock` — set **only** inside a deployed enclave |
 | `SIGNER_ROFL_INDEX_PATH` | ROFL only | `address → key_id` map. Non-secret |
-| `LLM_API_KEY` | Optional | Anthropic key. Blank runs the scripted agent, reproducing injection-compliance offline |
-| `LLM_MODEL` | Pre-filled | `claude-sonnet-5` |
+| `AISA_INFERENCE_KEY` | Optional | Gateway key, **inference only**. Blank runs the scripted agent, reproducing injection-compliance offline |
+| `LLM_MODEL` | Optional | Gateway model id. No default — blank runs the scripted agent |
+| `AISA_API_BASE_URL` | Pre-filled | `https://api.aisa.one` |
 | `BASESCAN_API_KEY` | Optional | Contract verification only |
 
 Then generate and fund the two gas-only roles:

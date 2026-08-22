@@ -26,7 +26,33 @@ export type StepType =
   | "authorization-signed"
   | "settled"
   | "response"
+  /**
+   * What the vendor says it did upstream once it was paid — the capability, the
+   * tier, its own reported cost, and the upstream request id.
+   *
+   * **Vendor-attested, not chain-verified**, and the distinction is the whole
+   * reason this type exists separately. Every other claim in a trace is either
+   * re-derivable offline (the hash chain) or re-checkable against Base Sepolia
+   * (the attested steps). This one is a third party's account of an HTTP call
+   * to a service the verifier cannot reach, and no RPC will ever confirm it.
+   *
+   * The chain still protects it from *editing* — it hashes into the chain like
+   * any other step, so it cannot be altered after the fact. What it does not
+   * get is a `StepAttestation`, ever; `VENDOR_ATTESTED_STEPS` and the check in
+   * `verify.ts` enforce that, because a step carrying one would be claiming a
+   * verifiability it does not have.
+   */
+  | "vendor-upstream"
   | "failed";
+
+/**
+ * Step types whose content rests on a third party's word.
+ *
+ * Consulted by the verifier, which refuses to let any of them carry a
+ * `StepAttestation`. Kept as data rather than a comment so adding a type forces
+ * a decision about which side of that line it falls on.
+ */
+export const VENDOR_ATTESTED_STEPS: readonly StepType[] = ["vendor-upstream"];
 
 /**
  * The three fields that make a payment step independently verifiable by someone

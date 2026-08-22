@@ -12,6 +12,11 @@ import {
  */
 export {
   DEMO_GOALS,
+  // The subset this server actually owns. The catalog also carries live goals
+  // served by services/vendor-aisa, and answering for those here would hand
+  // back a fixture at a price the console displayed for real data.
+  MOCK_GOALS,
+  isMockGoal,
   HONEST_DESCRIPTION,
   INJECTION_TEXT,
   descriptionFor,

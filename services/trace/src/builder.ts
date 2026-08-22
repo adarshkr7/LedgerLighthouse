@@ -51,7 +51,6 @@ export class TraceBuilder {
         seq: string;
         decisionHandle: Hex;
         commitTx: Hex;
-        signatures: readonly Hex[];
         approved?: boolean;
       }
     | undefined;
@@ -130,7 +129,6 @@ export class TraceBuilder {
           seq: String(spend["seq"]),
           decisionHandle: spend["decisionHandle"] as Hex,
           commitTx: spend["commitTx"] as Hex,
-          signatures: [],
         };
         this.append(
           "spend-requested",
@@ -176,7 +174,12 @@ export class TraceBuilder {
           pending
             ? {
                 decisionHandle: pending.decisionHandle,
-                covalidatorSignatures: pending.signatures,
+                // The bytes the orchestrator handed `finalizeDecision`, carried
+                // on the event itself. They used to arrive through a separate
+                // `attachSignatures` call that only the tests ever made, so
+                // every trace this system actually produced recorded an empty
+                // array — an attestation with no attestation in it.
+                covalidatorSignatures: hexArray(event["signatures"]),
                 commitTx: pending.commitTx,
                 finalizeTx: event["txHash"] as Hex,
                 goalId: String(event["goalId"]),
@@ -211,6 +214,37 @@ export class TraceBuilder {
         this.append("response", { url: event["url"] }, { fromCache: event["fromCache"] });
         break;
 
+      /*
+       * The vendor's account of the call it made after being paid.
+       *
+       * Recorded with `attestedBy: "vendor"` stated in the outputs rather than
+       * left to be inferred, and with **no** `StepAttestation` — the verifier
+       * rejects a `vendor-upstream` step that carries one, because that would
+       * be claiming a chain-verifiability no RPC can supply.
+       *
+       * Its timestamp is when the orchestrator *learned* this, not when the
+       * upstream call happened: the information arrives inside the final 200
+       * body, so it cannot be placed at its true moment in the sequence. The
+       * vendor's own `latencyMs` is the only duration on offer, and it is the
+       * vendor's number.
+       *
+       * `quotedAtomic` and `costAtomic` are both kept so a reader can see the
+       * margin, and see when a call cost the vendor more than it charged.
+       */
+      case "vendor-upstream":
+        this.append(
+          "vendor-upstream",
+          { capability: event["capability"], tier: event["tier"] },
+          {
+            attestedBy: "vendor",
+            requestId: event["requestId"],
+            latencyMs: event["latencyMs"],
+            quotedAtomic: event["quotedAtomic"],
+            costAtomic: event["costAtomic"],
+          },
+        );
+        break;
+
       case "failed":
         this.append("failed", null, { reason: event["reason"] });
         break;
@@ -218,17 +252,6 @@ export class TraceBuilder {
       default:
         break;
     }
-  }
-
-  /**
-   * Attaches the covalidator signatures for the spend currently in flight.
-   *
-   * Separate from `record` because the orchestrator's event stream does not
-   * carry them — they are bytes it passes to `finalizeDecision`, not something
-   * it reports. The demo driver hands them over explicitly.
-   */
-  attachSignatures(signatures: readonly Hex[]): void {
-    if (this.#pending) this.#pending = { ...this.#pending, signatures };
   }
 
   build(): Trace {
@@ -241,6 +264,19 @@ export class TraceBuilder {
       root: merkleRoot(this.#steps.map((step) => step.hash)),
     };
   }
+}
+
+/**
+ * Hex strings off an untyped event.
+ *
+ * Defensive because `IncomingEvent` is declared structurally — the trace package
+ * deliberately does not import the orchestrator's types, so nothing but this
+ * function stands between a malformed event and a step hash committing to
+ * whatever was in it.
+ */
+function hexArray(value: unknown): readonly Hex[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((v): v is Hex => typeof v === "string" && v.startsWith("0x"));
 }
 
 /** Stable digest of a whole trace — handy for a quick equality check. */

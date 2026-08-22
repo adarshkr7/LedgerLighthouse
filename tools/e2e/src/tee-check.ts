@@ -32,7 +32,6 @@ import {
   createPublicClient,
   createWalletClient,
   formatEther,
-  http,
   parseEventLogs,
   type Address,
   type Hex,
@@ -42,6 +41,8 @@ import { privateKeyToAccount } from "viem/accounts";
 import { Lightning } from "@inco/lightning-js/lite";
 import { handleTypes } from "@inco/lightning-js";
 
+import { rpcTransport } from "@ntux402/shared/viem";
+import { rpcUrls } from "@ntux402/shared";
 import { IncoDecisionReader, pollForDecision } from "@ntux402/orchestrator";
 
 import {
@@ -77,9 +78,9 @@ const usdcAddress = requiredAddress("USDC_ADDRESS");
 const user = privateKeyToAccount(requiredHexKey("DEPLOYER_PRIVATE_KEY"));
 const relay = privateKeyToAccount(requiredHexKey("ORCHESTRATOR_RELAY_KEY"));
 
-const publicClient = createPublicClient({ chain: baseSepolia, transport: http(rpcUrl) });
-const userWallet = createWalletClient({ account: user, chain: baseSepolia, transport: http(rpcUrl) });
-const relayWallet = createWalletClient({ account: relay, chain: baseSepolia, transport: http(rpcUrl) });
+const publicClient = createPublicClient({ chain: baseSepolia, transport: rpcTransport(rpcUrl) });
+const userWallet = createWalletClient({ account: user, chain: baseSepolia, transport: rpcTransport(rpcUrl) });
+const relayWallet = createWalletClient({ account: relay, chain: baseSepolia, transport: rpcTransport(rpcUrl) });
 const abi = policyVaultAbi();
 
 const rule = (label = "") =>
@@ -146,7 +147,7 @@ check("Inco fee", true, `${formatEther(incoFee)} ETH per encrypted input`);
 // ----------------------------------------------------------------- encryption
 rule("1. encrypt the budget client-side");
 
-const zap = await Lightning.baseSepoliaTestnet({ hostChainRpcUrls: [rpcUrl] });
+const zap = await Lightning.baseSepoliaTestnet({ hostChainRpcUrls: [...rpcUrls(rpcUrl)] });
 
 let t = now();
 const budgetCiphertext = (await zap.encrypt(BUDGET, {

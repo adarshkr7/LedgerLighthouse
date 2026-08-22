@@ -25,7 +25,6 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
-import { Card } from "./primitives.js";
 import type { PaymentEvent } from "../lib/run.js";
 
 function find<T extends PaymentEvent["type"]>(
@@ -139,71 +138,71 @@ export function ModelInput({
   const complied = reasoning?.decidedToRequest;
 
   return (
-    <Card title="Model input">
-      <div className="mi-host" ref={host}>
-        <p className="mi-prose">
-          <span className="mi-lead">The vendor sent, and the model read: </span>
-          <span className="mi-selection" ref={selection}>
-            {description}
-            {running ? <span className="t-caret" /> : null}
-          </span>
-        </p>
+    <>
+    <div className="mi-host" ref={host}>
+      <p className="mi-prose">
+        <span className="mi-lead">The vendor sent, and the model read: </span>
+        <span className="mi-selection" ref={selection}>
+          {description}
+          {running ? <span className="t-caret" /> : null}
+        </span>
+      </p>
 
-        <div
-          className="mi-anchor"
-          style={{
-            transform: `translate3d(${anchor.x}px, ${anchor.y}px, 0) translateX(-50%)`,
-            opacity: placed ? 1 : 0,
-            pointerEvents: placed ? "auto" : "none",
-          }}
-        >
-          <div className="mi-bar" ref={bar} data-mode={mode}>
-            {running ? (
-              <span className="mi-busy">
-                <span className="mi-spinner" aria-hidden="true" />
-                <span className="t-shimmer">Reading vendor text…</span>
+      <div
+        className="mi-anchor"
+        style={{
+          transform: `translate3d(${anchor.x}px, ${anchor.y}px, 0) translateX(-50%)`,
+          opacity: placed ? 1 : 0,
+          pointerEvents: placed ? "auto" : "none",
+        }}
+      >
+        <div className="mi-bar" ref={bar} data-mode={mode}>
+          {running ? (
+            <span className="mi-busy">
+              <span className="mi-spinner" aria-hidden="true" />
+              <span className="t-shimmer">Reading vendor text…</span>
+            </span>
+          ) : (
+            <>
+              <span className="mi-verdict" data-complied={complied ? "" : undefined}>
+                {complied === undefined
+                  ? "No agent decision"
+                  : complied
+                    ? "Agent complied"
+                    : "Agent declined"}
               </span>
-            ) : (
-              <>
-                <span className="mi-verdict" data-complied={complied ? "" : undefined}>
-                  {complied === undefined
-                    ? "No agent decision"
-                    : complied
-                      ? "Agent complied"
-                      : "Agent declined"}
-                </span>
-                {reasoning ? <span className="mi-source">{reasoning.source}</span> : null}
-                <span className="mi-sep" aria-hidden="true" />
-                <button
-                  type="button"
-                  className="mi-toggle"
-                  aria-expanded={showStructured}
-                  onClick={() => setShowStructured((v) => !v)}
-                >
-                  <BracesIcon />
-                  {showStructured ? "Hide structured" : "Structured"}
-                </button>
-              </>
-            )}
-          </div>
+              {reasoning ? <span className="mi-source">{reasoning.source}</span> : null}
+              <span className="mi-sep" aria-hidden="true" />
+              <button
+                type="button"
+                className="mi-toggle"
+                aria-expanded={showStructured}
+                onClick={() => setShowStructured((v) => !v)}
+              >
+                <BracesIcon />
+                {showStructured ? "Hide structured" : "Structured"}
+              </button>
+            </>
+          )}
         </div>
       </div>
+    </div>
 
-      {showStructured && !running ? (
-        <div className="mi-structured">
-          <span className="d-label">What the policy acts on</span>
-          <pre className="d-code">
-            {reasoning ? JSON.stringify(reasoning.modelSafeTerms, null, 2) : "—"}
-          </pre>
-        </div>
-      ) : null}
+    {showStructured && !running ? (
+      <div className="mi-structured">
+        <span className="d-label">What the policy acts on</span>
+        <pre className="d-code">
+          {reasoning ? JSON.stringify(reasoning.modelSafeTerms, null, 2) : "—"}
+        </pre>
+      </div>
+    ) : null}
 
-      <p className="d-caption">
-        {complied
-          ? "The agent was convinced. Amount, payee and asset still came from the schema validator — never from the prose above."
-          : "Amount, payee and asset come from the schema validator, never from the prose above."}
-      </p>
-    </Card>
+    <p className="d-caption">
+      {complied
+        ? "The agent was convinced. Amount, payee and asset still came from the schema validator — never from the prose above."
+        : "Amount, payee and asset come from the schema validator, never from the prose above."}
+    </p>
+    </>
   );
 }
 
