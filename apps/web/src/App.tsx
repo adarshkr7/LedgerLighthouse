@@ -489,8 +489,12 @@ export default function App() {
   const mintPayer = () =>
     guard("Minting payer key…", async () => {
       if (!config) throw new Error("orchestrator config not loaded");
-      const response = await fetch(`${config.signerUrl}/payer`, { method: "POST" });
-      if (!response.ok) throw new Error(`signer /payer returned ${response.status}`);
+      // Through the orchestrator, not straight at `config.signerUrl`.
+      // A ROFL-hosted signer wants a `SERVICE_TOKEN` bearer, and putting that
+      // in the bundle would publish it to every viewer. The orchestrator holds
+      // it already, so the mint goes via there and this page holds no secret.
+      const response = await fetch(`${ORCHESTRATOR_URL}/payer`, { method: "POST" });
+      if (!response.ok) throw new Error(`orchestrator /payer returned ${response.status}`);
       const body = (await response.json()) as { address: Address };
       setPayer(body.address);
     });

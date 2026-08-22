@@ -1237,6 +1237,10 @@
 
 .mi-host {
   position: relative;
+  /* Room for the absolutely-positioned bar, which occupies no flow space.
+     Without it the next sibling starts where the prose ended and the bar
+     covers it — the same overlap by the other route. */
+  padding-bottom: 44px;
 }
 
 .mi-prose {
@@ -1336,6 +1340,23 @@
   margin-bottom: 8px;
   white-space: pre-wrap;
   opacity: 0.85;
+}
+
+/*
+ * The floating pill bar.
+ *
+ * `position: absolute` is load-bearing, not decoration. `place()` measures the
+ * offset as `lastLine.bottom - hostBounds.top`, which is a coordinate *from the
+ * host's origin* — the arithmetic only lands correctly on an element whose box
+ * starts at that origin. Left static, the div also took a full-width slot in
+ * normal flow and was then translated a second time by the same amount, so it
+ * painted at roughly double the intended offset and sat on top of whatever
+ * followed. In a four-line vendor quote that is the reasoning prose.
+ */
+.mi-anchor {
+  position: absolute;
+  top: 0;
+  left: 0;
 }
 
 .mi-anchor,
