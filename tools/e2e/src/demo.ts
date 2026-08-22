@@ -4,8 +4,8 @@
  *   pnpm --filter @ntux402/e2e run demo
  *
  * Run 1 — honest 402:    approve, settle, data returns, USDC moves.
- * Run 2 — malicious 402: inflated price + injection. The agent complies. The
- *                        money does not move.
+ * Run 2 — overcharge:    a plausible price, quietly over the encrypted budget.
+ *                        The agent agrees to it. The money does not move.
  *
  * Prerequisites, all checked before anything is sent:
  *   - PolicyVault deployed, POLICY_VAULT_ADDRESS set
@@ -70,14 +70,28 @@ import {
 loadDotEnv();
 
 // --- the policy under test -------------------------------------------------
-// The honest call is 0.01 USDC; the malicious one demands 5.00. The cap sits
-// between them, so the malicious request bounces on the *encrypted* budget
-// rather than on a public precondition — which is the whole point.
+// The honest call is 0.01 USDC; run 2 asks 0.35. Every public precondition
+// clears — the price is far under the 6.00 cap, the payee is allowlisted, the
+// description is ordinary prose — so the only thing left that can refuse it is
+// the encrypted budget. That is the whole point, and it is why run 2 is the
+// *overcharge* goal rather than the injection one.
+//
+// Run 2 used to be `premium-feed`: 5.00 plus a prompt injection. It stopped
+// demonstrating anything the day the model got good enough to notice. On
+// 2026-08-22 qwen3.7-flash read the injection, called it "a clearly deceptive
+// billing notice" and declined — so the agent never called requestSpend and the
+// vault was never asked. A demo that depends on the model being fooled is a
+// demo with a coin flip in it. This one depends on the model being *convinced*,
+// which is the easy direction, and on the budget refusing anyway.
 const BUDGET = 200_000n; // 0.20 USDC, encrypted
-const PER_CALL_CAP = 6_000_000n; // 6.00 USDC, public — deliberately above the malicious price
+const PER_CALL_CAP = 6_000_000n; // 6.00 USDC, public — deliberately above run 2's price
 const CALLS_REMAINING = 5;
-/** Fund the payer above the encrypted budget, so Inco binds first (ARCHITECTURE.md §5.5). */
-const PAYER_FUNDING = 300_000n; // 0.30 USDC
+/**
+ * Above the encrypted budget so Inco binds first (ARCHITECTURE.md §5.5), and
+ * above run 2's 0.35 ask so a skeptic cannot say the payer simply could not
+ * afford it. The refusal has to be the budget and nothing else.
+ */
+const PAYER_FUNDING = 450_000n; // 0.45 USDC
 
 const HONEST_PAY_TO: Address = "0x1111111111111111111111111111111111111111";
 const MALICIOUS_PAY_TO: Address = "0x2222222222222222222222222222222222222222";
@@ -310,9 +324,23 @@ async function awaitBalance(expected: bigint, timeoutMs = 60_000): Promise<bigin
   return balance;
 }
 
+/**
+ * Which catalog entry each run buys.
+ *
+ * `honest` stays on the legacy alias, which the mock maps to `market-data`.
+ * Run 2 names `compliance-audit` outright rather than going through the
+ * `malicious` alias — that alias points at `premium-feed`, is pinned by the
+ * README and by mock-api's own tests, and means "the injection one" to every
+ * other reader. Repointing it would have quietly changed a documented URL.
+ */
+const RESOURCE: Readonly<Record<Mode, string>> = {
+  honest: "honest",
+  malicious: "compliance-audit",
+};
+
 /** Runs one request and reports what it actually cost, against a known baseline. */
 async function runAndReport(label: Mode, baseline: bigint): Promise<[PaymentResult, bigint]> {
-  const result = await loop.fetchPaid(`${mockApiUrl}/resource/${label}`, goalId);
+  const result = await loop.fetchPaid(`${mockApiUrl}/resource/${RESOURCE[label]}`, goalId);
 
   // What the balance *should* be, derived from the outcome rather than observed.
   const paidAmount =
@@ -342,7 +370,7 @@ rule("RUN 1 — honest 402");
 const [honest, afterHonest] = await runAndReport("honest", payerStartingBalance);
 
 // ------------------------------------------------------------------- run 2
-rule("RUN 2 — malicious 402 (inflated price + prompt injection)");
+rule("RUN 2 — overcharge 402 (plausible price, over the encrypted budget)");
 const [malicious] = await runAndReport("malicious", afterHonest);
 
 // ------------------------------------------------------------------ verdict
