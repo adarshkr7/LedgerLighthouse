@@ -8,7 +8,8 @@ is committed — `rofl.yaml`, `Dockerfile`, `compose.yaml`, and 12 tests over th
 What is missing is a deployment.
 
 **Time:** half a day, most of it waiting on image builds and registration.
-**Cost:** ~150 TEST ROSE, free from the faucet.
+**Cost:** 100 TEST ROSE staked once at registration, plus 5.0 TEST per hour for as long as a
+machine is rented. Free from the faucet — but the hourly half is the one that runs out.
 **Status of these instructions:** the CLI sequence is from Oasis's own quickstart; the
 repo-specific parts are read off the committed files. The Dockerfile's own header says it has
 never been built — expect to iterate on the install layer.
@@ -32,12 +33,36 @@ That last row is the one to demo. It is already written in `openKeyStore`.
 
 - **Oasis CLI** — <https://docs.oasis.io/build/tools/cli/setup>
 - **Docker with buildx**, able to push to a *publicly reachable* registry. ROFL pulls the
-  image itself, so a local-only image will not do.
+  image itself, so a local-only image will not do. Run `docker login` before §2 — a fresh
+  Docker Desktop has no `~/.docker/config.json` at all, and the push then fails at the *end*
+  of a long build rather than the start of it.
+
+  Docker Desktop installs per-user now, into `%LOCALAPPDATA%\Programs\DockerDesktop`, and the
+  PATH entry it adds does not reach every shell — Git Bash and spawned subprocesses routinely
+  miss it. `docker: command not found` there is a PATH problem, not a missing install:
+
+  ```bash
+  export PATH="$PATH:/c/Users/$USER/AppData/Local/Programs/DockerDesktop/resources/bin"
+  ```
 - **A wallet account:**
   ```
   oasis wallet create ll-rofl --file.algorithm secp256k1-bip44
   ```
-- **~150 TEST ROSE** for registration, from the Oasis testnet faucet.
+- **TEST ROSE** from the Oasis testnet faucet, in two parts that behave differently:
+  - **100 TEST staked** by `oasis rofl create` (§4). One-off, and `oasis rofl show` reports it
+    back as `Staked amount: 100.0 TEST` — it is held against the registration, not burned.
+  - **5.0 TEST per hour** for the machine `oasis rofl deploy` rents (§6). That is the
+    `playground_short` offer — TDX, 4 GiB, 2 vCPU — from `rofl:provider:sapphire`. Confirm it
+    rather than trusting this number, since providers reprice:
+
+    ```bash
+    oasis rofl provider show oasis1qp2ens0hsp7gh23wajxa4hpetkdek3swyyulyrmz --network testnet
+    ```
+
+  ~150 TEST therefore covers registration plus roughly ten hours of runtime, not a standing
+  deployment. Check what is actually left with `oasis account show --network testnet --account
+  ll_rofl` the morning of, and tear the machine down between rehearsals rather than leaving it
+  billing overnight.
 
 **Where to run things.** Every `oasis rofl` command reads `rofl.yaml` from the working
 directory, so all of them run from `services/signer`:
@@ -63,7 +88,7 @@ Build context is the **repo root**, not `services/signer` — the signer imports
 `@ntux402/shared` as a workspace dependency and the Dockerfile copies both.
 
 ```bash
-docker buildx build --platform linux/amd64 -f services/signer/Dockerfile -t docker.io/YOUR_USER/totem-signer:v1 --push .
+docker buildx build --platform linux/amd64 -f services/signer/Dockerfile -t docker.io/schwarzite/totem-signer:v1 --push .
 ```
 
 `linux/amd64` explicitly. ROFL machines are amd64, and a silently-arm64 image built on an
@@ -73,7 +98,7 @@ Then read the digest — ROFL requires a `@sha256:` pin so the deployed bytes ca
 from the audited ones:
 
 ```bash
-docker buildx imagetools inspect docker.io/YOUR_USER/totem-signer:v1 --format "{{.Manifest.Digest}}"
+docker buildx imagetools inspect docker.io/schwarzite/totem-signer:v1 --format "{{.Manifest.Digest}}"
 ```
 
 **Gate:** you have a `sha256:…` string and the image is pullable from a machine that is not
@@ -83,12 +108,20 @@ yours.
 
 ## 3. Pin the digest in `compose.yaml`
 
-Edit [`services/signer/compose.yaml`](../services/signer/compose.yaml) and replace the
-placeholder:
+**Already done for the current image.** `compose.yaml` pins
+`sha256:e51db3d95d2aec8efb399cbff5eb2c6ec89ad009b1b0228e9bce15dcec8b361b`; redo this only
+after rebuilding. Edit [`services/signer/compose.yaml`](../services/signer/compose.yaml):
 
 ```yaml
-image: docker.io/YOUR_USER/totem-signer@sha256:<digest from step 2>
+image: docker.io/schwarzite/totem-signer@sha256:<digest from step 2>
 ```
+
+What comes back is an **OCI index**, not a single manifest: it carries the `linux/amd64`
+image plus a buildx attestation manifest that reports its platform as `unknown/unknown`.
+Pinning the index is correct and a runtime picks amd64 out of it. If one instead rejects
+the index over that second entry, pin the amd64 manifest digest directly — `imagetools
+inspect` on the index lists it — or rebuild with `--provenance=false` so it is never
+emitted.
 
 Leave everything else. Two lines in that file carry the whole upgrade and neither should
 change: the `/run/rofl-appd.sock` mount, which is the only route to the enclave's key
@@ -107,8 +140,8 @@ would overwrite it.
 oasis rofl create --network testnet
 ```
 
-This spends the TEST ROSE and rewrites `rofl.yaml`. Commit the result — the app id is not a
-secret, and losing it means re-registering and spending the ROSE again.
+This stakes the 100 TEST and rewrites `rofl.yaml`. Commit the result — the app id is not a
+secret, and losing it means re-registering and staking another 100.
 
 **It rewrites more than the app id.** Expect all three of these, none of which are errors:
 
@@ -174,10 +207,18 @@ oasis rofl build
 ```
 
 `build` drives a container build environment, so a Docker daemon has to be running and
-reachable. On Windows a missing install reports itself as a connection failure rather than
-an absence — `failed to connect to the docker API at npipe:////./pipe/docker_engine` is what
-no Docker Desktop looks like, not a stopped service. It will also fail here if §3 was skipped
-and `compose.yaml` still names `REPLACE_WITH_DIGEST`.
+reachable. Two different failures land here and they have different fixes:
+
+- `docker: command not found` — the install is fine, this shell cannot see it. Per-user Docker
+  Desktop lives under `%LOCALAPPDATA%\Programs\DockerDesktop\resources\bin`, which Git Bash and
+  spawned subprocesses often do not carry on PATH. The export is in §1.
+- `failed to connect to the docker API at npipe:////./pipe/docker_engine` — the CLI is on PATH
+  and nothing is answering it. Usually Docker Desktop is simply not started; on Windows a
+  *missing* install also reports itself this way, which is why the two are worth separating.
+
+`docker version` settles which one you have: a **Server** block means the daemon is up and
+neither applies. It will also fail here if `compose.yaml` names a digest that is not
+actually on the registry — after a rebuild, re-pin before building the bundle.
 
 ```bash
 oasis rofl update
@@ -270,6 +311,9 @@ and the payer address in the run matches one minted by the enclave.
 | Manifest rejected on `create` / `build` | `kind:` spelling | §4 |
 | Signer boots then errors on every authorize | RPC or vault address secret missing | `oasis rofl machine logs`; re-run §5 |
 | Image pull fails | registry is private | ROFL pulls it itself — the repository must be public |
+| `docker: command not found` | per-user Docker Desktop not on this shell's PATH | §1 — export `…/DockerDesktop/resources/bin` |
+| `docker push` denied at the end of the build | never logged in | `docker login`, then re-run §2 |
+| Machine stops partway through the day | hourly rental drained the balance | `oasis account show --network testnet --account ll_rofl`, top up, redeploy |
 
 ---
 

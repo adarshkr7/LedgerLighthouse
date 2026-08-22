@@ -13,9 +13,18 @@
 
 services:
   signer:
-    # docker buildx build --platform linux/amd64 \
-    #   -f services/signer/Dockerfile -t docker.io/YOUR_USER/totem-signer . --push
-    image: docker.io/YOUR_USER/totem-signer@sha256:REPLACE_WITH_DIGEST
+    # Rebuild and re-pin with, from the repo root:
+    #   docker buildx build --platform linux/amd64 \
+    #     -f services/signer/Dockerfile -t docker.io/schwarzite/totem-signer:v1 --push .
+    #   docker buildx imagetools inspect docker.io/schwarzite/totem-signer:v1 \
+    #     --format "{{.Manifest.Digest}}"
+    #
+    # This is the OCI index digest, which carries the linux/amd64 manifest
+    # (sha256:c9b9db0e8f225929a68273a9deea11982be484f307f33c1ce8e45df1360d9a82)
+    # alongside a buildx attestation manifest that reports as unknown/unknown.
+    # If a runtime rejects the index over that second entry, pin the amd64
+    # manifest directly, or rebuild with --provenance=false to stop emitting it.
+    image: docker.io/schwarzite/totem-signer@sha256:e51db3d95d2aec8efb399cbff5eb2c6ec89ad009b1b0228e9bce15dcec8b361b
     platform: linux/amd64
     restart: on-failure
     ports:
