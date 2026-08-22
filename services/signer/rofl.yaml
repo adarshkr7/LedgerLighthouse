@@ -5,11 +5,11 @@ license: MIT
 tee: tdx
 kind: container
 resources:
-  memory: 512
-  cpus: 1
+  memory: 2048
+  cpus: 2
   storage:
     kind: disk-persistent
-    size: 512
+    size: 8192
 artifacts:
   builder: ghcr.io/oasisprotocol/rofl-container-builder:0.0.1@sha256:913ef97ab07dde31f08ce873f825bf3d4f32ad4102ff5797d7c3050c121c4dce
   firmware: https://github.com/oasisprotocol/oasis-boot/releases/download/v0.6.2/ovmf.tdx.fd#db47100a7d6a0c1f6983be224137c3f8d7cb09b63bb1c7a5ee7829d8e994a42f
@@ -25,6 +25,7 @@ deployments:
     network: testnet
     paratime: sapphire
     admin: ll_rofl
+    oci_repository: rofl.sh/cea9392d-897e-42c6-85db-9fc3c035f46c:1787423114
     trust_root:
       height: 33589825
       hash: 4a0034be391986ec3a9cc5c498d24fa04535cbf4e6e3acc12777f30830cf2930
@@ -34,7 +35,9 @@ deployments:
           tcb_validity_period: 30
           min_tcb_evaluation_data_number: 18
           tdx: {}
-      enclaves: []
+      enclaves:
+        - id: lgP6tR0ArjPH2Z0pdWOIQiSycnnW9STGhmmDA9NKQI0AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==
+        - id: Aoo5KlTROSe026RNYk8+Oi8up6tg+8lVfht02MKLsPQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==
       endorsements:
         - any: {}
       fees: endorsing_node
@@ -48,5 +51,10 @@ deployments:
         value: pGJwa1ggtd3PjSsymq07r/AEAcdqSC3cTCjsr1sQePNElk6zEUpkbmFtZVgcfT+ByG/0Xn20xfAswUt/fLEg4/JUg/8PCa1xG2Vub25jZU95Ml8Gmb4QColuuYI2sPVldmFsdWVYOkt4heVSY3DLl+aTZRl+Lf8dfhj2NDMAP6GyIDwxVCSn9H2bkup6Oscq+E3GZ01Cp3BeikKNm/caJV0=
       - name: SERVICE_TOKEN
         value: pGJwa1gghodhbEPlIGo3Xvnu0NbLgrTNcpVEFLP3zyUOKNszTFFkbmFtZVgdwmI1kVrBa40D/qC58j2rFVfJSXPaOdJl/4x3SCtlbm9uY2VPEVTR9HICHUK0pMXKZNg3ZXZhbHVlWDzzu1O+XdyxK+ErSjuuqVfxg+ivTsJ++ceSCVXN6p75tK7UXHURbamZERuziEQLlYZ2VAHrwlfTX6TqwC8=
+    machines:
+      default:
+        provider: oasis1qp2ens0hsp7gh23wajxa4hpetkdek3swyyulyrmz
+        offer: playground_short
+        id: 000000000000069a
 tooling:
   version: 0.19.1
