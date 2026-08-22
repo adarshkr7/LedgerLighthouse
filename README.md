@@ -677,7 +677,7 @@ cp .env.example .env
 | `SIGNER_KEY_STORE_PATH` | Local mode | Where per-goal payer keys live. Blank = in-memory. Ignored when ROFL is set |
 | `SIGNER_ROFL_SOCKET` | ROFL only | `/run/rofl-appd.sock` — set **only** inside a deployed enclave |
 | `SIGNER_ROFL_INDEX_PATH` | ROFL only | `address → key_id` map. Non-secret |
-| `SIGNER_REQUIRE_ROFL` | Optional | `true` refuses to boot the signer without an enclave, so the file-store fallback cannot be enabled by accident |
+| `SIGNER_REQUIRE_ROFL` | Optional | `true` refuses to boot the signer without an enclave, so the file-store fallback cannot be enabled by accident. The deployed signer already derives keys in TDX — this guards against a *future* misconfiguration, it is not a precondition for enclave custody. Lives in `compose.yaml`, which is measured, so setting it changes the enclave identity and needs a rebuild |
 
 **LLM agent — held by the orchestrator, which is the untrusted component**
 

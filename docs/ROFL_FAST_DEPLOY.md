@@ -268,8 +268,15 @@ Two checks. Do both; a control nobody has watched work is a control nobody shoul
 machine holds only an `address → key_id` map. Addresses and identifiers, no keys. That file
 is the whole persistent state.
 
-**5b. Make the fallback impossible.** Set `SIGNER_REQUIRE_ROFL=true` in the compose
-environment and redeploy. Then boot the signer locally with that flag and no socket. It must
+**5b. Make the fallback impossible.** Optional, and worth being precise about what it buys:
+custody is already in the enclave without it — 5a is what proves that. This closes the
+*misconfiguration* case, where a wrong socket path or an enclave that has not come up yet
+degrades to keys-on-disk while logging a line that looks like every other startup.
+
+`compose.yaml` is inside the measured bundle, so adding `SIGNER_REQUIRE_ROFL=true` to its
+environment changes the enclave identity: rebuild, `update`, `deploy`. Not a config toggle —
+and that is the point, since a flag you could flip on a running machine after the fact would
+prove nothing. Then boot the signer locally with that flag and no socket. It must
 refuse:
 
 > `SIGNER_REQUIRE_ROFL is set but SIGNER_ROFL_SOCKET is empty. Refusing to start…`
