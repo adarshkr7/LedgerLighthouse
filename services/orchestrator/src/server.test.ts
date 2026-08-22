@@ -10,6 +10,7 @@ import type { Address } from "viem";
 
 import { createOrchestratorServer, resourceUrlFor } from "./server.js";
 import type { PaymentLoop } from "./pay/payment-loop.js";
+import type { SignerClient } from "./pay/signer-client.js";
 import type { VaultRelay } from "./pay/relay.js";
 
 const MOCK = "http://mock.test";
@@ -110,6 +111,8 @@ describe("request bodies", () => {
       // Never reached: every case below is refused before a run starts.
       loop: { fetchPaid: async () => ({ kind: "failed", reason: "unreached" }) } as unknown as PaymentLoop,
       relay: { relayAddress: `0x${"11".repeat(20)}` as Address } as unknown as VaultRelay,
+      // Same reasoning as `loop`: the body cap rejects before any mint.
+      signer: { mintPayer: async () => `0x${"44".repeat(20)}` } as unknown as SignerClient,
       vaultAddress: `0x${"22".repeat(20)}`,
       usdcAddress: `0x${"33".repeat(20)}`,
       chainId: 84532,

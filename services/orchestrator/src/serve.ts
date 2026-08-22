@@ -140,11 +140,31 @@ const agent = await buildAgent({
     log.warn("model gateway did not answer — scripted stand-in decided this call", { detail }),
 });
 
+/*
+ * Outbound credential, deliberately its own variable.
+ *
+ * `SERVICE_TOKEN` means "require a bearer on *my* mutating routes" — see
+ * `authorized()` in @ntux402/shared. Reusing it here overloaded one variable
+ * with two opposite jobs, and setting it to reach a ROFL signer silently armed
+ * the orchestrator's own guard as well. The browser holds no token, so the
+ * console locked itself out of /runs and /payer the moment the signer moved
+ * into the enclave.
+ *
+ * `SIGNER_SERVICE_TOKEN` is what this service *presents*; `SERVICE_TOKEN` stays
+ * what it *demands*. The fallback keeps a mesh deployment working where every
+ * service shares one token and the browser is behind the same gateway.
+ */
+const signer = new SignerClient(
+  signerUrl,
+  undefined,
+  optional("SIGNER_SERVICE_TOKEN") ?? optional("SERVICE_TOKEN"),
+);
+
 const loop = new PaymentLoop({
   client: new X402Client(),
   relay,
   decisions: new IncoDecisionReader(zap),
-  signer: new SignerClient(signerUrl, undefined, optional("SERVICE_TOKEN")),
+  signer,
   agent,
   asset: usdcAddress,
   onEvent: (event) => log.info(renderEvent(event)),
@@ -160,6 +180,7 @@ const server = createOrchestratorServer({
   vendorAisaUrl,
   vendorAisaPayee,
   signerUrl,
+  signer,
   anchors,
   facilitatorUrl: optional("X402_FACILITATOR_URL"),
   agentSource: agentIsLive ? "llm" : "scripted",

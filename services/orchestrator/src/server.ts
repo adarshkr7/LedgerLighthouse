@@ -31,6 +31,7 @@ import type { PaymentEvent, PaymentLoop, PaymentResult } from "./pay/payment-loo
 import type { VaultRelay } from "./pay/relay.js";
 import { TraceStore } from "./trace-store.js";
 import type { TraceAnchorClient } from "./pay/anchor.js";
+import type { SignerClient } from "./pay/signer-client.js";
 import { sweepGoal } from "./pay/sweep.js";
 
 export interface OrchestratorServerOptions {
@@ -52,6 +53,16 @@ export interface OrchestratorServerOptions {
    */
   readonly vendorAisaPayee: Address | undefined;
   readonly signerUrl: string;
+  /**
+   * The signer, already carrying its bearer token.
+   *
+   * `signerUrl` above is published to the console for display; this is the
+   * client that can actually talk to it. Kept as the constructed client rather
+   * than a second URL-and-token pair, so there is exactly one place the
+   * `SERVICE_TOKEN` is read and no way for the mint endpoint and the payment
+   * loop to disagree about it.
+   */
+  readonly signer: SignerClient;
   /**
    * Commits each finished trace root on chain. Absent when TRACE_ANCHOR_ADDRESS
    * is unset, which leaves traces tamper-evident but not time-stamped.
@@ -209,6 +220,33 @@ export function createOrchestratorServer(options: OrchestratorServerOptions): Se
           return;
         }
         send(res, 200, trace, cors);
+        return;
+      }
+
+      /*
+       * Mint the per-goal payer, on the browser's behalf.
+       *
+       * The console used to POST straight to `config.signerUrl`. That worked
+       * only while the signer was an open port on localhost. A signer deployed
+       * to ROFL requires a `SERVICE_TOKEN` bearer, and the only way for the
+       * browser to satisfy that would be to ship the token into the page —
+       * handing every viewer the credential that mints payer keys.
+       *
+       * So the hop moves here, where the token already lives. The browser asks
+       * the orchestrator, the orchestrator asks the signer, and the secret
+       * stays on this side of the wire. `SignerClient.mintPayer` is the same
+       * call the payment loop makes, carrying the same bearer.
+       */
+      if (req.method === "POST" && path === "/payer") {
+        if (rejected(req, res, { limiter: RUN_LIMIT })) return;
+        try {
+          const address = await options.signer.mintPayer();
+          send(res, 201, { address }, cors);
+        } catch (e) {
+          // The signer's own status is not this endpoint's to forward: a 401
+          // from a misconfigured token is an operator fault, not the caller's.
+          send(res, 502, { error: e instanceof Error ? e.message : String(e) }, cors);
+        }
         return;
       }
 
