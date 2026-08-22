@@ -163,22 +163,45 @@ secret, and losing it means re-registering and staking another 100.
 The container needs four values that are not in the image. They go in as ROFL secrets, not
 build args:
 
+`secret set` takes `<name> <file>|-`. **Prefer the file form.** The stdin form needs a shell
+that can emit a value with no trailing newline, and PowerShell cannot: it has no `echo -n`
+(you get a literal `-n`), and piping appends CRLF. A secret with a stray newline is accepted
+silently and then fails at run time as a wrong RPC URL or a token that never matches — the
+kind of fault that costs an hour because nothing reports it.
+
+From **Git Bash**, where `echo -n` behaves:
+
 ```bash
 echo -n "https://base-sepolia-rpc.publicnode.com" | oasis rofl secret set BASE_SEPOLIA_RPC_URL -
-```
-
-```bash
 echo -n "0x0C759D06a1c14F43852D7b078Db2f8C342F15921" | oasis rofl secret set POLICY_VAULT_ADDRESS -
-```
-
-```bash
 echo -n "0x036CbD53842c5426634e7929541eC2318f3dCF7e" | oasis rofl secret set USDC_ADDRESS -
+head -c 32 /dev/urandom | base64 | tr -d '\n' | oasis rofl secret set SERVICE_TOKEN -
 ```
 
-```bash
-head -c 32 /dev/urandom | base64 | tr -d "
-" | oasis rofl secret set SERVICE_TOKEN -
+From **PowerShell**, write each value to a file first — `WriteAllText` adds no newline and no
+BOM, and the file path avoids the shell entirely:
+
+```powershell
+function Set-RoflSecret($Name, $Value) {
+  $f = Join-Path $env:TEMP "rofl-secret.txt"
+  [IO.File]::WriteAllText($f, $Value, (New-Object Text.UTF8Encoding($false)))
+  oasis rofl secret set $Name $f
+  Remove-Item $f -Force
+}
+
+Set-RoflSecret BASE_SEPOLIA_RPC_URL "https://base-sepolia-rpc.publicnode.com"
+Set-RoflSecret POLICY_VAULT_ADDRESS "0x0C759D06a1c14F43852D7b078Db2f8C342F15921"
+Set-RoflSecret USDC_ADDRESS         "0x036CbD53842c5426634e7929541eC2318f3dCF7e"
+
+$b = New-Object byte[] 32
+[Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($b)
+$token = [Convert]::ToBase64String($b)
+Set-RoflSecret SERVICE_TOKEN $token
+$token   # keep this — the orchestrator needs the same value
 ```
+
+Secrets are **encrypted into `rofl.yaml`**, so the manifest changes here and should be
+committed. The plaintext is not in it; the values above are recoverable only by the enclave.
 
 The fourth one is new, and it is not optional here. `compose.yaml` sets `BIND_HOST=0.0.0.0`,
 because a process bound to the container's loopback is unreachable through the `ports:`
