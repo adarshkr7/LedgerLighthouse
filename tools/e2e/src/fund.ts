@@ -8,9 +8,11 @@
  * plain ETH transfers, so there is nothing clever to get wrong.
  */
 
-import { createPublicClient, createWalletClient, formatEther, http, parseEther } from "viem";
+import { createPublicClient, createWalletClient, formatEther, parseEther } from "viem";
 import { baseSepolia } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
+
+import { rpcTransport } from "@ntux402/shared/viem";
 
 import { loadDotEnv, optional, required, requiredHexKey } from "./config.js";
 
@@ -22,8 +24,8 @@ const TARGET = parseEther("0.005");
 const rpcUrl = required("BASE_SEPOLIA_RPC_URL");
 const user = privateKeyToAccount(requiredHexKey("DEPLOYER_PRIVATE_KEY"));
 
-const publicClient = createPublicClient({ chain: baseSepolia, transport: http(rpcUrl) });
-const wallet = createWalletClient({ account: user, chain: baseSepolia, transport: http(rpcUrl) });
+const publicClient = createPublicClient({ chain: baseSepolia, transport: rpcTransport(rpcUrl) });
+const wallet = createWalletClient({ account: user, chain: baseSepolia, transport: rpcTransport(rpcUrl) });
 
 const roles = [
   ["relay", optional("ORCHESTRATOR_RELAY_KEY")],

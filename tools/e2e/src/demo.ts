@@ -26,7 +26,6 @@ import {
   createPublicClient,
   createWalletClient,
   formatEther,
-  http,
   parseEventLogs,
   type Address,
   type Hex,
@@ -35,6 +34,7 @@ import { baseSepolia } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
 import { Lightning } from "@inco/lightning-js/lite";
 import { handleTypes } from "@inco/lightning-js";
+import { rpcTransport } from "@ntux402/shared/viem";
 import { formatUsdc, usdcAbi } from "@ntux402/shared";
 import {
   IncoDecisionReader,
@@ -92,8 +92,8 @@ const user = privateKeyToAccount(requiredHexKey("DEPLOYER_PRIVATE_KEY"));
 const relayKey = requiredHexKey("ORCHESTRATOR_RELAY_KEY");
 const relayAddress = privateKeyToAccount(relayKey).address;
 
-const publicClient = createPublicClient({ chain: baseSepolia, transport: http(rpcUrl) });
-const userWallet = createWalletClient({ account: user, chain: baseSepolia, transport: http(rpcUrl) });
+const publicClient = createPublicClient({ chain: baseSepolia, transport: rpcTransport(rpcUrl) });
+const userWallet = createWalletClient({ account: user, chain: baseSepolia, transport: rpcTransport(rpcUrl) });
 const abi = policyVaultAbi();
 
 const rule = (label = "") =>
@@ -135,7 +135,7 @@ if (facilitatorUrl) {
 // mutable payer field lets whoever can write it redirect every signature.
 rule("1. mint the ephemeral payer key");
 
-const signer = new SignerClient(signerUrl);
+const signer = new SignerClient(signerUrl, undefined, optional("SERVICE_TOKEN"));
 const payer = await signer.mintPayer();
 console.log(`  payer      ${payer}`);
 console.log(`  The signer generated this key and returned only the address.`);
@@ -259,6 +259,8 @@ const agent = await buildAgent({
   model: agentModel,
   baseUrl: optional("AISA_API_BASE_URL"),
   fallback: new ScriptedAgent(),
+  onFallback: (detail) =>
+    console.warn(`  model gateway did not answer — scripted stand-in decided: ${detail}`),
 });
 console.log(
   llmConfigured({ apiKey: agentKey, model: agentModel })

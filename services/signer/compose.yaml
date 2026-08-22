@@ -31,6 +31,20 @@ services:
       - SIGNER_ROFL_SOCKET=/run/rofl-appd.sock
       - SIGNER_ROFL_INDEX_PATH=/data/payers.json
       - SIGNER_PORT=8402
+      # The signer defaults to 127.0.0.1, which is right on a laptop and wrong
+      # here: the process would listen only on the container's loopback and the
+      # `ports:` mapping above would forward to nothing. The orchestrator gets a
+      # connection refused that looks like a networking fault and is a bind.
+      - BIND_HOST=0.0.0.0
+      # Which is why the token is not optional at this point. Binding wide puts
+      # the authorization endpoint on a reachable interface, and the guard only
+      # enforces a token when it has one. The orchestrator must be given the same
+      # value — SignerClient sends it as a Bearer header.
+      #
+      # It bounds damage rather than preventing it: the signer authorizes only
+      # (goalId, seq) and cannot be argued into signing anything else, so the
+      # worst case is a stranger burning a goal's callsRemaining.
+      - SERVICE_TOKEN=${SERVICE_TOKEN}
       - CHAIN_ID=84532
       # Supplied via `oasis rofl secret set`, not baked into the image.
       - BASE_SEPOLIA_RPC_URL=${BASE_SEPOLIA_RPC_URL}

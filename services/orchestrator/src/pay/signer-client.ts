@@ -44,10 +44,30 @@ export type AuthorizeOutcome =
 export class SignerClient {
   readonly #url: string;
   readonly #fetch: typeof fetch;
+  readonly #token: string | undefined;
 
-  constructor(url: string, fetchImpl: typeof fetch = globalThis.fetch) {
+  /**
+   * `token` is the signer's `SERVICE_TOKEN`, and it is optional because the
+   * signer's guard only enforces one when it has one. On a laptop both sides run
+   * open and this stays undefined; the moment the signer binds to something
+   * other than loopback — a ROFL machine, per docs/ROFL_RUNBOOK.md §8 — it is
+   * the only thing between the payer key and the internet.
+   *
+   * Sending it costs nothing when the signer is open, so there is no mode to get
+   * wrong: set it on both sides, or on neither.
+   */
+  constructor(url: string, fetchImpl: typeof fetch = globalThis.fetch, token?: string | undefined) {
     this.#url = url.replace(/\/$/, "");
     this.#fetch = fetchImpl;
+    this.#token = token === undefined || token === "" ? undefined : token;
+  }
+
+  /** Bearer added only when configured, so an open signer sees the same request as before. */
+  #headers(extra: Record<string, string> = {}): Record<string, string> {
+    return {
+      ...extra,
+      ...(this.#token === undefined ? {} : { authorization: `Bearer ${this.#token}` }),
+    };
   }
 
   /**
@@ -56,7 +76,10 @@ export class SignerClient {
    * address is a field of the goal record (ARCHITECTURE.md §5.3).
    */
   async mintPayer(): Promise<`0x${string}`> {
-    const response = await this.#fetch(`${this.#url}/payer`, { method: "POST" });
+    const response = await this.#fetch(`${this.#url}/payer`, {
+      method: "POST",
+      headers: this.#headers(),
+    });
     if (!response.ok) {
       throw new Error(`signer POST /payer failed: ${response.status} ${await response.text()}`);
     }
@@ -75,7 +98,7 @@ export class SignerClient {
     try {
       response = await this.#fetch(`${this.#url}/authorizations`, {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: this.#headers({ "content-type": "application/json" }),
         body,
       });
     } catch (e) {

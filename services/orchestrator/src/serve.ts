@@ -26,7 +26,7 @@ import { PaymentLoop } from "./pay/payment-loop.js";
 import { VaultRelay } from "./pay/relay.js";
 import { SignerClient } from "./pay/signer-client.js";
 import { ScriptedAgent } from "./agent/scripted.js";
-import { buildAgent } from "./agent/factory.js";
+import { buildAgent, llmConfigured, probeAgent } from "./agent/factory.js";
 import { createOrchestratorServer } from "./server.js";
 import { TraceAnchorClient } from "./pay/anchor.js";
 import { renderEvent } from "./render.js";
@@ -123,18 +123,28 @@ const zap = await withRetry("Inco Lightning handshake", () =>
 );
 
 const apiKey = optional("AISA_INFERENCE_KEY");
+const model = optional("LLM_MODEL");
+const baseUrl = optional("AISA_API_BASE_URL");
+/*
+ * Both, not just the key — `buildAgent` needs both to return a live model, so
+ * reporting on the key alone would announce "live LLM" for a run that is about
+ * to be decided by the scripted stand-in.
+ */
+const agentIsLive = llmConfigured({ apiKey, model });
 const agent = await buildAgent({
   apiKey,
-  model: optional("LLM_MODEL"),
-  baseUrl: optional("AISA_API_BASE_URL"),
+  model,
+  baseUrl,
   fallback: new ScriptedAgent(),
+  onFallback: (detail) =>
+    log.warn("model gateway did not answer — scripted stand-in decided this call", { detail }),
 });
 
 const loop = new PaymentLoop({
   client: new X402Client(),
   relay,
   decisions: new IncoDecisionReader(zap),
-  signer: new SignerClient(signerUrl),
+  signer: new SignerClient(signerUrl, undefined, optional("SERVICE_TOKEN")),
   agent,
   asset: usdcAddress,
   onEvent: (event) => log.info(renderEvent(event)),
@@ -152,7 +162,7 @@ const server = createOrchestratorServer({
   signerUrl,
   anchors,
   facilitatorUrl: optional("X402_FACILITATOR_URL"),
-  agentSource: apiKey ? "llm" : "scripted",
+  agentSource: agentIsLive ? "llm" : "scripted",
   traceDir: optional("TRACE_STORE_PATH") ?? ".traces",
   log: (line) => log.info(line),
 });
@@ -160,7 +170,10 @@ const server = createOrchestratorServer({
 server.listen(port, bindHost(), () => {
   log.info(`listening on http://${bindHost()}:${port}`, { guard: describeGuard() });
   log.info("relay", { address: relay.relayAddress, note: "gas only" });
-  log.info("agent", { source: apiKey ? "live LLM" : "scripted stand-in" });
+  log.info("agent", {
+    source: agentIsLive ? "live LLM" : "scripted stand-in",
+    ...(agentIsLive && model ? { model } : {}),
+  });
   log.info("settlement", {
     mode: optional("X402_FACILITATOR_URL") ? "live" : "stub",
   });
@@ -177,4 +190,21 @@ server.listen(port, bindHost(), () => {
       "live AIsa search is unavailable — set VENDOR_AISA_PAYEE (and run @ntux402/vendor-aisa)",
     );
   }
+
+  /*
+   * Fire-and-forget on purpose. The answer changes nothing about how the server
+   * behaves — `FallbackAgent` already handles a dead gateway per call — so
+   * making startup wait on a network round trip would buy a slower boot and no
+   * extra safety. What it buys is finding out now, in the log, rather than from
+   * a reasoning panel that says MODEL UNAVAILABLE in front of an audience.
+   */
+  void probeAgent({ apiKey, model, baseUrl }).then((probe) => {
+    if (!probe) return;
+    if (probe.ok) log.info("agent gateway reachable", { detail: probe.detail });
+    else
+      log.warn("agent gateway did NOT answer — runs will use the scripted stand-in", {
+        model: model ?? "unset",
+        detail: probe.detail,
+      });
+  });
 });

@@ -97,6 +97,76 @@ export interface LlmAgentOptions {
   readonly fetchImpl?: typeof fetch;
 }
 
+/**
+ * The gateway did not yield a decision.
+ *
+ * Distinct from `proceed: false` on purpose, and the distinction is the whole
+ * point of this type: a model that considered the offer and declined is a
+ * *decision*, while an outage, a 402 on an unentitled model, or a reply that
+ * does not parse is an **absence** of one. Collapsing the two makes a broken
+ * gateway read as an agent that thoughtfully refuses everything — the same
+ * class of lie as reporting a reveal timeout as a policy rejection.
+ *
+ * Callers are expected to catch this and substitute an agent that can answer;
+ * see `FallbackAgent`. Nothing here decides whether the spend is allowed, so
+ * standing in for the model costs no part of the security claim.
+ */
+export class GatewayUnavailableError extends Error {
+  constructor(detail: string) {
+    super(detail);
+    this.name = "GatewayUnavailableError";
+  }
+}
+
+/**
+ * Asks the gateway one throwaway question, to find out at boot what would
+ * otherwise be found out mid-demo.
+ *
+ * Configuration presence is not liveness: a key and a model id both being set
+ * says nothing about whether *this* account may call *that* model. The gateway
+ * answers an unentitled model with a 402 that looks exactly like an outage, so
+ * the only honest check is to call the model that is actually configured.
+ *
+ * `max_tokens: 1` keeps it to a fraction of a cent, and it never throws —
+ * a probe that could take the process down would be worse than the problem it
+ * reports.
+ */
+export async function probeGateway(options: {
+  readonly apiKey: string;
+  readonly model: string;
+  readonly baseUrl?: string | undefined;
+  readonly fetchImpl?: typeof fetch | undefined;
+  readonly timeoutMs?: number | undefined;
+}): Promise<{ ok: boolean; detail: string }> {
+  const baseUrl = (options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/$/, "");
+  const doFetch = options.fetchImpl ?? globalThis.fetch;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), options.timeoutMs ?? 10_000);
+
+  try {
+    const response = await doFetch(`${baseUrl}/v1/chat/completions`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${options.apiKey}` },
+      body: JSON.stringify({
+        model: options.model,
+        max_tokens: 1,
+        messages: [{ role: "user", content: "ok" }],
+      }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const body = await response.text().catch(() => "");
+      return { ok: false, detail: `HTTP ${response.status} — ${clip(body, 160)}` };
+    }
+    return { ok: true, detail: `${options.model} answered` };
+  } catch (e) {
+    return { ok: false, detail: e instanceof Error ? e.message : String(e) };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export class LlmAgent implements SpendAgent {
   readonly #apiKey: string;
   readonly #model: string;
@@ -172,17 +242,15 @@ export class LlmAgent implements SpendAgent {
         }),
       });
     } catch (e) {
-      return declined(
-        `The model gateway could not be reached (${e instanceof Error ? e.message : String(e)}). ` +
-          `No decision was obtained, so this resource is being skipped.`,
+      throw new GatewayUnavailableError(
+        `gateway unreachable — ${e instanceof Error ? e.message : String(e)}`,
       );
     }
 
     if (!response.ok) {
       const body = await response.text().catch(() => "");
-      return declined(
-        `The model gateway returned HTTP ${response.status}. No decision was obtained, so this ` +
-          `resource is being skipped. Gateway said: ${clip(body, 200)}`,
+      throw new GatewayUnavailableError(
+        `gateway returned HTTP ${response.status} — ${clip(body, 200)}`,
       );
     }
 
@@ -190,17 +258,14 @@ export class LlmAgent implements SpendAgent {
     try {
       payload = await response.json();
     } catch (e) {
-      return declined(
-        `The model gateway returned a body that is not JSON ` +
-          `(${e instanceof Error ? e.message : String(e)}). Skipping this resource.`,
+      throw new GatewayUnavailableError(
+        `gateway returned a body that is not JSON — ${e instanceof Error ? e.message : String(e)}`,
       );
     }
 
     const message = firstMessage(payload);
     if (!message) {
-      return declined(
-        `The model gateway's response carried no message. Skipping this resource.`,
-      );
+      throw new GatewayUnavailableError("gateway response carried no message");
     }
 
     const { reasoning, body } = extractReasoning(message);
@@ -211,20 +276,16 @@ export class LlmAgent implements SpendAgent {
        * Not a refusal, and it must not be allowed to look like one.
        *
        * `proceed: false` is also what an agent that considered the offer and
-       * declined returns, and the two are rendered by the same panel. Without
-       * this being spelled out in the text, a gateway that answers in prose
-       * turns the whole demo into "the agent skips everything" — which reads
-       * as a policy result and is nothing of the kind.
+       * declined returns, and the two are rendered by the same panel. A gateway
+       * answering in prose would otherwise turn the demo into "the agent skips
+       * everything" — which reads as a policy result and is nothing of the kind.
+       * Raising instead hands the call to the scripted stand-in, which is a
+       * decision someone actually made rather than a silence dressed as one.
        */
-      return {
-        source: "llm",
-        proceed: false,
-        reasoning:
-          `PARSE FAILURE — not a decision. The model's reply could not be read as the ` +
-          `{reasoning, proceed} object it was asked for, so no decision exists to act on and ` +
-          `the resource is being skipped. This is a transport-level failure, not the agent ` +
-          `declining the offer. Raw reply: ${clip(body, 300)}`,
-      };
+      throw new GatewayUnavailableError(
+        `model reply was not the {reasoning, proceed} object it was asked for — ` +
+          `${clip(body, 200)}`,
+      );
     }
 
     return {
@@ -235,11 +296,6 @@ export class LlmAgent implements SpendAgent {
         : decision.reasoning,
     };
   }
-}
-
-/** Every no-decision path returns this shape, so callers cannot confuse it with a choice. */
-function declined(reasoning: string): { reasoning: string; proceed: false; source: "llm" } {
-  return { source: "llm", proceed: false, reasoning };
 }
 
 function clip(text: string, max: number): string {

@@ -5,9 +5,11 @@
  *   pnpm --filter @ntux402/e2e run preflight
  */
 
-import { createPublicClient, formatEther, http } from "viem";
+import { createPublicClient, formatEther } from "viem";
 import { baseSepolia } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
+
+import { rpcTransport } from "@ntux402/shared/viem";
 
 import {
   BASE_SEPOLIA_CHAIN_ID,
@@ -77,7 +79,7 @@ if (process.env["BASESCAN_API_KEY"]) {
 
 // --- chain ----------------------------------------------------------------
 if (rpcUrl) {
-  const client = createPublicClient({ chain: baseSepolia, transport: http(rpcUrl) });
+  const client = createPublicClient({ chain: baseSepolia, transport: rpcTransport(rpcUrl) });
 
   try {
     const chainId = await client.getChainId();

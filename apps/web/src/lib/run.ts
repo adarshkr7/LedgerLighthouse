@@ -39,7 +39,7 @@ export type PaymentEvent =
       reasoning: string;
       modelSafeTerms: Record<string, unknown>;
       decidedToRequest: boolean;
-      source: "llm" | "scripted";
+      source: "llm" | "scripted" | "scripted-fallback";
     }
   | { type: "spend-requested"; goalId: string; spend: SpendRequested }
   | { type: "reveal-polled"; attempts: number; latencyMs: number; approved: boolean }

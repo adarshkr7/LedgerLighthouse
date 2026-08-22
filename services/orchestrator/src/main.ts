@@ -50,13 +50,19 @@ const agent = await buildAgent({
   model: optional("LLM_MODEL"),
   baseUrl: optional("AISA_API_BASE_URL"),
   fallback: new ScriptedAgent(),
+  onFallback: (detail) =>
+    console.warn(`  model gateway did not answer — scripted stand-in decided: ${detail}`),
 });
 
 const loop = new PaymentLoop({
   client: new X402Client(),
   relay,
   decisions: new IncoDecisionReader(zap),
-  signer: new SignerClient(optional("SIGNER_URL") ?? `http://127.0.0.1:${process.env["SIGNER_PORT"] ?? 8402}`),
+  signer: new SignerClient(
+    optional("SIGNER_URL") ?? `http://127.0.0.1:${process.env["SIGNER_PORT"] ?? 8402}`,
+    undefined,
+    optional("SERVICE_TOKEN"),
+  ),
   agent,
   asset: requiredAddress("USDC_ADDRESS"),
   onEvent: (event) => console.log(renderEvent(event)),

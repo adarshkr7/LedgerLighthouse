@@ -63,7 +63,7 @@ export type PaymentEvent =
       readonly reasoning: string;
       readonly modelSafeTerms: ModelSafeTerms;
       readonly decidedToRequest: boolean;
-      readonly source: "llm" | "scripted";
+      readonly source: AgentSource;
     }
   | { readonly type: "spend-requested"; readonly goalId: bigint; readonly spend: SpendRequested }
   | {
@@ -123,12 +123,22 @@ export type PaymentResult =
     }
   | { readonly kind: "failed"; readonly reason: string };
 
+/**
+ * Who produced a spend decision.
+ *
+ * `scripted-fallback` is deliberately not folded into `scripted`: it means the
+ * gateway was configured and could not answer, which is a different fact about
+ * the run than having chosen the offline agent, and the trace has to be able to
+ * say which one happened.
+ */
+export type AgentSource = "llm" | "scripted" | "scripted-fallback";
+
 /** How the agent reacts to a 402. See `agent/` for the implementations. */
 export interface SpendAgent {
   consider(terms: ModelSafeTerms, rawDescription: string): Promise<{
     reasoning: string;
     proceed: boolean;
-    source: "llm" | "scripted";
+    source: AgentSource;
   }>;
 }
 

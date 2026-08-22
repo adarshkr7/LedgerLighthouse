@@ -6,8 +6,9 @@
  * `balances` covers the three configured roles; this is for anything else —
  * a MetaMask account, a payer address, a faucet destination.
  */
-import { createPublicClient, formatEther, http, isAddress, type Address } from "viem";
+import { createPublicClient, formatEther, isAddress, type Address } from "viem";
 import { baseSepolia } from "viem/chains";
+import { rpcTransport } from "@ntux402/shared/viem";
 import { formatUsdc, usdcAbi } from "@ntux402/shared";
 
 import { loadDotEnv, required, requiredAddress } from "./config.js";
@@ -21,7 +22,7 @@ if (targets.length === 0) {
 }
 
 const usdc = requiredAddress("USDC_ADDRESS");
-const client = createPublicClient({ chain: baseSepolia, transport: http(required("BASE_SEPOLIA_RPC_URL")) });
+const client = createPublicClient({ chain: baseSepolia, transport: rpcTransport(required("BASE_SEPOLIA_RPC_URL")) });
 
 console.log("\nBase Sepolia\n");
 for (const address of targets) {
