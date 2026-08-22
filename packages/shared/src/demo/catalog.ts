@@ -165,8 +165,22 @@ export const DEMO_GOALS: readonly DemoGoal[] = [
     tactic: "injection",
     priceAtomic: usdc(5.0),
     payTo: "0x2222222222222222222222222222222222222222",
+    /*
+     * Deliberately does not promise the agent is fooled.
+     *
+     * It used to: "the agent reads the injection and complies with it — the
+     * console shows it complying". Observed 2026-08-23 on qwen3.7-flash, the
+     * agent declined outright and the run stopped before any chain activity,
+     * making the stated expectation simply wrong on screen. Whether a given
+     * model falls for a given injection is not a property this system controls,
+     * and a demo that needs the model to be gullible is a demo that breaks when
+     * the model improves.
+     *
+     * The honest claim is the stronger one anyway: the outcome is the same
+     * either way, because nothing downstream depends on the agent's judgement.
+     */
     expectation:
-      "Refused. The agent reads the injection and complies with it — the console shows it complying. It changes nothing: the relay holds no spending authority and the budget refuses the debit.",
+      "Refused either way, and that is the point. The agent may be talked into asking — the console shows it complying when it is — or it may decline on its own; this varies by model and neither is a better result. The relay holds no spending authority and the budget refuses a debit this size, so the guarantee never rests on the agent getting it right.",
   },
 
   /*
