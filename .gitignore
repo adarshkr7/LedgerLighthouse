@@ -67,3 +67,9 @@ apps/web/.vite/
 # Machine log dumps pulled with `oasis rofl machine logs` for diagnosis.
 rofl.log
 rofl*.utf8.log
+
+# The built submission PDF. Regenerated from `submission/` above, which is
+# itself ignored — a 4.5 MB binary rebuilt on demand does not belong in git
+# history, and it is the one artifact of that pipeline that was reaching the
+# repository anyway.
+LedgerLighthouse_Submission.pdf
