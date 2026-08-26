@@ -84,6 +84,8 @@ const ORCHESTRATOR_URL =
 
 const dryRun = flag("dry-run");
 const headless = flag("headless");
+/** `chrome` or `msedge` to drive an installed browser rather than the bundled one. */
+const channel = value("channel");
 const resumeGoal = value("goal");
 const slowMo = Number(value("slow") ?? 0);
 const budgetUsdc = value("budget") ?? "0.30";
@@ -563,7 +565,25 @@ async function record(config: OrchestratorConfig): Promise<void> {
 
   mkdirSync(shotDir, { recursive: true });
 
-  const browser = await chromium.launch({ headless, ...(slowMo ? { slowMo } : {}) });
+  /*
+   * `--channel chrome` drives an installed Chrome or Edge instead of the
+   * chromium Playwright bundles. It exists because the bundled build cannot be
+   * launched headed on every Windows machine: `chrome.exe` declares a
+   * dependency on an app-local side-by-side assembly, and where a security
+   * policy refuses to resolve one, Windows reports
+   *
+   *   The application has failed to start because its side-by-side
+   *   configuration is incorrect
+   *
+   * which no reinstall fixes, because nothing is missing. The headless shell
+   * carries no such manifest and is unaffected — so the failure appears only
+   * when recording headed, which is the mode you actually want on camera.
+   */
+  const browser = await chromium.launch({
+    headless,
+    ...(channel ? { channel } : {}),
+    ...(slowMo ? { slowMo } : {}),
+  });
   const context: BrowserContext = await browser.newContext({
     viewport: VIEWPORT,
     recordVideo: { dir: outDir, size: VIEWPORT },
