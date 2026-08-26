@@ -1,713 +1,209 @@
 <p align="center">
-  This repository contains the submission for the <strong>NTU InnovateX Hackathon 2026</strong>
-  — Track 2, co-organised by NTU CCTF &amp; SNZ — from
-  <strong>Adarsh Kumar</strong> (IIT Patna) and <strong>Krishan Pratap Sharma</strong> (IIT Bombay).
-</p>
-
-<p align="center">
   <img src="docs/lighthouse.webp" alt="LedgerLighthouse — confidential agentic payments" width="100%" />
 </p>
 
 <p align="center">
-  <a href="https://youtu.be/jCm6Ps4TSdg"><img alt="Watch the demo" src="https://img.shields.io/badge/demo-watch-ff3000" /></a>
-  <a href="https://github.com/adarshkr7/LedgerLighthouse/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/adarshkr7/LedgerLighthouse/actions/workflows/ci.yml/badge.svg" /></a>
-  <a href="https://github.com/adarshkr7/LedgerLighthouse/actions/workflows/ci.yml"><img alt="327 tests passing" src="https://img.shields.io/badge/tests-327%20passing-2f5c4a" /></a>
-  <a href="https://sepolia.basescan.org/address/0x0C759D06a1c14F43852D7b078Db2f8C342F15921"><img alt="Live on Base Sepolia" src="https://img.shields.io/badge/live-Base%20Sepolia-0052ff" /></a>
+  <a href="https://sepolia.basescan.org/address/0x0C759D06a1c14F43852D7b078Db2f8C342F15921"><img alt="PolicyVault on Base Sepolia" src="https://img.shields.io/badge/PolicyVault-Base%20Sepolia-0052ff" /></a>
+  <img alt="368 tests passing" src="https://img.shields.io/badge/tests-368%20passing-2f5c4a" />
   <img alt="x402 v1" src="https://img.shields.io/badge/x402-v1-16150f" />
   <img alt="Inco Lightning 1.0.2" src="https://img.shields.io/badge/Inco%20Lightning-1.0.2-7c382e" />
-  <img alt="Oasis ROFL" src="https://img.shields.io/badge/Oasis-ROFL%20TDX-0500e2" />
+  <img alt="Oasis ROFL TDX" src="https://img.shields.io/badge/Oasis-ROFL%20TDX-0500e2" />
 </p>
 
 # LedgerLighthouse
 
-**Confidential spending-policy infrastructure for autonomous AI agents, built on Inco Lightning.**
+**Confidential, policy-controlled payments for autonomous agents.**
 
-**[Watch the demo →](https://youtu.be/jCm6Ps4TSdg)**
+An LLM agent buys API resources over x402 without ever holding spending authority. The budget is
+encrypted on chain, the debit is committed before the decision is knowable, the resulting attestation
+is verified in the contract, and only then is an EIP-3009 signature released from a key held inside
+an attested Intel TDX enclave.
 
-LedgerLighthouse is a full-stack agentic payment system that lets an LLM agent buy API resources over
-x402 without ever holding spending authority. The protocol evaluates every spend against a budget
-that is encrypted on chain, commits the debit before the decision is knowable, verifies the resulting
-attestation in the contract, and only then releases an EIP-3009 signature from a key held inside an
-attested enclave.
-
-Designed as production-shaped infrastructure with an explicit trust model, a CI-enforced code
-boundary, and independently verifiable execution traces.
-
-## Executive Summary
-
-- **Product:** a spending policy an agent cannot read, alter, forge, or talk its way past.
-- **Confidentiality:** Inco Lightning holds the budget as ciphertext on Base and returns attested decisions.
-- **Key custody:** Oasis ROFL (TDX) derives each per-goal payer key in-enclave; no operator can extract it.
-- **Settlement:** x402 v1 `exact` scheme — EIP-3009 USDC transfers on Base Sepolia via a self-hosted facilitator.
-- **Live, not simulated:** the agent buys real search results from a real paid API over x402, at measured prices.
-- **Verifiability:** hash-chained trace with a Merkle root; the standalone verifier needs only the file and a public RPC.
-- **The invariant:** compromise of the AI orchestrator must not confer arbitrary spending authority.
-
-## What Is Built
-
-Running code, not a design document. Every item below is exercised by the 327-test suite or by
-`pnpm --filter @ntux402/e2e run demo` — a passing run of which is recorded in
-[`docs/runs/`](docs/runs/), transaction hashes and all.
-
-### Contracts — live on Base Sepolia
-
-- **`PolicyVault`** deployed and verified at [`0x0C759D06a1c14F43852D7b078Db2f8C342F15921`](https://sepolia.basescan.org/address/0x0C759D06a1c14F43852D7b078Db2f8C342F15921) — [`contracts/src/PolicyVault.sol`](contracts/src/PolicyVault.sol)
-- **Encrypted budget** held as `euint256`, converted from a client ciphertext bound to `msg.sender`
-- **Write-ahead conditional debit** via `e.select` on the operand, committed before the decision is knowable
-- **On-chain attestation verification** — `e.verifyDecryption` bound to the handle the vault itself stored
-- **Frozen authorization tuple** — `termsHash` plus a deterministic nonce, re-readable so a retry is byte-identical
-- **Structural reverts separated from policy decisions**, so an over-budget request lands on chain and bounces visibly
-- **Goal lifecycle** — open, allowlist, expiry, sequential `seq`, owner-only closure
-
-### Confidential compute — Inco Lightning 1.0.2
-
-- **Client-side HPKE encryption** in the browser before any transaction is sent
-- **Encrypted comparison and debit** — `ge`, `select`, `sub`, with `allowThis` grants on every persisted handle
-- **Attested reveal polling** bounded at 180 s, attempts and latency recorded — [`services/orchestrator/src/inco/reveal.ts`](services/orchestrator/src/inco/reveal.ts)
-- **Flipped-plaintext rejection** proven under test — a genuine attestation paired with the opposite claim fails on chain
-- **`decision-unavailable`** carried as an outcome distinct from `policy-rejected`, because the debit already committed
-- **Isolated confidential-path check** via `tee-check` — no USDC moves, no signer starts, no vendor is contacted
-
-### Key custody — Oasis ROFL
-
-- **`RoflKeyStore`** derives per-goal payer keys through `rofl-appd`, covered by 12 dedicated tests — [`services/signer/src/keystore.ts`](services/signer/src/keystore.ts)
-- **Local file-store fallback** for laptop runs, with the trust difference documented rather than hidden
-- **Container manifest and Dockerfile** committed and buildable — [`services/signer/`](services/signer/)
-
-### Payment path — x402 v1
-
-- **Schema-first 402 parsing** — amount, payee and asset taken from structured fields; vendor prose routed only to the model
-- **LLM agent** over an OpenAI-compatible gateway — any model it serves, no vendor SDK in the untrusted component — with a scripted offline fallback that reproduces injection compliance — [`services/orchestrator/src/agent/`](services/orchestrator/src/agent/)
-- **Nine-stage payment loop** in which a rejection is terminal and first-class, never retried — [`services/orchestrator/src/pay/payment-loop.ts`](services/orchestrator/src/pay/payment-loop.ts)
-- **Non-discretionary Authorization Signer** accepting `(goalId, seq)` and nothing else, with 8 specified refusal codes
-- **Self-hosted x402 facilitator** exposing `/verify`, `/settle`, `/supported` — [`services/facilitator/`](services/facilitator/)
-- **Stub settlement mode** that validates payloads, moves no money, and labels every response `simulated`
-
-### Verifiability
-
-- **Hash-chained trace** with a Merkle root over step hashes — [`services/trace/`](services/trace/)
-- **Standalone verifier CLI** needing only the trace file and a public RPC
-- **Handle-lineage cross-check** — the attested handle must equal the one `PolicyVault` stored
-- **Bounced attempts retained** in the chain, so a refusal is auditable rather than absent
-- **Orphan recovery** — a spend left unfinalized by a crashed run is polled, finalized and reported as its own event before the next run proceeds, rather than wedging the goal
-
-### Interface and tooling
-
-- **Web console** — MetaMask goal opening, payer funding, live SSE timeline, search box, and a one-click sweep of the payer's remainder back to the owner — [`apps/web/`](apps/web/)
-- **Shared demo catalog** imported by vendor, orchestrator and UI, so charged and displayed prices cannot drift
-- **CI-enforced import boundary** preventing the orchestrator from reaching the signer *or the vendor's API key* — [`scripts/check-boundary.mjs`](scripts/check-boundary.mjs)
-- **Nine operator scripts** — keygen, fund, balances, preflight, showtime, demo, tee-check, state, whois
-- **Loopback bind, CORS allowlist, optional bearer token and per-IP rate limits** on every HTTP service — [`packages/shared/src/node/guard.ts`](packages/shared/src/node/guard.ts)
-- **Traces persisted to disk** behind a bounded LRU, so a restart does not erase the evidence of a run that demonstrably happened — [`services/orchestrator/src/trace-store.ts`](services/orchestrator/src/trace-store.ts)
-- **`showtime`** — demo-day readiness in one command: six services, both RPC endpoints exercised with `eth_call`, balances, both API keys, and the settings whose absence turns a live run into a stub without saying so
-- **`pnpm verify`** mirrors CI exactly, with a pre-push hook available via `.githooks`
-
-### Live search — real money, real API
-
-- **`services/vendor-aisa`** — an x402 resource server in front of AIsa's paid search. GET in, POST out, so the payment loop needs no change to buy from a Bearer-key API
-- **Measured pricing** — 0.01 / 0.02 USDC against a metered upstream cost of $0.008 / $0.016, pinned in the shared catalog with a `verifiedOn` date
-- **`/verify` before the upstream call**, so a payment that will fail at settlement cannot make us spend first
-- **Spend ceiling in money, persisted** — restarting is not a way past it
-- **CI-enforced key boundary** — the orchestrator may not import the vendor or name its credential
-
-### Verifiability, anchored
-
-- **`TraceAnchor`** deployed at [`0x065d5e16160159cAB7D841818aBc92b4E85D5818`](https://sepolia.basescan.org/address/0x065d5e16160159cAB7D841818aBc92b4E85D5818) — a completed run commits its Merkle root, so a trace proves *when* it said what it says.
-
-  **One anchor per goal, first write wins.** `TraceAnchor.sol` requires the stored root to be zero, so the *first* run on a goal claims the slot and later runs return `already` unchanged. Two consequences worth stating rather than discovering: a goal whose first run failed anchors that failure permanently, and on a multi-run goal the saved trace (rewritten per run) and the anchored root describe different things. The design assumes one run per goal; give a goal its own run if you want its anchor to mean something specific.
-- **Vendor-attested steps are marked as such**, and the verifier rejects one that claims an on-chain attestation it cannot have
-
-### Custody, in an enclave
-
-- **The payer key is derived inside an Intel TDX enclave and has never existed outside it.** Deployed 2026-08-23: app `rofl1qr0fv0qs2u8vmmah0ucmwegcj2cdz7kj4qzjduhp` on Sapphire testnet, both enclave measurements whitelisted in the on-chain policy, a replica attested and running. The signer reports `key store  store=ROFL enclave via /run/rofl-appd.sock` and the guest kernel reports `Memory Encryption Features active: Intel TDX`.
-
-  Checkable rather than asserted: goal #52's payer `0xbAe2E2CFE7f612287781E9DdFee46F4C0C55b25b` appears in the enclave's log as the address it minted, and in the vault as that goal's `payer` — and nowhere in `.keys/payers.json`. Three sources, one address, no copy on any disk.
-
-  Point the orchestrator at it with `SIGNER_URL` and `SIGNER_SERVICE_TOKEN`; leave both blank and it falls back to the local file store, which is exactly the trust assumption ROFL removes. Deployment is in [`docs/ROFL_FAST_DEPLOY.md`](docs/ROFL_FAST_DEPLOY.md), including two things the runbook could not have known — `oasis rofl build` cannot run on native Windows, and WSL needs `GODEBUG=netdns=cgo`.
+Full design: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ---
 
-## How It Works
+## The problem
 
-### The Separation
+An agent that pays for things must read attacker-controlled text — HTTP bodies, error messages,
+vendor descriptions — and must also decide when to spend. Putting both capabilities in one component
+makes indirect prompt injection a direct path to a drained budget.
 
-An agent that pays for things must read attacker-controlled text and must also decide when to spend.
-Putting both in one component makes prompt injection a direct path to a drained budget. This design
-splits them:
+The common answer is a text filter over the agent's inputs. That is the wrong shape of control:
+probabilistic, guarding a deterministic and irreversible asset.
 
-$$\text{reads attacker text} \;\cap\; \text{holds spending authority} \;=\; \emptyset$$
+This system separates the capabilities instead.
 
-The orchestrator reads the vendor's prose. The vault decides. They share no component and no key.
+> **The invariant.** Compromise of the AI orchestrator must not confer arbitrary spending authority.
 
-### Confidential Policy Predicate
-
-Every spend resolves a three-term conjunction. Two terms are plaintext, one is ciphertext:
-
-$$\text{ok} \;=\; \underbrace{(a \le \kappa)}_{\text{public cap}} \;\wedge\; \underbrace{(c \ge 1)}_{\text{public count}} \;\wedge\; \underbrace{(\beta \ge a)}_{\text{encrypted budget}}$$
-
-where $a$ is the requested amount, $\kappa$ the per-call cap, $c$ the remaining call count, and
-$\beta$ an `euint256` handle the contract can compute over but never read. The encrypted comparison
-`ge` executes inside Inco's enclave; the contract receives only an `ebool` handle.
-
-### Write-Ahead Debit
-
-The debit is applied unconditionally in the same transaction that records the terms — **before**
-anyone, including the caller, can learn the outcome:
-
-$$\delta = \text{select}(\text{ok},\; a,\; 0) \qquad \beta' = \beta - \delta$$
-
-Selecting the *operand* rather than the result keeps the subtraction well-defined on every path.
-Branching on an encrypted condition is inexpressible in Inco, which is what makes commit-before-reveal
-the only available ordering rather than a discipline someone has to maintain.
-
-### Attestation and Finalization
-
-Inco's covalidators sign over a **pair**, never a bare value:
-
-$$\text{verify}\big(\text{handle}_{\text{stored}},\; v_{\text{claimed}},\; \Sigma\big) \;\rightarrow\; \text{accept} \;\vert\; \text{reject}$$
-
-Verification binds to the handle *the contract stored*, not one supplied by the caller. A genuine
-attestation paired with the opposite claim does not verify, and a genuine attestation for a different
-handle is not substitutable. Both properties are asserted by tests that must fail closed.
-
-### Frozen Authorization Terms
-
-At `requestSpend` the entire EIP-3009 tuple is frozen and committed:
-
-$$\text{termsHash} = \text{keccak256}\big(\text{goalId},\, \text{seq},\, \text{payer},\, a,\, \text{payTo},\, \text{asset},\, \text{resource},\, t_{\text{after}},\, t_{\text{before}}\big)$$
-
-$$\text{nonce} = \text{keccak256}\big(\text{goalId},\, \text{seq}\big)$$
-
-The nonce is deterministic so an interrupted settlement can be retried with a byte-identical
-authorization. Uniqueness holds because the payer key is per-goal and `seq` is per-goal and monotonic.
-
-### Trace Hash Chain
-
-Every run emits a chain in which each step commits to its predecessor:
-
-$$h_i = H\big(h_{i-1} \,\|\, \tau_i \,\|\, H(\text{in}_i) \,\|\, H(\text{out}_i) \,\|\, t_i \,\|\, H(\alpha_i)\big)$$
-
-$$\text{root} = \text{merkle}\big(h_0, h_1, \dots, h_n\big)$$
-
-with $\tau$ the step type and $\alpha$ the optional attestation. Bounced attempts stay in the chain: a
-policy that never fires is indistinguishable from a policy that does not work.
-
-### Bounded Residual Loss
-
-A fully compromised orchestrator cannot escape the conjunction. Its loss ceiling is closed-form, and
-every dollar of it is payable only to an address the user allowlisted at goal open:
-
-$$\text{loss}_{\max} = \kappa \times c \quad \text{paid only to } \text{payTo} \in \mathcal{A}$$
+The component that reads the attacker's text has no spending authority. The component that grants
+spending authority never reads the attacker's text.
 
 ---
 
-## Architecture
+## What is deployed
 
-```mermaid
-flowchart LR
-    USER(["User · MetaMask"])
+Base Sepolia, chain id `84532`. Both contracts are source-verified.
 
-    subgraph FE["Console — React + TypeScript"]
-        FN["Landing · Goal Picker · Timeline<br/>useConfig · SSE run stream"]
-    end
+| Contract | Address | Deployment tx |
+|---|---|---|
+| `PolicyVault` | [`0x0C759D06a1c14F43852D7b078Db2f8C342F15921`](https://sepolia.basescan.org/address/0x0C759D06a1c14F43852D7b078Db2f8C342F15921) | [`0xcbf4da83…c013ee`](https://sepolia.basescan.org/tx/0xcbf4da835639699cf7ae7d472fed635a145c6df97381300941ddc9ba7fc013ee) |
+| `TraceAnchor` | [`0x065d5E16160159cAB7D841818aBc92b4E85D5818`](https://sepolia.basescan.org/address/0x065d5E16160159cAB7D841818aBc92b4E85D5818) | [`0x068c2d88…2f9900`](https://sepolia.basescan.org/tx/0x068c2d8883bfe2a294164da805274905aa33c85f2a68a27ab1c06892972f9900) |
 
-    subgraph UNTRUSTED["Untrusted Plane"]
-        OR["Orchestrator<br/>LLM Agent · x402 Client · Payment Loop<br/>relay key — gas only"]
-        MK["Mock Resource Server<br/>x402-priced endpoints"]
-    end
+Settlement asset: USDC at [`0x036CbD53842c5426634e7929541eC2318f3dCF7e`](https://sepolia.basescan.org/address/0x036CbD53842c5426634e7929541eC2318f3dCF7e).
 
-    subgraph VENDOR["Live Vendor — holds the data-API key"]
-        VA["vendor-aisa<br/>x402 shim over AIsa search<br/>verify-before-spend · hourly ceiling"]
-        UP[("AIsa search API")]
-    end
+Sapphire testnet: ROFL app `rofl1qr0fv0qs2u8vmmah0ucmwegcj2cdz7kj4qzjduhp`, both enclave measurements
+whitelisted in its on-chain policy, one replica attested and running.
 
-    subgraph CHAIN["Base Sepolia"]
-        PV["PolicyVault<br/>encrypted budget · seq · termsHash<br/>approval records"]
-        TA["TraceAnchor"]
-        USDC[("USDC · EIP-3009")]
-    end
+### Transactions produced by the running system
 
-    subgraph CONF["Inco Lightning — TEE"]
-        IN["Encrypted compute<br/>ge · select · sub · reveal<br/>covalidator attestations"]
-    end
+| What | Transaction |
+|---|---|
+| `finalizeDecision` — APPROVED | [`0xd38c86d5…284d95`](https://sepolia.basescan.org/tx/0xd38c86d5e327c80294f444598a00e1c3cd2ea90659194d82b74a006bbd284d95) |
+| `finalizeDecision` — REJECTED | [`0x407f36fd…3e704c`](https://sepolia.basescan.org/tx/0x407f36fdabaa6f8d5763dc1310ab672d3ed24b3ce2300adad37e14d35b3e704c) |
+| `transferWithAuthorization` — settled | [`0x0bf0a2ff…117b8d`](https://sepolia.basescan.org/tx/0x0bf0a2ffae8b5ffdaba66b5dd4768b6c05d792f2830d35e3635f12d07e117b8d) |
 
-    subgraph CUSTODY["Oasis ROFL — TDX"]
-        SG["Authorization Signer<br/>per-goal payer key<br/>reads chain only"]
-    end
+The rejection is on chain deliberately. An over-cap request lands and bounces visibly rather than
+reverting into silence — a policy that never fires is indistinguishable from one that does not work.
 
-    FAC["Facilitator<br/>submits settlement — gas only"]
-    TR["Trace Builder + Verifier"]
-
-    USER --> FE
-    FE -->|"openGoal · fund payer"| PV
-    FE <-->|"POST /runs · SSE"| OR
-    OR -->|"GET resource"| MK
-    MK -->|"402 + terms"| OR
-    OR -->|"GET search?q=…"| VA
-    VA -->|"402 + terms"| OR
-    VA -->|"paid call"| UP
-    OR -->|"requestSpend"| PV
-    PV <-->|"encrypted predicate"| IN
-    IN -->|"attestedReveal"| OR
-    OR -->|"finalizeDecision"| PV
-    OR -->|"goalId, seq"| SG
-    SG -->|"reads finalized record"| PV
-    SG -->|"EIP-3009 signature"| OR
-    OR -->|"X-PAYMENT"| MK
-    OR -->|"X-PAYMENT"| VA
-    MK -->|"verify · settle"| FAC
-    VA -->|"verify · settle"| FAC
-    FAC -->|"transferWithAuthorization"| USDC
-    OR --> TR
-    TR -->|"Merkle root — anchored per run"| TA
-
-    classDef fe    fill:#1e3a5f,stroke:#4a9eff,color:#d0e8ff
-    classDef untr  fill:#3a1a1a,stroke:#ef5350,color:#f5d0d0
-    classDef chain fill:#1a3a1a,stroke:#4caf50,color:#d0f0d0
-    classDef conf  fill:#2a1a3a,stroke:#9c27b0,color:#ead0f0
-    classDef cust  fill:#0d2a30,stroke:#00bcd4,color:#c0eef5
-    classDef ext   fill:#222236,stroke:#90a4ae,color:#dde4ee
-    classDef vend  fill:#3a2f16,stroke:#c9a227,color:#f5ead0
-
-    class FE,FN fe
-    class UNTRUSTED,OR,MK untr
-    class VENDOR,VA,UP vend
-    class CHAIN,PV,TA,USDC chain
-    class CONF,IN conf
-    class CUSTODY,SG cust
-    class FAC,TR,USER ext
-```
-
-Everything inside **Untrusted Plane** may lie, be compromised, or be attacker-authored. Everything
-right of the approval record acts only on verified on-chain state.
-
-**Live Vendor** is a third position, and it is not a subdivision of the other two. `vendor-aisa`
-holds `AISA_VENDOR_KEY`, the only credential in the repository that can spend money at a paid API,
-which is precisely why the orchestrator is forbidden from importing it or naming its key —
-[`scripts/check-boundary.mjs`](scripts/check-boundary.mjs) fails CI on either.
-
-`TraceAnchor` is deployed at [`0x065d5e16160159cAB7D841818aBc92b4E85D5818`](https://sepolia.basescan.org/address/0x065d5e16160159cAB7D841818aBc92b4E85D5818) on Base Sepolia and wired directly into the runtime (`TraceAnchorClient`), anchoring each completed run's Merkle root on chain for permanent public verifiability.
-
-### Repository Layout
-
-```
-LedgerLighthouse/
-├── contracts/                          Foundry — policy lives here, not in TypeScript
-│   ├── src/PolicyVault.sol             Encrypted budget, write-ahead debit, attestation verification
-│   ├── src/TraceAnchor.sol             32 bytes of commitment per trace
-│   ├── test/                           PolicyVault, TraceAnchor, Inco smoke tests
-│   └── script/DeployPolicyVault.s.sol
-│
-├── packages/shared/                    Types every service agrees on. Depends on nothing.
-│   └── src/
-│       ├── x402/                       v1 protocol constants, strict terms parser, payment payload
-│       ├── chain/                      Generated PolicyVault + TraceAnchor ABIs, USDC EIP-3009 surface
-│       ├── demo/catalog.ts             The six resources — single source of price truth
-│       ├── demo/aisa-tiers.ts          Measured upstream cost and quoted price per search tier
-│       ├── demo/search-query.ts        The one field a viewer types, validated on both sides
-│       ├── node/env.ts                 Node-only config, kept off the browser bundle
-│       └── node/guard.ts               Bind host, CORS allowlist, bearer token, rate limiter
-│
-├── services/
-│   ├── orchestrator/                   UNTRUSTED. Relay key only — pays gas, authorizes nothing.
-│   │   └── src/
-│   │       ├── agent/                  LLM agent + scripted offline stand-in
-│   │       ├── pay/                    The nine-stage payment loop, relay, signer client
-│   │       ├── inco/reveal.ts          Bounded polling for the confidential decision
-│   │       ├── pay/anchor.ts           Commits each finished trace's Merkle root to TraceAnchor
-│   │       ├── pay/sweep.ts            Forwards a sweep; chooses no amount, payee or token
-│   │       ├── x402/                   Resource client and response cache
-│   │       ├── trace-store.ts          Traces on disk behind a bounded LRU — they survive a restart
-│   │       └── server.ts               /health, /config, /runs (SSE), /sweeps, /traces, /payer
-│   │
-│   ├── signer/                         Holds the per-goal payer key. Reads chain only.
-│   │   ├── src/schema.ts               Enforces that a request carries (goalId, seq) and nothing else
-│   │   ├── src/keystore.ts             Local file store and ROFL enclave derivation
-│   │   ├── src/vault.ts                The signer's only window onto the world: the chain
-│   │   └── rofl.yaml · Dockerfile      Oasis ROFL manifest and container
-│   │
-│   ├── facilitator/                    Self-hosted x402 v1 facilitator. Outside the boundary.
-│   ├── trace/                          Hash chain, Merkle accumulator, standalone verifier CLI
-│   └── vendor-aisa/                    UNTRUSTED, and the only holder of AISA_VENDOR_KEY.
-│       └── src/                        x402 shim over AIsa live paid search
-│           ├── query.ts                Re-validates the query it is handed — its caller is untrusted
-│           ├── upstream.ts             The paid call, plus cost reconciliation from response headers
-│           └── handler.ts              verify -> fetch -> settle, cheapest check first
-│
-├── apps/web/                           MetaMask UI — landing page + execution console
-├── mock-api/                           x402-priced endpoints, one per mock catalog resource
-├── tools/e2e/                          keygen · fund · balances · preflight · showtime · demo · tee-check · state · whois
-├── scripts/                            check-boundary · dev · sync-abi · verify · aisa-probe · aisa-measure-tiers
-└── docs/                               ARCHITECTURE · IMPLEMENTATION · PRIMER · PROJECT_TREE
-    └── runs/                           Recorded end-to-end runs, kept as evidence
-```
-
-Every tracked file, annotated, is in [`docs/PROJECT_TREE.md`](docs/PROJECT_TREE.md).
-
-### Dependency Rule
-
-```
-packages/shared/     →  (nothing)
-services/trace/      →  shared/
-contracts/           →  (nothing)
-services/signer/     →  shared/
-services/vendor-aisa/→  shared/
-services/orch/       →  shared/  +  trace/
-apps/web/            →  orchestrator  (HTTP + SSE only)
-```
-
-`services/orchestrator` must **never** import `services/signer` or `services/vendor-aisa`, by
-package name or relative path, and must never name `AISA_VENDOR_KEY`.
-[`scripts/check-boundary.mjs`](scripts/check-boundary.mjs) enforces all three in CI and fails the
-build if violated. That check is the load-bearing wall of the entire design — if the orchestrator
-can reach the signer in-process, every other guarantee here is decorative; if it can reach the
-vendor's credential, it has a spending path that never passes the vault at all.
+A recorded end-to-end run, transaction hashes and all, is in [`docs/runs/`](docs/runs/).
 
 ---
 
-## Inco Lightning Integration (Detailed)
+## What is proven, and what is assumed
 
-Inco is the decision authority at runtime — it is not a thin encryption helper bolted onto a
-plaintext policy.
+This distinction is the point of the design, so it is stated before anything else.
 
-### 1) Client-Side Encryption and Handle Binding
+| Property | Status |
+|---|---|
+| The debit was committed before the decision was knowable | **On chain.** Ordinary Base state, checkable by anyone |
+| The attestation verified against the handle the vault stored | **On chain.** `e.verifyDecryption`, bound to the stored handle |
+| The signature was released only against a finalized APPROVED record | **Auditable code.** Not attested |
+| The budget stayed confidential | **Vendor assumption.** Inco exposes no remote-attestation quote to applications |
+| The payer key never left the enclave | **Vendor assumption.** Attested by Oasis; Base cannot verify Oasis attestations |
+| The agent behaved correctly | **Not claimed.** Deliberately outside the boundary |
 
-- The browser encrypts the budget to the Inco enclave over HPKE before any transaction is sent.
-- `openGoal` converts the ciphertext with `newEuint256(msg.sender)`, binding it to the address that produced it.
-- A ciphertext prepared for any other address yields a handle the call cannot use, so the orchestrator is **structurally** unable to open a goal.
-- This conversion is the one operation charging the Inco fee (0.000001 ETH), which is why `openGoal` is `payable` and `requestSpend` is not.
+The claim this system is willing to defend is narrow:
 
-### 2) Encrypted Evaluation Plane
+> Every payment in an anchored trace corresponds to a confidential policy evaluation whose result was
+> attested and verified on chain against the expected handle.
 
-- `requestSpend` evaluates the public predicates in plaintext and routes only the budget comparison through Inco.
-- `ge`, `select`, `sub` and `reveal` are free; the contract holds handles, never balances.
-- The debit is applied via `e.select` on the operand, so a rejected request never computes an underflowed value.
-- Persisted handles receive an explicit `allowThis()` grant — omitting it would permanently orphan the budget, and cheatcode tests cover that failure.
+### The residual risk
 
-### 3) Attested Reveal and On-Chain Verification
+A compromised orchestrator can submit an amount larger than the 402 demanded — up to `perCallCap`, to
+an address already on the allowlist. Nothing in the confidential check compares the submitted amount
+against the 402 body, because the vault never sees the 402. The bound is the conjunction of
+`perCallCap`, the allowlist and `callsRemaining`:
 
-- The per-request decision handle is made publicly attestable with `reveal()`. Only ever the decision handle — never a budget handle, and reveals are permanent.
-- The payment loop polls `attestedReveal` off chain, then submits the plaintext plus covalidator signatures through `finalizeDecision`.
-- `e.verifyDecryption` re-checks the signatures against the handle **the vault stored**. Signature validity alone is insufficient.
-- Anyone may call `finalizeDecision`. The attestation is unforgeable, so requiring the relay would only let a stuck relay wedge the goal.
+```text
+loss ceiling = perCallCap × callsRemaining, paid only to an allowlisted payee
+```
 
-### 4) Structural Reverts vs. Policy Decisions
-
-Two classes of check, handled deliberately differently:
-
-- **Structural validity** — allowlist, asset, expiry, goal open, caller is relay → `revert`. A malformed request is not a policy decision and must not land as one.
-- **Policy** — cap, call count, budget → resolve into the decision, *including the public terms*. An over-cap request lands on chain and bounces visibly. The bounce is the product.
-
-### 5) Commit-Before-Reveal Ordering
-
-- The encrypted debit commits in the same transaction that records the terms, before the decision is knowable to anyone.
-- Inco makes this the only expressible option, since branching on an encrypted condition is impossible — the ordering is enforced by the platform, not by developer discipline.
-
-### 6) Decision-Unavailable as a First-Class State
-
-- Reveal polling is bounded at 180 s; a timeout is a **reported outcome**, not a swallowed exception.
-- Because the debit already committed, "decision unavailable" is a genuinely different state from "rejected". Conflating them would misreport where the money went.
-
-### 7) Isolated Confidential-Path Verification
-
-- `tee-check` exercises Inco alone: no USDC moves, the signer never starts, no vendor is contacted.
-- It runs two spends — one inside the budget, one past it but under the public cap and to an allowlisted payee, so nothing in plaintext can account for the refusal.
-- The load-bearing assertion is the third per spend: the attestation is resubmitted with the plaintext **flipped**, and on-chain verification must reject it.
-
-### 8) Reliability Controls Around the Inco Dependency
-
-- Bounded polling with attempt counts and latency recorded into the trace.
-- Attestation signatures persisted per step so a trace remains verifiable long after the run.
-- Handle lineage checked by the verifier against `PolicyVault` — the attested handle must equal the stored one.
-- A stalled attester halts spending rather than permitting it, which is the safe direction.
+**This is a design property, not a theorem.** It has not been formally modelled and no proof is
+claimed for it. Establishing a threat model in which the adversary's channel is natural language, and
+stating this bound precisely against it, is open work rather than finished work.
 
 ---
 
-## Protocol Stages
+## Mechanism, in brief
 
-| Stage | Trigger | Responsibility |
-|-------|---------|----------------|
-| **Recover** | run start | Any spend left unfinalized by a crashed run is polled and finalized first, so a stale `pendingSeq` cannot wedge the goal. Its outcome is reported as its own event, never as this run's |
-| **Discovery** | after recovery | `GET` the resource — the mock vendor or the live search shim; a `200` short-circuits as `free`, a `402` yields terms |
-| **Parse** | on 402 | Extract `maxAmountRequired`, `payTo`, `asset` from the **schema**; prose is separated out |
-| **Agent** | after parse | LLM reads model-safe terms + vendor description, returns a request/decline — **numbers never come from the model** |
-| **Commit** | agent requests | `requestSpend` with the relay key; terms frozen, debit applied, decision handle emitted |
-| **Reveal** | after commit | Poll `attestedReveal` — bounded 180 s, typically 7–12 s over 1–2 attempts |
-| **Finalize** | attestation in hand | `finalizeDecision` verifies signatures on chain; `callsRemaining` decrements only on approval |
-| **Authorize** | approved only | Signer reads the finalized record and signs EIP-3009 — accepts only `(goalId, seq)` |
-| **Settle** | signature in hand | `X-PAYMENT` retry; facilitator submits `transferWithAuthorization` |
-| **Trace** | run end | Hash chain sealed, Merkle root computed, trace written to disk |
-| **Anchor** | trace written | Root committed to `TraceAnchor`. Reported and swallowed on failure — turning a settled, fully-traced run into an error because a 32-byte write ran out of gas would be losing the thing to protect the receipt for it |
+```text
+AI Orchestrator → attacker-controlled 402 terms → PolicyVault → Inco confidential computation
+→ APPROVE / REJECT → Authorization Signer (enclave key) → EIP-3009 → x402 facilitator → API
+```
+
+Everything left of `PolicyVault` is untrusted. Everything right of `APPROVE / REJECT` acts only on
+verified on-chain records.
+
+Three properties carry the design:
+
+**Write-ahead debit.** Inco forbids branching on an encrypted condition, so `if (approved) { debit }`
+is inexpressible. The contract selects the *operand* instead — `ok.select(amount, 0)` — and subtracts
+unconditionally. The debit therefore commits before anyone, including the orchestrator, can learn
+whether it was approved.
+
+**Handle-bound attestation.** `finalizeDecision` verifies the attestation against the handle the
+contract itself stored. Signature validity alone is insufficient: a genuine attestation over a
+different handle would otherwise be substitutable.
+
+**A signer that accepts no terms.** It answers one question — *is `(goalId, seq)` finalized-approved
+on chain?* — and if so signs exactly what the chain froze. It has no notion of price and no way to be
+told one, so a compromised orchestrator cannot ask it for anything.
+
+Each is derived and justified in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ---
 
-## API Reference
+## Verifying this without trusting us
 
-### Orchestrator — `:8404`
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/health` | Liveness probe |
-| `GET` | `/config` | Addresses and modes the UI needs to render honestly |
-| `POST` | `/runs` | Start a run — returns an SSE stream of payment events |
-| `POST` | `/sweeps` | Return a closed goal's payer remainder to the goal owner |
-| `GET` | `/traces/{goalId}` | The trace for the last run against that goal, read from disk |
-
-**Request body — `POST /runs`**
-
-| Field | Type | Required | Notes |
-|-------|------|----------|-------|
-| `goalId` | string | Yes | Decimal string — the on-chain goal to spend against |
-| `mode` | string | Yes | A catalog key: `market-data` · `bulk-archive` · `compliance-audit` · `premium-feed` · `aisa-search-basic` · `aisa-search-deep` |
-| `query` | string | Live search only | What to search for. Trimmed, ≤ 256 chars, control characters refused — never repaired, because it lands in the x402 `resource` field the vault hashes into `termsHash` |
-| `priceAtomic` | string | No | Demo-only vendor price override, forwarded to the mock vendor. **Never reaches the policy** — the vault reads the amount from the 402 it re-derives |
-
-`mode` is validated against the shared catalog rather than a literal union, so adding a resource is a
-catalog edit and not a code change. Anything outside the catalog is rejected, because the value
-becomes a URL path segment. An `aisa-search-*` mode with no vendor configured is a `503` at the
-request, not a fetch failure twenty seconds in with a goal already debited.
-
-**Request body — `POST /sweeps`**
-
-| Field | Type | Required | Notes |
-|-------|------|----------|-------|
-| `goalId` | string | Yes | Decimal string. The goal must already be closed |
-
-There is no amount and no destination, here or in the signer route it forwards to. The signer reads
-the payer, the owner and the balance from the chain; this service only carries the message.
-
-**Response — `GET /config`**
-
-```jsonc
-{
-  "vaultAddress":    "0x0C759D06a1c14F43852D7b078Db2f8C342F15921",
-  "usdcAddress":     "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-  "chainId":         84532,
-  "relayAddress":    "0x...",
-  "signerUrl":       "http://127.0.0.1:8402",
-  "mockApiUrl":      "http://127.0.0.1:4021",
-  // Both vendors are reported: one field cannot describe two servers, and the
-  // console disables live search rather than offering a button that 503s.
-  "vendorAisaUrl":   "http://127.0.0.1:4022",  // absent when live search is not configured
-  "vendorAisaPayee": "0x...",                  // operator-held, so it cannot live in the shared catalog
-  "settlement":      "live | stub",            // stub can never be mistaken for a real payment
-  "agent":           "llm | scripted"
-}
-```
-
-`vendorAisaPayee` is resolved at run time rather than compiled into the browser bundle, and the
-console unions it with the catalog's static payees before opening a goal. A goal opened without it
-allowlisted has its spend reverted with `PayeeNotAllowlisted` — the correct failure, and a
-confusing one.
-
-### Authorization Signer — `:8402`
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/health` | Liveness probe |
-| `POST` | `/payer` | Mint an ephemeral per-goal payer key, return only its address |
-| `POST` | `/authorizations` | Sign the finalized on-chain record for `{ goalId, seq }` |
-| `POST` | `/sweeps` | Sign a transfer of a payer's **whole** balance to that goal's **owner**, for `{ goalId }` |
-
-**There is no route that accepts an amount, a payee, or a token**, because there is no code path that
-would know what to do with one. The shape of this API *is* the security argument.
-
-`/sweeps` is the one authorization here whose amount is not frozen by a vault record, so its
-destination is not negotiable either: the payee is read from `Goal.owner` on chain and the value is
-the payer's full balance. It refuses an open goal — a goal that can still spend is a goal whose
-balance is not yours to take yet — and its nonce is domain-separated from the spend nonces, so a
-sweep can never collide with a spend for the same goal.
-
-### Facilitator — `:8403`
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/health` | Liveness probe |
-| `GET` | `/supported` | Advertised x402 schemes and networks |
-| `POST` | `/verify` | Validate a payment payload against requirements |
-| `POST` | `/settle` | Submit `transferWithAuthorization`; `402` on failure |
-
-### Mock Resource Server — `:4021`
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/health` | Liveness probe |
-| `GET` | `/resource/{key}` | x402-priced endpoint — `402` with terms, `200` with `X-PAYMENT` |
-
-One route per mock catalog entry: `market-data` · `bulk-archive` · `compliance-audit` ·
-`premium-feed`, with `honest` and `malicious` still resolving as aliases onto the first and last.
-The hostile endpoints settle too — they *want* the money. Nothing here stops them; that is the
-policy layer's job, and the demo's point.
-
-### Live Search Vendor — `:4022`
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/health` | Liveness probe |
-| `GET` | `/resource/aisa/search?q=…&tier=basic\|deep` | x402-priced live search — `402` with terms, `200` with results |
-
-The caller names a **tier**, never a price, a search depth or a result count. A request that could
-dial `search_depth` could dial our cost; a request that could dial `maxAmountRequired` could dial
-what the vault is asked to approve.
-
-Every step that costs something is guarded by a step that costs nothing, cheapest first:
-
-| | Step | Cost |
-|---|------|------|
-| 1 | Shape, tier and query validation | free |
-| 2 | Hourly spend ceiling, read from a persisted ledger | free |
-| 3 | Local payload sanity — payee, amount | free |
-| 4 | Facilitator `/verify` | free, no money moves |
-| 5 | Upstream AIsa call | **costs us** |
-| 6 | Facilitator `/settle` | moves the buyer's USDC |
-
-Step 4 is the one that is easy to omit and expensive to leave out: without it, anyone can send a
-well-formed authorization that will fail at settlement — a consumed nonce, an unfunded payer — and
-we will have paid for a search before finding out. Step 5 precedes step 6 deliberately, so the
-worst failure is one wasted sub-cent call rather than the buyer's USDC moving with no data to show
-for it.
-
-**Error envelope** — every service returns the same shape:
-
-```json
-{ "error": "Human-readable description" }
-```
-
-**Signer refusal codes.** These are the specification, not incidental status mapping:
-
-| Condition | Status |
-|-----------|--------|
-| Body is not exactly `(goalId, seq)` — a terms field, an unknown field, a bad type | `400` |
-| RPC reports the wrong chain | `503` |
-| Goal, spend, or a key for the payer is unknown | `404` |
-| Goal denominated in another asset | `409` |
-| Not finalized yet | `425` — distinct from rejection, so the caller can tell "wait" from "never" |
-| Finalized as rejected | `403` — terminal; nothing to negotiate with |
-| Payer or nonce mismatch | `500` |
-| Frozen window expired | `410` |
-| EIP-712 domain mismatch vs the token's own `DOMAIN_SEPARATOR()` | `500` |
-| *Sweep only* — goal still open, or payer holds no USDC | `409` |
-
-### SSE — `POST /runs`
-
-Emits `payment` events as the loop advances, then a terminal `result` and `trace`:
-
-```jsonc
-{ "type": "payment-required", "url": "...", "terms": { "amount": "350000", "payTo": "0x4444...", "description": "..." } }
-{ "type": "agent-reasoning",  "reasoning": "...", "decidedToRequest": true, "source": "llm" }
-{ "type": "spend-requested",  "goalId": "6", "spend": { "seq": "1", "decisionHandle": "0x...", "commitTx": "0x..." } }
-{ "type": "reveal-polled",    "attempts": 2, "latencyMs": 11430, "approved": false }
-{ "type": "decision-finalized", "goalId": "6", "seq": "1", "approved": false, "txHash": "0x...", "signatures": ["0x...", "0x..."] }
-{ "type": "result", "kind": "policy-rejected", "decisionHandle": "0x...", "commitTx": "0x..." }
-```
-
-The full event set, in the order it can appear:
-
-| Event | Meaning |
-|-------|---------|
-| `request` · `response-200` | The plain `GET`, and a `200` that short-circuits the run as `free` |
-| `payment-required` | A `402` arrived; `terms` carries the vendor's prose verbatim, because the demo has to show it |
-| `terms-rejected` | The 402 failed the strict parser. Nothing is coerced into shape |
-| `orphan-recovered` · `orphan-abandoned` | A spend left unfinalized by a crashed run was finalized, or could not be — reported as its own event, never as this run's result |
-| `agent-reasoning` | What the model decided and why, with `source: llm \| scripted` |
-| `spend-requested` | `requestSpend` landed; the debit has committed and the decision is not yet knowable |
-| `reveal-polled` · `reveal-timeout` | Attempts and latency, or a bounded 180 s give-up |
-| `decision-finalized` | On-chain verification passed, with the covalidator signatures a reader can re-check independently |
-| `signer-refused` | One of the refusal codes above, surfaced rather than retried into silence |
-| `signed` · `settled` | The EIP-3009 authorization, then the settlement the facilitator submitted |
-| `failed` | Anything that is not a policy outcome |
-
-**Terminal result kinds:** `free` · `paid` · `policy-rejected` · `decision-unavailable` · `failed`.
-A rejection is terminal — no retry, no smaller amount. A reveal timeout is **not** a rejection.
+1. **Read the contracts.** Both addresses above are source-verified on Basescan.
+2. **Check a decision.** The APPROVED and REJECTED `finalizeDecision` transactions are listed above.
+3. **Check a settlement.** The `transferWithAuthorization` transaction is listed above.
+4. **Check custody.** Goal #52's payer `0xbAe2E2CFE7f612287781E9DdFee46F4C0C55b25b` appears in the
+   enclave's log as the address it minted and in the vault as that goal's `payer` — and in no key
+   file on any disk.
+5. **Verify a trace.** The standalone verifier re-derives every step hash, recomputes the Merkle
+   root, and cross-checks each attestation against `PolicyVault`. It needs only the trace file and a
+   public RPC.
 
 ---
 
-## Local Setup
+## Limitations
+
+Stated here rather than deferred to a roadmap.
+
+- **`perCallCap` and `callsRemaining` are public plaintext**, and allowlist membership is a public
+  mapping. A vendor can read the per-call ceiling and price immediately beneath it.
+- **On-Base provability of custody is absent.** Base cannot verify Oasis attestations, so the binding
+  between payer address and enclave identity is asserted by the app, not checkable by a third party
+  from Base. Custody is real; its provability from Base is not.
+- **No refund-on-timeout accounting.** An approved-but-never-settled spend debits the budget
+  permanently.
+- **Strictly sequential spends per goal.** `pendingSeq` must be zero, because the public call counter
+  is only decremented at finalization and a second in-flight spend would read a stale count.
+- **No enclave measurement of our own application code** is attested, and Inco exposes no
+  remote-attestation quote to applications.
+- **Testnet only.** No mainnet deployment.
+
+---
+
+## Running it locally
 
 ### Prerequisites
 
 - **Node 22+** and **pnpm 11** — pinned via `packageManager`; `corepack enable` picks it up
-- **Foundry** — `curl -L https://foundry.paradigm.xyz | bash && foundryup`. Verified on forge 1.7.1
+- **Foundry** — verified on forge 1.7.1
 - A Base Sepolia RPC URL
 
-### 1. Install dependencies
+### Install
 
 ```bash
 git clone https://github.com/adarshkr7/LedgerLighthouse.git && cd LedgerLighthouse
+```
+
+```bash
 pnpm install --ignore-scripts
 ```
 
-`--ignore-scripts` is deliberate: the git-hosted Solidity dependencies (`forge-std`, `ds-test`,
-`safe-smart-account`) declare JS build scripts we do not need — we consume only their `.sol` sources
-through Foundry remappings. The whole project has been built and tested this way throughout.
+`--ignore-scripts` is deliberate: the git-hosted Solidity dependencies declare JS build scripts that
+are not needed, since only their `.sol` sources are consumed through Foundry remappings.
 
-### 2. Configure environment
+### Configure
 
 ```bash
 cp .env.example .env
 ```
 
-**Chain and contracts**
+`.env.example` documents every variable. The ones that matter for the security argument:
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `CHAIN_ID` | Pre-filled | `84532` — asserted before every write, never inferred from the wallet |
-| `BASE_SEPOLIA_RPC_URL` | Yes | Base Sepolia JSON-RPC. Comma-separated: more than one endpoint builds a viem fallback transport, so a degraded public RPC fails over instead of failing |
-| `POLICY_VAULT_ADDRESS` | Yes | Deployed `PolicyVault` |
-| `TRACE_ANCHOR_ADDRESS` | Optional | Deployed `TraceAnchor`. Blank disables root anchoring; nothing else changes |
-| `INCO_NETWORK` | Pre-filled | `baseSepoliaTestnet` — Lightning network selector |
-| `USDC_ADDRESS` | Pre-filled | `0x036CbD53842c5426634e7929541eC2318f3dCF7e` |
-| `BASESCAN_API_KEY` | Optional | Contract verification only |
-
-**x402 and ports**
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `X402_VERSION` | Pre-filled | Pinned to `1` — `X-PAYMENT` / `X-PAYMENT-RESPONSE`, network as a slug |
-| `X402_FACILITATOR_URL` | Optional | Leave **blank** for stub mode — payloads validated, no money moved, every response labelled `simulated` |
-| `SIGNER_PORT` · `ORCHESTRATOR_PORT` · `FACILITATOR_PORT` · `MOCK_API_PORT` · `VENDOR_AISA_PORT` | Pre-filled | `8402` · `8404` · `8403` · `4021` · `4022` |
-
-**Keys — which component may hold which is the security design, not a deployment detail**
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `DEPLOYER_PRIVATE_KEY` | Deploy only | Throwaway testnet key; needs ~0.003 Base Sepolia ETH |
-| `ORCHESTRATOR_RELAY_KEY` | Yes | **Gas only** — submits `requestSpend` / `finalizeDecision`, authorizes nothing |
-| `FACILITATOR_PRIVATE_KEY` | Live settlement | **Gas only** — submits `transferWithAuthorization`, holds no user funds |
-| `SIGNER_KEY_STORE_PATH` | Local mode | Where per-goal payer keys live. Blank = in-memory. Ignored when ROFL is set |
-| `SIGNER_ROFL_SOCKET` | ROFL only | `/run/rofl-appd.sock` — set **only** inside a deployed enclave |
-| `SIGNER_ROFL_INDEX_PATH` | ROFL only | `address → key_id` map. Non-secret |
-| `SIGNER_REQUIRE_ROFL` | Optional | `true` refuses to boot the signer without an enclave, so the file-store fallback cannot be enabled by accident. The deployed signer already derives keys in TDX — this guards against a *future* misconfiguration, it is not a precondition for enclave custody. Lives in `compose.yaml`, which is measured, so setting it changes the enclave identity and needs a rebuild |
-
-**LLM agent — held by the orchestrator, which is the untrusted component**
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `AISA_INFERENCE_KEY` | Optional | Gateway key, **inference only**. Blank runs the scripted agent, reproducing injection-compliance offline |
-| `LLM_MODEL` | Optional | Gateway model id. No default — a guessed id fails as a mid-run 404, not a boot error |
-| `AISA_API_BASE_URL` | Pre-filled | `https://api.aisa.one` |
-
-**Live search vendor — a second credential, deliberately with no fallback to the first**
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `AISA_VENDOR_KEY` | Live search | A **different** key from the inference one, ideally spend-capped. Never set this in the orchestrator's environment — CI fails if that component so much as names it |
-| `VENDOR_AISA_PAYEE` | Live search | Where real USDC lands. Your own MetaMask address is the right answer: nothing sweeps this one, and it makes the demo net-zero |
-| `VENDOR_AISA_SPEND_CAP_ATOMIC` | Pre-filled | Hourly ceiling in USDC atomic units, which are also micros USD. `1000000` = $1.00/hour |
-| `VENDOR_AISA_LEDGER_PATH` | Optional | Where the spend ledger persists. Defaults to `.vendor-aisa/ledger.json` — persisted because an in-memory ceiling makes restarting the cheapest way past it |
-| `VENDOR_AISA_PUBLIC_URL` | Optional | Advertised base for the x402 `resource` field; defaults to the bound port |
-
-**Operational**
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `BIND_HOST` | Pre-filled | `127.0.0.1`. The real control, and it costs nothing: a socket not listening on the network cannot be reached from it. `0.0.0.0` only behind a proxy you control |
-| `CORS_ORIGINS` | Optional | Extra browser origins beyond localhost, which is always permitted |
-| `SERVICE_TOKEN` | Optional | When set, every mutating route requires `Authorization: Bearer …`. A shield against untargeted scanning, not an authorisation model — a token shipped to a browser is not a secret |
-| `TRUST_PROXY` | Optional | Trust `x-forwarded-for` for rate-limit identity. Only behind a proxy that sets it |
-| `TRACE_STORE_PATH` | Pre-filled | `.traces`. Completed traces survive restarts; the directory is gitignored |
-| `LOG_FORMAT` · `LOG_LEVEL` | Pre-filled | `pretty \| json` · `debug \| info \| warn \| error` |
-| `VITE_RPC_URL` | Pre-filled | What the **console** uses; the services read `BASE_SEPOLIA_RPC_URL`. Two variables because only `VITE_`-prefixed ones reach the browser bundle — which is also what keeps the private keys above out of it |
+| Variable | Role |
+|---|---|
+| `ORCHESTRATOR_RELAY_KEY` | **Gas only.** Submits `requestSpend` / `finalizeDecision`, authorizes nothing |
+| `FACILITATOR_PRIVATE_KEY` | **Gas only.** Submits `transferWithAuthorization`, holds no user funds |
+| `SIGNER_ROFL_SOCKET` | `/run/rofl-appd.sock`. Set **only** inside a deployed enclave |
+| `SIGNER_REQUIRE_ROFL` | `true` refuses to boot the signer without an enclave, so the file-store fallback cannot be enabled by accident |
+| `SIGNER_SERVICE_TOKEN` | What the orchestrator *presents* to the signer. Distinct from `SERVICE_TOKEN`, which is what a service *demands* of its own callers |
+| `AISA_VENDOR_KEY` | Deliberately a different credential from the inference key. CI fails if the orchestrator so much as names it |
 
 Then generate and fund the two gas-only roles:
 
@@ -719,403 +215,61 @@ pnpm --filter @ntux402/e2e run keygen
 pnpm --filter @ntux402/e2e run fund
 ```
 
-**Two faucet trips, and they are separate:**
+Two separate faucets: Base Sepolia ETH for gas, and test USDC from
+<https://faucet.circle.com> for the payments themselves. Without test USDC everything still runs and
+the resource server falls back to stub settlement — the confidential policy, the decision and the
+bounce are real either way.
 
-- Base Sepolia ETH (gas) — <https://www.alchemy.com/faucets/base-sepolia>
-- Test USDC (the actual payments) — <https://faucet.circle.com>, select Base Sepolia
-
-Without test USDC everything still runs; the resource server falls back to **stub settlement**. The
-confidential policy, the decision and the bounce are real either way.
-
-### 3. Verify
-
-```bash
-pnpm verify
-```
-
-```bash
-pnpm verify --skip-contracts
-```
-
-The first mirrors CI exactly; the second skips Foundry if it is not installed. Enable the pre-push
-hook once per clone with `git config core.hooksPath .githooks`.
-
----
-
-## Running
+### Run
 
 ```bash
 pnpm dev
 ```
 
 Starts the signer (`8402`), mock resource server (`4021`), orchestrator (`8404`) and web console
-(`5173`) — plus the facilitator (`8403`) only if `X402_FACILITATOR_URL` is set, and the live search
-vendor (`4022`) only if `AISA_VENDOR_KEY` and `VENDOR_AISA_PAYEE` are. Ctrl-C stops all of them.
-`packages/shared` is built first, because every service resolves it through `dist/`.
+(`5173`). Open <http://127.0.0.1:5173>, connect MetaMask on Base Sepolia, and walk the five steps —
+connect, mint payer, open goal, fund, run.
 
-Open <http://127.0.0.1:5173>, connect MetaMask on Base Sepolia, and walk the five steps —
-**connect · mint payer · open goal · fund · run**. A sixth action, available once the goal is
-closed, sweeps the payer's remaining USDC back to your wallet.
-
-### Available Commands
-
-| Command | Description |
-|---------|-------------|
-| `pnpm dev` | Start every service with hot reload |
-| `pnpm verify` | Full CI-equivalent gate — typecheck, tests, boundary, contracts |
-| `pnpm test` | Vitest + Foundry suites across the workspace |
-| `pnpm typecheck` | `tsc --noEmit` in every package |
-| `pnpm check:boundary` | Assert the orchestrator reaches neither the signer nor the AIsa vendor |
-| `pnpm sync:abi` | Regenerate TS ABIs from Foundry artifacts |
-| `pnpm forge:build` / `pnpm forge:test` | Contracts only |
-
-### Operator Scripts
-
-| Command | Description |
-|---------|-------------|
-| `pnpm --filter @ntux402/e2e run keygen` | Generate the relay and facilitator gas keys |
-| `pnpm --filter @ntux402/e2e run fund` | Fund the gas-only roles |
-| `pnpm --filter @ntux402/e2e run balances` | Report ETH and USDC across every role |
-| `pnpm --filter @ntux402/e2e run preflight` | Environment and connectivity checks before a run |
-| `pnpm --filter @ntux402/e2e run showtime` | Demo-day readiness in one command — six services, both RPC endpoints exercised with `eth_call`, balances, both API keys, and the settings whose absence turns a live run into a stub without saying so |
-| `pnpm --filter @ntux402/e2e run demo` | Headless end-to-end run — the fastest confirmation everything works |
-| `pnpm --filter @ntux402/e2e run tee-check` | Confidential path in isolation — no USDC, no signer, no vendor |
-| `pnpm --filter @ntux402/e2e run state` | Dump on-chain vault state for a goal |
-| `pnpm --filter @ntux402/e2e run whois` | Resolve which address is playing which role |
-
----
-
-## Oasis ROFL Integration
-
-Confidential computation answers *what the policy decided*. It does not answer *who holds the key
-that acts on the decision*. Those are different problems, solved by different enclaves — and nothing
-bridges between them.
-
-### Key Architecture
-
-```
-┌──────────────────────────────────────────────────────────┐
-│  USER WALLET  (MetaMask, user-owned, Base Sepolia)       │
-│  • Signs openGoal, the USDC funding transfer, closure    │
-│  • Encrypts the budget to the Inco enclave over HPKE     │
-│  • The only key that can move the user's own money       │
-├──────────────────────────────────────────────────────────┤
-│  PAYER KEY  (per-goal, ephemeral, ROFL-derived)          │
-│  • Derived in-enclave via rofl-appd over a local socket  │
-│  • Signs EIP-3009 transferWithAuthorization only         │
-│  • Bound to a finalized on-chain approval — cannot be    │
-│    asked to sign terms the chain did not already freeze  │
-├──────────────────────────────────────────────────────────┤
-│  RELAY KEY  (orchestrator, server-held, gas only)        │
-│  • Signs requestSpend and finalizeDecision               │
-│  • Authorizes no payment whatsoever                      │
-├──────────────────────────────────────────────────────────┤
-│  FACILITATOR KEY  (infrastructure, outside the boundary) │
-│  • Submits the settlement transaction — gas only         │
-│  • In production someone else runs this entirely         │
-└──────────────────────────────────────────────────────────┘
-```
-
-### How Custody Works
-
-`RoflKeyStore` derives each ephemeral payer key through `rofl-appd` over a Unix socket that exists
-only inside the container. Oasis answers only for properly attested app instances, so no operator —
-including whoever runs the machine — can extract the key.
-
-| | Local key store | ROFL key store |
-|---|---|---|
-| Key origin | `generatePrivateKey()` | Derived in-enclave, attested |
-| On disk | the private key | `address → key_id` only |
-| Extractable by the operator | yes | **no** |
-| Survives restart | yes | yes — re-derived, nothing secret persisted |
-
-### Per-Goal Flow
-
-```
-1. User opens a goal from MetaMask
-   └─ budget encrypted client-side, bound to msg.sender  →  euint256 handle
-
-2. Signer mints an ephemeral payer
-   └─ POST /payer  →  key derived inside the enclave, only the address returned
-
-3. User funds the payer address with USDC and registers it in the goal
-   └─ payer is immutable on the Goal record — a mutable payer field would let
-      whoever can write it redirect every future signature
-
-4. Orchestrator runs the payment loop with the relay key
-   └─ requestSpend → attestedReveal → finalizeDecision
-
-5. Signer is asked for an authorization with (goalId, seq) and nothing else
-   └─ reads the finalized record from chain, signs EIP-3009, returns the signature
-```
-
-### Deployment
+### Verify
 
 ```bash
-oasis rofl create --network testnet
+pnpm verify
 ```
+
+Mirrors CI: typecheck, tests, import-boundary check, contracts. Add `--skip-contracts` if Foundry is
+not installed. Full suite is **368 tests** — 345 Vitest, 23 Foundry.
+
+### Deploying the enclave
 
 ```bash
-oasis rofl build
+oasis rofl create --network testnet && oasis rofl build && oasis rofl deploy
 ```
 
-```bash
-oasis rofl deploy
-```
-
-Needs the `oasis` CLI, a publicly published `linux/amd64` image pinned by digest, and ~150 TEST ROSE
-from the faucet. Until you run these, the signer uses the local file store — which is exactly the
-trust assumption ROFL removes.
-
-**Already done for this repo** (2026-08-23): the app is deployed and a replica is attested, so
-these are here to reproduce it rather than to reach it. `oasis rofl build` will not run on native
-Windows and WSL needs `GODEBUG=netdns=cgo`; pick the public `playground_short` offer, not the
-0.0-TEST internal one, which is whitelist-only and silently never schedules. All four traps, with
-evidence, are in [`docs/ROFL_FAST_DEPLOY.md`](docs/ROFL_FAST_DEPLOY.md).
-
-### Security Properties
-
-- The payer key is **never written to disk** under ROFL, and never leaves the enclave in either direction.
-- The signer holds no policy judgement. One question — *"is `(goalId, seq)` finalized-approved on chain?"* — and if yes it signs exactly what the chain froze.
-- The orchestrator cannot reach the key: it lives in an enclave the orchestrator cannot address, and the import boundary is enforced in CI.
-- **The honest limit:** Base cannot verify Oasis attestations, so the binding between payer address and enclave identity is asserted by the app rather than checkable by a third party from Base. Custody is real; on-Base *provability* of custody is not. Publishing the binding to Sapphire would close it.
+Needs the `oasis` CLI, a publicly published `linux/amd64` image pinned by digest, and TEST ROSE from
+the faucet. Already done for this repository, so these reproduce the deployment rather than reach it.
+Two traps worth knowing: `oasis rofl build` will not run on native Windows, and under WSL it needs
+`GODEBUG=netdns=cgo`.
 
 ---
 
-## Policy & Risk Controls
+## Repository layout
 
-| Control | Value | Enforcement |
-|---------|-------|-------------|
-| Encrypted budget | 0.20 USDC (demo) | Ciphertext — refusal comes from Inco, not a `require()` |
-| Per-call cap | 6.00 USDC | Public plaintext; resolves into the decision, does not revert |
-| Calls remaining | Public counter | Decremented only on approval, at finalization |
-| Payee allowlist | Set at goal open | Structural — a non-allowlisted payee reverts |
-| Authorization window | 1 hour | Clamped to goal expiry so it can never outlive its goal |
-| Concurrency | Strictly sequential | `pendingSeq` must be zero — a second in-flight spend would read a stale counter |
-| Loss ceiling | `perCallCap × callsRemaining` | Payable only to allowlisted addresses |
-| Vendor spend ceiling | $1.00/hour (default) | Persisted to disk in `vendor-aisa`, so restarting is not a way past it |
-| Query length | 256 chars, no control characters | Rejected, never repaired — the query lands in the x402 `resource` field the vault hashes into `termsHash` |
+| Path | Contents |
+|---|---|
+| `contracts/` | `PolicyVault`, `TraceAnchor`, Foundry tests, deployment broadcasts |
+| `services/orchestrator/` | The untrusted component: agent loop, payment loop, trace builder |
+| `services/signer/` | Authorization Signer. Runs in the ROFL enclave; holds the payer keys |
+| `services/facilitator/` | Self-hosted x402 v1 facilitator. Outside the trust boundary |
+| `packages/shared/` | Types, the x402 client, the trace verifier, the shared HTTP guard |
+| `apps/web/` | Console — MetaMask goal opening, funding, run visualisation |
+| `tools/e2e/` | Keygen, funding, and the end-to-end demo runner |
+| `docs/` | Architecture, and recorded runs |
 
-**Deliberate demo calibration.** The per-call cap is set **above** the malicious ask, and every vendor
-is allowlisted, so a bounce comes from the encrypted budget rather than a public precondition.
-Otherwise it would prove nothing.
-
-### Service Hardening
-
-The vault bounds the *loss* and always did. What these bound is griefing — and "the loss is bounded"
-is a poor answer to "why did my demo goal run out of calls mid-pitch". Every HTTP service shares one
-guard, [`packages/shared/src/node/guard.ts`](packages/shared/src/node/guard.ts), in descending order
-of how much each control actually does:
-
-| Control | Default | What it does |
-|---------|---------|--------------|
-| **Bind address** | `127.0.0.1` | The real control, and it costs nothing: a socket not listening on the network cannot be reached from it. A public bind is an explicit `BIND_HOST=0.0.0.0` — a decision someone made, not a default nobody noticed |
-| **Origin allowlist** | localhost | Reflected automatically so the dev UI works untouched; anything else must be named in `CORS_ORIGINS`. Parsed with `URL` rather than matched with a prefix, because `http://localhost.evil.com` passes a naive `startsWith` |
-| **Bearer token** | off | `SERVICE_TOKEN`, enforced only when set. Opt-in on purpose: a token shipped to a browser is not a secret, and pretending otherwise is worse than not having one |
-| **Rate limit** | per-IP, in-memory | Per minute: 20 runs/sweeps, 30 payer mints, 120 authorizations, 60 settlements. It stops a loop, not a botnet. Unbounded payer *minting* was the genuinely wrong one — every call writes a new key to the store, so a loop grew the file without limit |
-
-None of this changes what an attacker who gets past it can do. The signer still authorizes only
-`(goalId, seq)`, still reads the chain and never the caller, and still cannot be argued into signing
-anything else.
-
-### Measured Behaviour
-
-Recorded on Base Sepolia against the deployed vault.
-
-| Operation | Cost |
-|-----------|------|
-| Client-side encryption | 28–52 ms |
-| `openGoal` | ~336,600 gas + 0.000001 ETH Inco fee |
-| `requestSpend` | ~296,600 gas |
-| `finalizeDecision` | ~101,400–106,800 gas |
-| `closeGoal` | ~30,000 gas |
-| `attestedReveal` after commit | **7–12 s**, 1–2 poll attempts, 2 signatures |
-
-A rejected decision resolves consistently faster than an approved one — worth knowing for demo
-pacing, since the bounce is the moment that matters.
+The import boundary is enforced in CI: `pnpm check:boundary` asserts that the orchestrator can reach
+neither the signer nor the vendor credential.
 
 ---
 
-## Demo Catalog
+## License
 
-Six resources in two groups. The **mock four** make the argument; the **live two** show it holding
-against an API we do not control.
-
-### The mock four — fabricated data, chosen prices
-
-Two settle, two are refused, and the two refusals fail for **different reasons**, which is the point
-of having four rather than two.
-
-| Resource | Price | Tactic | Outcome | What it shows |
-|----------|-------|--------|---------|---------------|
-| Market data snapshot | 0.01 | none | settles | The whole nine-stage path, cheaply |
-| Bulk history archive | 0.12 | none | settles | 12× dearer, still inside the budget — a visible cut from the payer |
-| Compliance audit bundle | 0.35 | overcharge | **refused** | No injection, ordinary copy, far under the public 6.00 cap. **Only the encrypted budget can reject this** |
-| Premium feed | 5.00 | injection | **refused** | ~500× plus a prompt injection. The agent complies; it changes nothing |
-
-The two honest calls sum to 0.13, inside the 0.20 encrypted budget, so you can run both and watch
-USDC leave the payer twice before anything bounces.
-
-`compliance-audit` is the one to demo to a sceptic. Its payee is allowlisted, its description is
-unremarkable prose, and its price clears every public precondition. Nothing public can refuse it — so
-when it bounces, the bounce came from the confidential policy and nowhere else.
-
-### The live two — real search, real money, measured prices
-
-| Resource | Price | Upstream cost | Outcome | What it shows |
-|----------|-------|---------------|---------|---------------|
-| Web search | 0.01 | $0.008 | settles | Live results bought from a paid API, not a fixture. ~3.6 s |
-| Deep web search | 0.02 | $0.016 | settles | Advanced depth, more sources — twice the price and about three times the wait (~9.8 s), with the payment path holding while a real API takes its time |
-
-These *add* a case rather than replacing one: a real search that happens to be affordable proves
-nothing about a confidential budget. What they show is the budget behaving as a **running total** —
-both are cheap enough to run repeatedly inside 0.20, so a viewer can spend real money on real data
-several times over and watch an encrypted balance they cannot read draw down until it refuses. None
-of the mock four can demonstrate that.
-
-Prices are measured, not published: AIsa lists none on the endpoint's reference page, so
-[`scripts/aisa-measure-tiers.mjs`](scripts/aisa-measure-tiers.mjs) determined them from
-representative requests and the two undocumented cost headers the API returns. Cost tracked
-`search_depth` and nothing else — `max_results` varied from 5 to 10 moved the price not at all,
-which is why the tier is named for depth alone. The ~25% margin lands both on numbers a viewer can
-hold in their head. `VERIFIED_ON` in
-[`aisa-tiers.ts`](packages/shared/src/demo/aisa-tiers.ts) carries the date the figures were last
-confirmed; re-run the script to refresh it.
-
-Definitions live in [`packages/shared/src/demo/catalog.ts`](packages/shared/src/demo/catalog.ts),
-imported by both vendors, the orchestrator and the console alike, so prices cannot drift between
-what is charged and what is displayed.
-
-### The Attack, Step by Step
-
-| | Malicious vendor's plan | What actually happens |
-|---|---|---|
-| 1 | Return `402` with an inflated price and an injection in `description` | The parser takes `maxAmountRequired`, payee and asset from the **schema**. The prose reaches only the model |
-| 2 | Convince the model to approve | Sometimes. The console shows the agent complying when it does — but on `qwen3.7-flash` it has also declined outright, and which way a given model goes is not something this system controls. Steps 3–5 do not depend on the answer |
-| 3 | Agent authorizes the spend | It cannot. The agent holds the **relay** key, which pays gas and authorizes nothing |
-| 4 | Relay commits `requestSpend` | The debit commits **before** the decision is knowable |
-| 5 | Inco evaluates against the encrypted budget | `false`. The overspend is caught by ciphertext, not by a `require()` |
-| 6 | Ask the signer to sign anyway | The signer reads the **finalized on-chain record**, never the caller. No signature exists to give |
-
----
-
-## Verifying a Trace
-
-Every run produces a hash-chained trace with a Merkle root. The verifier needs the file and a public
-RPC — nothing else, by design:
-
-```bash
-curl.exe -s http://127.0.0.1:8404/traces/6 -o trace.json
-```
-
-```bash
-pnpm --filter @ntux402/trace run verify -- trace.json
-```
-
-`curl.exe` rather than `curl`, because PowerShell aliases the bare name to
-`Invoke-WebRequest`, which does not accept `-s` or `-o`. On macOS and Linux the two are the same
-binary. The verifier resolves its path against the directory you run it from, so an absolute path
-works from anywhere.
-
-It re-derives every step hash, recomputes the root, and cross-checks each attestation against
-`PolicyVault`: the attested handle must equal **the handle the vault stored**, and the recorded
-decision must equal the on-chain one. Signature validity alone is insufficient — a genuine
-attestation for a different handle is otherwise substitutable. Where a step is vendor-attested
-rather than chain-attested it is marked as such, and the verifier rejects one that claims an
-on-chain attestation it cannot have.
-
-Traces are written to `TRACE_STORE_PATH` before they are served, so `/traces/{goalId}` still answers
-after a restart. The trace is the artifact that makes a run checkable by someone who was not in the
-room; losing it to a process exit loses the evidence.
-
-### Recorded Runs
-
-[`docs/runs/`](docs/runs/) keeps full logs of real runs against Base Sepolia, because a transaction
-hash is checkable by someone who does not trust us and a live walkthrough is not.
-[`demo-2026-08-22-passing.log`](docs/runs/demo-2026-08-22-passing.log) is the one to read: two runs
-on one goal, one call apart, where the honest call
-[settled](https://sepolia.basescan.org/tx/0x0bf0a2ffae8b5ffdaba66b5dd4768b6c05d792f2830d35e3635f12d07e117b8d)
-and the overcharge was
-[rejected on chain](https://sepolia.basescan.org/tx/0x407f36fdabaa6f8d5763dc1310ab672d3ed24b3ce2300adad37e14d35b3e704c)
-— **after the model had read it and agreed to it**. `callsRemaining` went 5 → 4: only the approved
-call consumed one.
-
-The retry noise partway through is left in deliberately. All three of Inco's `eth_getProof`
-upstreams were failing intermittently that evening and the run completed anyway, which is worth
-more than a clean log.
-
-### The Defensible Claim
-
-> Every payment in this trace corresponds to a confidential policy evaluation whose result was
-> attested and verified on chain against the expected handle.
-
-Not *"the agent behaved correctly."* Narrower, accurate, and still exactly the claim that matters for
-a spending agent. Explicitly **not** attested: the AI's reasoning, the orchestrator's execution, or
-any enclave measurement of our own code. Inco exposes no remote-attestation quote to applications.
-
----
-
-## What Is Next — Stage 2 Upgrades
-
-Nothing here is a feature wish. Every item names a limit this README already states out loud, and
-says what closes it.
-
-### Closing the disclosed gaps
-
-- **Deploy the ROFL enclave and publish the payer binding on Sapphire.** Closes: custody is real but not provable from Base. `RoflKeyStore` and the manifest already exist; this adds three `oasis` CLI commands plus a Sapphire registry asserting that a given payer address was derived inside an attested app, which the trace verifier then checks.
-- **Encrypt the whole policy, not just the budget.** Closes: `perCallCap` and `callsRemaining` are public plaintext and the allowlist is a public mapping, so a vendor can read the ceiling and price just underneath it. Moves the cap to `euint256`, the counter to `euint32`, and allowlist membership to an encrypted predicate.
-- **Publish the vendor's own spend ledger as verifiable state.** Closes: `vendor-aisa`'s hourly ceiling is a local JSON file, so it bounds *our* exposure and proves nothing to a buyer. Moving the counter on chain would make the vendor's own restraint checkable by the people paying it.
-
-### From demo to system
-
-- **Concurrent spends and multi-goal support.** Closes: `pendingSeq` forces strictly sequential spends per goal, while real agents fan out across vendors. Depends on the encrypted call counter above, which must land first before the counter can safely decrement out of order.
-- **Refund-on-timeout accounting.** Closes: an approved-but-never-settled spend debits the budget permanently. Needs an encrypted credit-back path, since the debit lives in ciphertext.
-- **Delegated sub-budgets for sub-agents.** Adds the capability the primitive was already shaped for: a goal spawns child goals carrying encrypted sub-budgets, letting an orchestrator delegate spending authority it does not itself hold.
-- **Escrow-based x402 scheme, removing the signer entirely.** Closes: the last trusted-code assumption. The `exact` scheme requires an EOA signature, which is the only reason a signer exists. An escrow variant makes the vault itself the payer, and the Authorization Signer stops being a component anyone has to trust.
-
-### Direction
-
-- **Live x402 vendors on the public internet** rather than a local mock, proving the path against endpoints we do not control.
-- **Richer encrypted predicates** on the same engine — velocity limits, per-category caps, time-of-day windows.
-- **Mainnet with a production facilitator**, once the enclave binding and the encrypted policy have been externally reviewed.
-
-### Deliberately not planned
-
-- **Attesting the agent's reasoning.** Inco exposes no remote-attestation quote to applications, so "the AI provably behaved correctly" is not a claim this architecture can make, in Stage 2 or ever. The claim stays what it is: every payment corresponds to a confidential policy evaluation whose result was attested and verified on chain.
-
----
-
-## Assumptions Carried
-
-1. **Signer code integrity.** The key is enclave-held; the refusal logic is auditable, not attested.
-2. **TEE hardware trust.** Budget *confidentiality* rests on enclave vendor guarantees. Budget *integrity* does not — handle lineage and approval records are ordinary Base state.
-3. **Off-chain ciphertext availability.** Confidential values live in Inco's storage.
-4. **Attester honesty and liveness.** A stall halts spending — the safe direction, but the debit has already committed.
-5. **Amount visibility.** Per-payment amounts are public by design. An observer learns what the agent paid, not what it could pay.
-
----
-
-## References
-
-- [Inco Lightning Documentation](https://docs.inco.org)
-- [Oasis ROFL — Runtime OFf-chain Logic](https://docs.oasis.io/build/rofl/)
-- [x402 Protocol Specification](https://github.com/coinbase/x402)
-- [EIP-3009 — Transfer With Authorization](https://eips.ethereum.org/EIPS/eip-3009)
-- [Base Sepolia Documentation](https://docs.base.org/chain/network-information)
-- [Tavily Search API](https://docs.tavily.com) — the upstream behind AIsa's search endpoint
-
-**Internal**
-
-| Document | What it covers |
-|----------|----------------|
-| [`docs/PRIMER.md`](docs/PRIMER.md) | The shortest path to understanding what this is and why |
-| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | The trust model, the planes, and why the boundaries fall where they do |
-| [`docs/IMPLEMENTATION.md`](docs/IMPLEMENTATION.md) | Component by component, with the decisions that shaped each |
-| [`docs/PROJECT_TREE.md`](docs/PROJECT_TREE.md) | Every tracked file, annotated |
-| [`docs/ROFL_RUNBOOK.md`](docs/ROFL_RUNBOOK.md) | Deploying the signer to an Oasis TDX enclave, step by step |
-| [`docs/AISA_INTEGRATION.md`](docs/AISA_INTEGRATION.md) | The two-credential split, and why the inference key may never reach a data API |
-| [`docs/AISA_LIVE_SEARCH.md`](docs/AISA_LIVE_SEARCH.md) | The x402 shim over paid search: quoting before cost is known, and absorbing the difference |
-| [`docs/AISA_RUNBOOK.md`](docs/AISA_RUNBOOK.md) | The executable companion to the above — the commands, in order |
-| [`docs/LLM_THINKING.md`](docs/LLM_THINKING.md) | Reintegrating the model's own summarized reasoning into the console, and what was lost when the vendor SDK went |
-| [`docs/FINALS_PLAN.md`](docs/FINALS_PLAN.md) | What to close before the finals, and every loophole a judge could find, with the fix for each |
-| [`docs/runs/`](docs/runs/) | Recorded end-to-end runs, kept as evidence |
+See [`LICENSE`](LICENSE).

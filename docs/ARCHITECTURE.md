@@ -1,78 +1,144 @@
 # LedgerLighthouse — Architecture
 
-**What this describes:** the confidential agent-payment system as built and running on Base Sepolia.
-**Companions:** [`IMPLEMENTATION.md`](IMPLEMENTATION.md) for where things live and how they are
-tested; [`PRIMER.md`](PRIMER.md) for the underlying technologies from first principles.
+Confidential, policy-controlled payments for autonomous agents.
 
-**Provenance markers.** Every guarantee below is attributed to whoever actually provides it:
-**[INCO]** confidentiality and attested decisions · **[OASIS]** enclave key custody ·
-**[BUILD]** our own code · **[ASSUMPTION]** trusted without cryptographic proof.
+Every claim below is stated against deployed state. Where something cannot be checked from a public
+chain, it is marked and the reason is given.
 
----
-
-## 1. The problem
-
-An LLM agent that can pay for things must read attacker-controlled text — HTTP bodies, error
-messages, vendor descriptions — and must also decide when to spend. Putting both capabilities in one
-component makes prompt injection a direct path to draining a budget.
-
-A text filter is the usual answer, and it is the wrong shape of control: probabilistic, guarding a
-deterministic and irreversible asset. A 99%-accurate filter fails one call in a hundred, and agents
-make thousands.
-
-This design separates the two capabilities instead. **The component that reads the attacker's text
-has no spending authority. The component that grants spending authority never reads the attacker's
-text.**
-
-> **The invariant:** compromise of the AI orchestrator must not confer arbitrary spending authority.
+**Provenance markers.** Each guarantee is attributed to whoever provides it:
+**[CHAIN]** checkable by anyone with a public RPC · **[INCO]** trusted to Inco Lightning ·
+**[OASIS]** trusted to Oasis ROFL · **[BUILD]** our own code · **[ASSUMPTION]** trusted without proof.
 
 ---
 
-## 2. Trust model
+## 1. The ledger of record
+
+Base Sepolia, chain id `84532`. Both contracts are source-verified.
+
+| Contract | Address | Deployment tx |
+|---|---|---|
+| `PolicyVault` | [`0x0C759D06a1c14F43852D7b078Db2f8C342F15921`](https://sepolia.basescan.org/address/0x0C759D06a1c14F43852D7b078Db2f8C342F15921) | [`0xcbf4da83…c013ee`](https://sepolia.basescan.org/tx/0xcbf4da835639699cf7ae7d472fed635a145c6df97381300941ddc9ba7fc013ee) |
+| `TraceAnchor` | [`0x065d5E16160159cAB7D841818aBc92b4E85D5818`](https://sepolia.basescan.org/address/0x065d5E16160159cAB7D841818aBc92b4E85D5818) | [`0x068c2d88…2f9900`](https://sepolia.basescan.org/tx/0x068c2d8883bfe2a294164da805274905aa33c85f2a68a27ab1c06892972f9900) |
+
+Settlement asset: USDC at [`0x036CbD53842c5426634e7929541eC2318f3dCF7e`](https://sepolia.basescan.org/address/0x036CbD53842c5426634e7929541eC2318f3dCF7e).
+
+Sapphire testnet: ROFL app `rofl1qr0fv0qs2u8vmmah0ucmwegcj2cdz7kj4qzjduhp`, both enclave measurements
+whitelisted in its on-chain policy, one replica attested and running. [OASIS]
+
+Live transactions produced by the deployed system:
+
+| What | Transaction |
+|---|---|
+| `finalizeDecision` — APPROVED | [`0xd38c86d5…284d95`](https://sepolia.basescan.org/tx/0xd38c86d5e327c80294f444598a00e1c3cd2ea90659194d82b74a006bbd284d95) |
+| `finalizeDecision` — REJECTED | [`0x407f36fd…3e704c`](https://sepolia.basescan.org/tx/0x407f36fdabaa6f8d5763dc1310ab672d3ed24b3ce2300adad37e14d35b3e704c) |
+| `transferWithAuthorization` — settled | [`0x0bf0a2ff…117b8d`](https://sepolia.basescan.org/tx/0x0bf0a2ffae8b5ffdaba66b5dd4768b6c05d792f2830d35e3635f12d07e117b8d) |
+
+The rejection is on chain deliberately. An over-cap request lands and bounces visibly rather than
+reverting into silence.
+
+---
+
+## 2. The invariant
+
+> Compromise of the AI orchestrator must not confer arbitrary spending authority.
+
+An agent that pays for things must read attacker-controlled text — HTTP bodies, error messages,
+vendor descriptions — and must also decide when to spend. Putting both capabilities in one component
+makes prompt injection a direct path to a drained budget.
+
+A text filter is the usual answer and it is the wrong shape of control: probabilistic, guarding a
+deterministic and irreversible asset. This design separates the capabilities instead.
+
+**The component that reads the attacker's text has no spending authority. The component that grants
+spending authority never reads the attacker's text.**
+
+---
+
+## 3. Trust model
 
 | Component | Trusted for | Explicitly not trusted for |
 |---|---|---|
 | **AI Orchestrator** [BUILD] | Deciding *what* to request, sequencing, retries | Approving spend · holding a payer key · evaluating or modifying policy · reporting terms truthfully · instructing the signer |
 | **Inco Lightning** [INCO] | Confidentiality of encrypted values · correct encrypted arithmetic and comparison · access control before decryption · unforgeable attestations over `(handle, value)` | Key custody · signing · running our logic · attesting our execution · liveness |
 | **Oasis ROFL** [OASIS] | Deriving and holding the payer key inside an attested enclave; refusing to release it outside one | Any policy judgement · anything on Base |
-| **PolicyVault** [BUILD] | Encrypted policy state, check-and-debit, `seq`, `termsHash`, approval records, attestation verification | Confidentiality of its own — that comes from Inco handles |
+| **`PolicyVault`** [BUILD] | Encrypted policy state, check-and-debit, `seq`, `termsHash`, approval records, attestation verification | Confidentiality of its own — that comes from Inco handles |
 | **Authorization Signer** [BUILD] | Signing EIP-3009 only from a finalized on-chain approval record | Any policy judgement of its own |
 | **Resource server** | Nothing | It *is* the source of attacker-controlled input |
 | **x402 facilitator** | Relaying a signed authorization | Altering terms — the signature covers them |
 
-### 2.1 What Inco is trusted for, precisely
+### 3.1 What Inco is trusted for, precisely
 
 That a handle produced by encrypted operations decrypts to the correct value; that only addresses
 granted access can obtain that plaintext; and that an attestation over a `(handle, value)` pair is
 unforgeable and verifiable on chain. **Nothing about our orchestrator, our signer, or our
 application's correctness.**
 
-### 2.2 Why the invariant holds
+Inco exposes no remote-attestation quote to applications, so its confidentiality is a vendor
+assumption rather than a chain-checkable one. [ASSUMPTION]
+
+### 3.2 Why the invariant holds
 
 The orchestrator has exactly one power: calling `requestSpend` with public terms. It cannot
 
-- **read the budget** — never granted access to that handle;
-- **alter the budget** — only the vault's own logic writes it;
-- **forge an approval** — the attestation is handle-bound and verified on chain;
-- **obtain a signature** — the signer reads the chain, never the caller;
+- **read the budget** — never granted access to that handle; [INCO]
+- **alter the budget** — only the vault's own logic writes it; [CHAIN]
+- **forge an approval** — the attestation is handle-bound and verified on chain; [CHAIN]
+- **obtain a signature** — the signer reads the chain, never the caller; [BUILD]
 - **reach the payer key** — it lives in an enclave the orchestrator cannot address. [OASIS]
 
-### 2.3 The residual risk, stated honestly
+### 3.3 The residual risk
 
 **Understating the amount is not an attack.** If the orchestrator submits less than the 402 demands,
 the signer signs that smaller amount, the facilitator settles it, and the resource server rejects the
-payment as insufficient. The agent wastes a little money; policy is intact.
+payment as insufficient. Money is wasted; policy is intact.
 
 **Overstating it is bounded, not eliminated.** A compromised orchestrator can submit an amount larger
 than the 402 demanded — up to `perCallCap`, to an address already on the allowlist. Nothing in the
 confidential check compares the submitted amount against the 402 body, because the vault never sees
-the 402. The bound is the conjunction of `perCallCap`, the allowlist and `callsRemaining`: the loss
-ceiling is `perCallCap × callsRemaining`, paid only to an allowlisted payee.
+the 402. The bound is the conjunction of `perCallCap`, the allowlist and `callsRemaining`:
 
-Closing that gap entirely would require the vault to parse the 402 itself — putting attacker-controlled
-text back inside the trusted component, which is the exact thing this design exists to avoid.
+```text
+loss ceiling = perCallCap × callsRemaining, paid only to an allowlisted payee
+```
 
-### 2.4 Boundaries in one line
+Closing that gap entirely would require the vault to parse the 402 itself — putting
+attacker-controlled text back inside the trusted component, which is the exact thing this design
+exists to avoid.
+
+**This ceiling is a design property, not a theorem.** It has not been formally modelled and no proof
+is claimed for it.
+
+### 3.4 Two TEEs, two different problems
+
+Confidential computation answers *what the policy decided*. It does not answer *who holds the key
+that acts on the decision*. Conflating them is how designs end up with a confidential policy guarded
+by a private key in a JSON file.
+
+| | Inco Lightning | Oasis ROFL |
+|---|---|---|
+| Answers | What did the policy decide? | Who holds the key? |
+| Runs on | Base Sepolia | Sapphire testnet |
+| Mechanism | Enclave compute over encrypted handles; attestations verified on chain | Enclave-derived `secp256k1` key, released only to attested instances |
+| Failure if absent | The budget is public and the agent can read it | The payer key sits on disk and an operator can take it |
+
+**They never communicate, and nothing bridges between them.** Inco rules on a spend; the enclave on
+Oasis signs an EIP-3009 authorization for a spend Base has *already* approved. The money never leaves
+Base. A bridge here would be a message relay inside the trust boundary — precisely what the invariant
+forbids.
+
+**The limit worth stating.** Base cannot verify Oasis attestations, so the binding between payer
+address and enclave identity is asserted by the app rather than checkable by a third party from Base.
+Custody is real; on-Base *provability* of custody is not.
+
+### 3.5 What is not attested
+
+The AI's reasoning, the orchestrator's execution, arbitrary application execution, or any enclave
+measurement of our own code. The ROFL attestation covers key custody; it does not cover the
+correctness of the policy logic running on Base.
+
+---
+
+## 4. The spend path
 
 ```text
 AI Orchestrator → attacker-controlled 402 terms → PolicyVault → Inco confidential computation
@@ -82,74 +148,23 @@ AI Orchestrator → attacker-controlled 402 terms → PolicyVault → Inco confi
 Everything left of `PolicyVault` is untrusted. Everything right of `APPROVE / REJECT` acts only on
 verified on-chain records.
 
----
-
-## 3. Two TEEs, two different problems
-
-Confidential computation answers *what the policy decided*. It does not answer *who holds the key
-that acts on the decision*. These are different problems, and conflating them is how designs end up
-with a beautiful confidential policy guarded by a private key in a JSON file.
-
-| | Inco Lightning | Oasis ROFL |
+| Step | Where | Artifact |
 |---|---|---|
-| Answers | What did the policy decide? | Who holds the key? |
-| Runs on | Base Sepolia | Sapphire Testnet |
-| Mechanism | Enclave compute over encrypted handles; attestations verified on chain | Enclave-derived `secp256k1` key, released only to attested instances |
-| Failure if absent | The budget is public and the agent can read it | The payer key sits on disk and an operator can take it |
+| 1. Budget funded | `PolicyVault` | `euint256` handle; ciphertext bound to `msg.sender` |
+| 2. Payer minted | ROFL enclave | Goal's `payer` address written to the vault |
+| 3. `requestSpend` | `PolicyVault` | Public terms, `termsHash`, sequential `seq` |
+| 4. Write-ahead debit | `PolicyVault` | `e.select` on the operand, committed *before* the decision is knowable |
+| 5. Confidential evaluation | Inco | Decision handle; plaintext not yet available to anyone |
+| 6. `finalizeDecision` | `PolicyVault` | `e.verifyDecryption`, bound to the handle the vault itself stored |
+| 7. Signature | ROFL enclave | EIP-3009 authorization, released only against a finalized APPROVED record |
+| 8. Settlement | USDC | `transferWithAuthorization` submitted by the facilitator |
 
-**They never communicate, and nothing bridges between them.** Inco rules on a spend; the enclave in
-Oasis signs an EIP-3009 authorization for a spend Base has *already* approved. The money never leaves
-Base. A bridge in this path would be a message relay inside the trust boundary — precisely what the
-invariant forbids.
-
-**The limit worth stating.** Base cannot verify Oasis attestations, so the binding between payer
-address and enclave identity is asserted by the app rather than checkable by a third party from Base.
-Custody is real; on-Base *provability* of custody is not. Publishing the binding to Sapphire would
-close it.
+**The decision is committed synchronously but learned asynchronously.** That gap is the crux of the
+design, and §6 is about the ordering it forces.
 
 ---
 
-## 4. Full flow
-
-```mermaid
-graph TD
-  Goal["User goal & budget"] --> Open["User opens goal — user's own transaction"]
-  Open --> Orch["AI Orchestrator (untrusted)"]
-  Orch --> Call["x402 API resource call"]
-  Call --> Resp{"Response?"}
-  Resp -- "200 OK" --> Synth["Synthesis + trace"]
-  Resp -- "402" --> Terms["Attacker-controlled payment terms"]
-  Terms --> Vault["PolicyVault.requestSpend — public terms only"]
-
-  subgraph ONCHAIN["Commit transaction — atomic on Base"]
-    Vault --> Pre["Public preconditions: relay, open, expiry, allowlist"]
-    Pre --> Ops["Encrypted compare via the Inco singleton — events emitted"]
-    Ops --> Sel["Unconditional debit via e.select"]
-    Sel --> Rev["e.reveal on the decision handle"]
-    Rev --> Rec["seq++, termsHash and validity window frozen"]
-  end
-
-  Rec -.->|"asynchronous, 7-12s"| CC["Inco Confidential Compute Server (TEE)"]
-  CC --> Att["Attested reveal — signatures over (handle, value)"]
-  Att --> Fin["finalizeDecision — verify signature AND handle match"]
-
-  Fin --> Dec{"APPROVE / REJECT"}
-  Dec -- "REJECT" --> Bounce["Bounced + logged, call counter unchanged"]
-  Dec -- "APPROVE" --> Signer["Authorization Signer — key held in Oasis ROFL"]
-  Signer --> Auth["EIP-3009 authorization built from the on-chain record"]
-  Auth --> Fac["x402 facilitator"]
-  Fac --> Retry["Retry with X-PAYMENT"]
-  Retry --> Data["Premium data"]
-  Data --> Synth
-  Synth --> Trace["Execution trace + attestations"]
-  Trace --> Anchor["Merkle root on Base Sepolia"]
-```
-
-The dotted edge is the crux: **the decision is committed synchronously but learned asynchronously.**
-
----
-
-## 5. Stage 1 — Goal intake
+## 5. Goal intake
 
 The user's unconstrained authority is exercised once, in their own transaction. What remains
 afterwards cannot be used to spend.
@@ -159,9 +174,9 @@ afterwards cannot be used to spend.
 | State | Storage | Rationale |
 |---|---|---|
 | `remainingBudget` | `euint256` [INCO] | The headline secret — reveals strategy and willingness to pay |
-| `perCallCap` | public [BUILD] | Deliberately public: set *above* every demo price, so a bounce cannot be attributed to it |
+| `perCallCap` | public [BUILD] | Bounds per-call size; readable by anyone, see §7 |
 | `callsRemaining` | public [BUILD] | Bounds call count independently of spend size |
-| `payTo` allowlist | public [BUILD] | Not sensitive; avoids `eaddress` comparisons and their fees |
+| `payTo` allowlist | public [BUILD] | Avoids `eaddress` comparisons and their fees |
 | `asset`, `expiry`, `seq` | public [BUILD] | Not sensitive |
 | requested `amount` | public [BUILD] | Deliberate — see below |
 
@@ -172,13 +187,13 @@ signature to exactly what was checked. The confidential thing is the *budget*, n
 ### 5.2 The opening transaction must come from the user
 
 Encrypted inputs are bound to the address that produced them, and the on-chain conversion takes
-`msg.sender`. So the user sends `openGoal` from their own wallet, and **the orchestrator structurally
+`msg.sender`. The user sends `openGoal` from their own wallet, and **the orchestrator structurally
 cannot open a goal.** A ciphertext prepared for any other address yields a handle `openGoal` cannot
 use.
 
 `openGoal` is `payable` because converting a client ciphertext into a handle is the one operation
-here that charges the Inco fee — currently `1e12` wei, 0.000001 ETH. Comparison, select, sub and
-reveal do not, which is why `requestSpend` is not payable.
+here that charges the Inco fee — currently `1e12` wei. Comparison, select, sub and reveal do not,
+which is why `requestSpend` is not payable.
 
 ### 5.3 Ordering: key before goal
 
@@ -189,8 +204,8 @@ address **before** `openGoal` is sent.
 signer derives key → returns address → user sends openGoal including it → user funds it
 ```
 
-Doing it the other way round forces either a second registration transaction or a mutable payer
-field — and a mutable payer field lets whoever can write it redirect every future signature.
+The other order forces either a second registration transaction or a mutable payer field — and a
+mutable payer field lets whoever can write it redirect every future signature.
 
 ### 5.4 Handle lifecycle
 
@@ -204,7 +219,7 @@ field — and a mutable payer field lets whoever can write it redirect every fut
 - Inco has no delete, so goal closure is public state: `closeGoal` flips a flag and no further
   `requestSpend` succeeds.
 
-### 5.5 The funding step is a second, independent bound
+### 5.5 Funding is a second, independent bound
 
 The ephemeral payer holds only what the user sent it. Even if the confidential policy were bypassed
 entirely, the loss ceiling is the funded amount. Fund it slightly **above** the encrypted budget so
@@ -213,38 +228,9 @@ the payment.
 
 ---
 
-## 6. Stage 2 — Resource call and branch
+## 6. Authorization
 
-No confidential computation here. Plain x402 plumbing.
-
-### 6.1 The critical rule
-
-Parsed terms are **values, not instructions.** `payTo`, `maxAmountRequired`, `asset` and `resource`
-are extracted by a schema validator and passed onward as typed calldata. They never re-enter the
-model's context as free text before the policy check runs.
-
-The wire field is **`maxAmountRequired`**, never `amount`. The internal `Terms.amount` is *derived*
-from it, and the two names are kept distinct in code so a parser bug cannot silently substitute one
-for the other.
-
-This is the stage the demo attacks. The injection arrives inside a legitimate-looking field — a
-description — claiming the vendor is pre-approved and the budget check should be skipped. The parser
-takes the numbers from the schema; the prose reaches only the model.
-
-### 6.2 Failure modes
-
-- Lenient parsing → underspecified authorization. The parser rejects a v2-shaped body rather than
-  adapting to it.
-- The 5xx branch is the expensive one: ambiguous failure **after** payment but **before** delivery.
-  This is what makes the frozen authorization tuple load-bearing (§7.4).
-
----
-
-## 7. Stage 3 — Authorization and settlement
-
-### 7.1 Where each condition is enforced, and why they differ
-
-Two kinds of check, handled deliberately differently:
+### 6.1 Where each condition is enforced, and why they differ
 
 **Structural validity** — caller is the relay, goal open, not expired, payee allowlisted, amount
 non-zero, no spend already pending. These `revert`. A malformed request is not a policy decision and
@@ -252,7 +238,7 @@ should never reach the chain as one.
 
 **Policy** — `perCallCap`, `callsRemaining`, `remainingBudget`. These resolve into the *decision*
 rather than reverting, **including the public ones**. An over-cap request must land on chain and
-bounce visibly. If it reverted there would be no record, and the bounce is the product.
+bounce visibly; if it reverted there would be no record.
 
 Only the budget comparison touches Inco. The public predicates are evaluated in plaintext, because
 branching on public data is unrestricted:
@@ -263,11 +249,11 @@ record.decision = _evaluateAndDebit(
 );
 ```
 
-### 7.2 The write-ahead ordering is enforced by the platform
+### 6.2 The write-ahead ordering is enforced by the platform
 
 The requirement is: **consume the sequence number and debit the budget before any authorization is
-released.** Inco makes this the only expressible option, because you cannot write `if (approved) {
-debit }` — branching on an encrypted condition is forbidden.
+released.** Inco makes this the only expressible option, because you cannot write
+`if (approved) { debit }` — branching on an encrypted condition is forbidden.
 
 **Select the operand, not the result:**
 
@@ -289,7 +275,7 @@ already happened, in a transaction whose outcome was determined before the outco
 `seq` increments unconditionally, so a rejected attempt still burns a sequence number and appears in
 the trace.
 
-### 7.3 What is and is not atomic
+### 6.3 What is and is not atomic
 
 **Atomic in the commit transaction:** the new handle identifiers, the access grants, the `seq`
 increment, the `termsHash`, the validity window, the reveal marking. Ordinary EVM state,
@@ -298,16 +284,16 @@ all-or-nothing.
 **Not in that transaction:** the confidential computation itself. Encrypted operations are calls into
 the Inco singleton, which emits events; the compute server processes them off chain afterwards.
 
-Use precise language: *commit transaction* (synchronous) and *decision retrieval* (asynchronous).
-Never "single atomic transaction."
+The precise language is *commit transaction* (synchronous) and *decision retrieval* (asynchronous),
+never "single atomic transaction."
 
 The public call counter cannot be decremented at request time, because its decrement depends on a
 decision that was not knowable then. It moves at `finalizeDecision`, and only on approval. The
 encrypted budget does not have this problem — `e.select` already handled it.
 
-### 7.4 Nonce and idempotency
+### 6.4 Nonce and idempotency
 
-```
+```text
 nonce = keccak256(abi.encode(goalId, seq))
 ```
 
@@ -323,7 +309,7 @@ So `validAfter` and `validBefore` are frozen into the on-chain record at `reques
 back verbatim on retry. The window is one hour, clamped to the goal's expiry so an authorization can
 never outlive its goal. **Expiry is a refusal, not a re-issue.**
 
-### 7.5 Three bindings that connect the decision to the signature
+### 6.5 Three bindings that connect the decision to the signature
 
 1. **`requestSpend` records `termsHash`** over `(goalId, seq, payer, amount, payTo, asset, resource,
    validAfter, validBefore)`. `payer` is included deliberately: the EIP-3009 tuple binds `from`, so a
@@ -338,11 +324,11 @@ never outlive its goal. **Expiry is a refusal, not a re-issue.**
 Anyone may call `finalizeDecision`. The attestation is unforgeable, so there is nothing to gain by
 calling it, and requiring the relay would let a stuck relay wedge the goal.
 
-### 7.6 The signer is deliberately dumb
+### 6.6 The signer is deliberately dumb
 
-One question — *"is `(goalId, seq)` finalized-approved on chain?"* — and if the answer is yes it
-signs exactly what the chain froze. It has no notion of price and no way to be told one. Its refusal
-paths are the specification:
+One question — *"is `(goalId, seq)` finalized-approved on chain?"* — and if the answer is yes it signs
+exactly what the chain froze. It has no notion of price and no way to be told one. Its refusal paths
+are the specification:
 
 | Condition | Response |
 |---|---|
@@ -350,41 +336,56 @@ paths are the specification:
 | Goal or spend unknown | `404` |
 | Goal denominated in another asset | `409` |
 | Not finalized yet | `425` — distinct from rejection, so the caller can tell "wait" from "never" |
-| Finalized as rejected | `403` — terminal; there is nothing to negotiate with |
+| Finalized as rejected | `403` — terminal |
 | Payer or nonce mismatch | `500` |
 | Frozen window expired | `410` |
 | EIP-712 domain mismatch vs the token's own `DOMAIN_SEPARATOR()` | `500` |
 
 **Why it cannot be eliminated:** x402's `exact` scheme requires an EIP-3009 signature from the payer,
-which must come from an EOA key. A contract cannot produce one. Making the vault itself the payer
-requires an escrow-based scheme variant — real, but out of scope.
+which must come from an EOA key. A contract cannot produce one.
 
 **What ROFL changes:** the key is derived inside an attested enclave and never written to disk, so
 "trusted to hold a key safely" stops being an assumption about operator discipline. What remains
 assumed is the *code* — that the signer's refusal logic is what it claims to be, which is auditable
 rather than cryptographic.
 
-### 7.7 Failure modes
+Every caller reaches the signer through `SignerClient`, which is the single place the service token
+is read. A caller takes the client, never a URL.
+
+### 6.7 Failure modes
 
 | Situation | Handling |
 |---|---|
-| Settled, no data returned | Authorization is consumed; retry is safe and cannot double-pay. Keep the receipt. |
-| Facilitator timeout, unknown outcome | Re-submit the identical authorization tuple. |
-| Terms changed between 402 and retry | `termsHash` mismatch → signer refuses. |
-| Orchestrator understates the amount | Signer signs the recorded smaller amount; resource server rejects as insufficient. |
-| **Debit committed, decision unobtainable** [INCO] | Polling is bounded at 180s and a timeout is a *reported outcome*, not a swallowed exception. The debit has already committed, so "decision unavailable" is a different state from "rejected" and conflating them would misreport where the money went. |
-| Approved but never spent | Budget debited, not refunded. Accepted. |
-| Two concurrent `requestSpend` calls | Rejected: `pendingSeq` must be zero. Strictly sequential per goal, because the public call counter is only decremented at finalisation and a second in-flight spend would be evaluated against a stale count. |
-| Missing `allowThis` after debit [INCO] | Vault can never compute over the budget again. Covered by cheatcode tests. |
-| Revealing the wrong handle [INCO] | Reveals are permanent. Only ever the per-request decision handle. |
+| Settled, no data returned | Authorization is consumed; retry is safe and cannot double-pay |
+| Facilitator timeout, unknown outcome | Re-submit the identical authorization tuple |
+| Terms changed between 402 and retry | `termsHash` mismatch → signer refuses |
+| Orchestrator understates the amount | Signer signs the recorded smaller amount; resource server rejects as insufficient |
+| **Debit committed, decision unobtainable** [INCO] | Polling is bounded at 180 s and a timeout is a *reported outcome*, not a swallowed exception. The debit has already committed, so "decision unavailable" is a different state from "rejected" |
+| Approved but never spent | Budget debited, not refunded |
+| Two concurrent `requestSpend` calls | Rejected: `pendingSeq` must be zero. Strictly sequential per goal, because the public call counter is only decremented at finalisation |
+| Missing `allowThis` after debit [INCO] | Vault can never compute over the budget again. Covered by cheatcode tests |
+| Revealing the wrong handle [INCO] | Reveals are permanent. Only ever the per-request decision handle |
 
 ---
 
-## 8. Stage 4 — Trace and attestation
+## 7. Confidentiality boundary, stated exactly
+
+Encrypted on chain: the budget, as `euint256`; and the per-spend decision, until `finalizeDecision`
+reveals it.
+
+Public on chain: `perCallCap`, `callsRemaining`, allowlist membership, and every `requestSpend` term,
+approval, and rejection record.
+
+A vendor can therefore read the per-call ceiling and price immediately beneath it. That is a real
+limitation of this deployment, visible in the contract state, and recorded here rather than deferred.
+
+---
+
+## 8. Trace and attestation
 
 ### 8.1 Format
 
-```
+```text
 step_hash = H(prior_hash || step_type || H(inputs) || H(outputs) || timestamp || H(attestation))
 ```
 
@@ -393,38 +394,32 @@ a fixed `"no-attestation"` marker, so absent and present-but-empty cannot collid
 
 Payment steps carry three independently verifiable extras:
 
-```
+```text
 decision_handle   : bytes32   the ok handle for this spend
 attestation_sigs  : bytes[]   verifiable through the Inco verifier
 commit_tx         : bytes32   requestSpend transaction hash
 ```
 
 Bounced attempts stay in the trace. A policy that never fires is indistinguishable from a policy that
-does not work, and the injection demo depends on the bounce being visible.
+does not work.
 
-### 8.2 What is attested, and what is not
+### 8.2 What an attestation covers
 
 An attestation over a `(handle, value)` pair. In plain language: **"this specific encrypted value
-decrypts to this specific result."** That is the whole claim.
+decrypts to this specific result."** That is the whole claim. See §3.5 for what it does not cover.
 
-Explicitly **not** attested, and not to be described as such: the AI's reasoning, the orchestrator's
-execution, arbitrary application execution, or any enclave measurement of our code. Inco exposes no
-remote-attestation quote to applications.
-
-### 8.3 The defensible claim
-
-> Every payment in this trace corresponds to a confidential policy evaluation whose result was
-> attested and verified on chain against the expected handle.
-
-Not *"the agent behaved correctly."* Narrower, accurate, and still exactly the claim that matters for
-a spending agent.
-
-### 8.4 Anchor the root, not the trace
+### 8.3 Anchor the root, not the trace
 
 Putting the full trace on chain leaks prompts, purchased data and vendor relationships, and costs
 scale with volume. The root is 32 bytes and lets anyone holding the trace verify it. The standalone
 verifier re-derives every step hash, recomputes the root, and cross-checks each attestation against
 `PolicyVault` — needing only the file and a public RPC.
+
+`TraceAnchor` stores one root per goal and requires the stored root to be zero, so the first run on a
+goal claims the slot and later runs return `already`, unchanged. Two consequences follow: a goal whose
+first run failed anchors that failure permanently, and on a multi-run goal the saved trace and the
+anchored root describe different runs. Give a goal its own run if you want its anchor to mean
+something specific.
 
 ---
 
@@ -435,44 +430,43 @@ Recorded on Base Sepolia against the deployed vault.
 | Operation | Cost |
 |---|---|
 | Client-side encryption | 28–52 ms |
-| `openGoal` | ~336,600 gas + 0.000001 ETH Inco fee |
+| `openGoal` | ~336,600 gas + `1e12` wei Inco fee |
 | `requestSpend` | ~296,600 gas |
 | `finalizeDecision` | ~101,400–106,800 gas |
 | `closeGoal` | ~30,000 gas |
-| `attestedReveal` after commit | **7–12 s**, 1–2 poll attempts, 2 signatures |
+| `attestedReveal` after commit | 7–12 s, 1–2 poll attempts, 2 signatures |
 
-A rejected decision resolves consistently faster than an approved one — worth knowing for demo
-pacing, since the bounce is the moment that matters.
+A rejected decision resolves consistently faster than an approved one.
 
 ---
 
-## 10. Scope
-
-**Built:** `PolicyVault` with an encrypted `remainingBudget`; four x402-priced endpoints with USDC
-settlement; an LLM orchestrator running the payment loop; the non-discretionary Authorization Signer
-with ROFL key custody; a hash-chained trace with a standalone verifier; MetaMask for goal opening and
-funding.
+## 10. Limitations
 
 **Not built:** encrypted allowlists, escrow-based x402 schemes, refund-on-timeout accounting,
-multi-goal concurrency, mainnet anything, on-Sapphire publication of the enclave-to-payer binding.
+multi-goal concurrency, mainnet deployment, on-Sapphire publication of the enclave-to-payer binding.
 
 **Assumptions carried:**
 
-1. **Signer code integrity.** The key is enclave-held [OASIS]; the refusal logic is auditable, not attested.
-2. **TEE hardware trust.** Budget *confidentiality* rests on enclave vendor guarantees. Budget *integrity* does not — handle lineage and approval records are ordinary Base state.
+1. **Signer code integrity.** The key is enclave-held [OASIS]; the refusal logic is auditable, not
+   attested.
+2. **TEE hardware trust.** Budget *confidentiality* rests on enclave vendor guarantees. Budget
+   *integrity* does not — handle lineage and approval records are ordinary Base state.
 3. **Off-chain ciphertext availability.** Confidential values live in Inco's storage.
-4. **Attester honesty and liveness.** A stall halts spending — the safe direction, but the debit has already committed.
-5. **Amount visibility.** Per-payment amounts are public by design. An observer learns what the agent paid, not what it could pay.
+4. **Attester honesty and liveness.** A stall halts spending — the safe direction, but the debit has
+   already committed.
+5. **Amount visibility.** Per-payment amounts are public by design. An observer learns what the agent
+   paid, not what it could pay.
 
 ---
 
-## 11. The question to be ready for
+## 11. The defensible claim
 
-*"The computation is off-chain, so what did Inco actually prove?"*
+> Every payment in an anchored trace corresponds to a confidential policy evaluation whose result was
+> attested and verified on chain against the expected handle.
 
-**Inco proves the decision. The chain proves the decision was committed before it was knowable. The
-signer is bounded to decisions already on the chain. Oasis proves nobody can take the key that acts
-on it.**
+Not *"the agent behaved correctly."* Narrower, checkable, and still the claim that matters for a
+spending agent.
 
-Being able to say precisely which component provides which guarantee is worth more than an extra
-feature.
+Which component provides which guarantee: **Inco proves the decision. The chain proves the decision
+was committed before it was knowable. The signer is bounded to decisions already on the chain. Oasis
+holds the key that acts on it.**
