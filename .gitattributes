@@ -1,0 +1,24 @@
+# Line endings, for the files where they are load-bearing.
+#
+# This repo is developed on Windows with `core.autocrlf=true`, which rewrites
+# checked-out files to CRLF. For source that is only ever read by a compiler
+# that is harmless. For a shell script that becomes the entrypoint of a Linux
+# container it is fatal and the error does not say so: the kernel reads the
+# shebang literally, finds `/bin/sh\r`, and reports
+#
+#   exec /usr/local/bin/entrypoint.sh: no such file or directory
+#
+# which sends you looking for a missing file that is plainly present. The
+# signer's entrypoint is what drops privilege inside the enclave, so this is
+# the difference between a TEE that boots and one that does not.
+#
+# `eol=lf` rather than `text=auto`: the first is an instruction, the second is
+# a guess about content that a CRLF working tree can still win.
+*.sh text eol=lf
+
+# Same reasoning, one step removed. Neither is a shebang, but both are consumed
+# by Linux tooling that treats a trailing CR as part of the value — a
+# `SERVICE_TOKEN=…\r` reaching the enclave as a secret would fail the bearer
+# comparison against a token that looks identical in every log.
+Dockerfile text eol=lf
+compose.yaml text eol=lf

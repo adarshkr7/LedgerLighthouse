@@ -61,7 +61,12 @@ const loop = new PaymentLoop({
   signer: new SignerClient(
     optional("SIGNER_URL") ?? `http://127.0.0.1:${process.env["SIGNER_PORT"] ?? 8402}`,
     undefined,
-    optional("SERVICE_TOKEN"),
+    // `SIGNER_SERVICE_TOKEN` is what this process *presents*; `SERVICE_TOKEN`
+    // is what a service *demands*. Reading the latter here meant this CLI sent
+    // no bearer at all to a ROFL-hosted signer — a 401 on the very first mint,
+    // for a token the operator had set correctly under the other name. The
+    // fallback keeps a single-token mesh deployment working. See serve.ts.
+    optional("SIGNER_SERVICE_TOKEN") ?? optional("SERVICE_TOKEN"),
   ),
   agent,
   asset: requiredAddress("USDC_ADDRESS"),

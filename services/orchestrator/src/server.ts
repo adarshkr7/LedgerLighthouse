@@ -56,11 +56,12 @@ export interface OrchestratorServerOptions {
   /**
    * The signer, already carrying its bearer token.
    *
-   * `signerUrl` above is published to the console for display; this is the
-   * client that can actually talk to it. Kept as the constructed client rather
-   * than a second URL-and-token pair, so there is exactly one place the
-   * `SERVICE_TOKEN` is read and no way for the mint endpoint and the payment
-   * loop to disagree about it.
+   * `signerUrl` above is published to the console for display **only**; this is
+   * the client that can actually talk to it. Kept as the constructed client
+   * rather than a second URL-and-token pair, so there is exactly one place the
+   * `SERVICE_TOKEN` is read and no way for the mint endpoint, the sweep and the
+   * payment loop to disagree about it. The sweep reached the signer by URL
+   * until 2026-08-23 and 401'd against the enclave for it.
    */
   readonly signer: SignerClient;
   /**
@@ -265,8 +266,12 @@ export function createOrchestratorServer(options: OrchestratorServerOptions): Se
           return;
         }
 
+        // `options.signer`, not `options.signerUrl`: the client is what carries
+        // the bearer. Handing this the display URL is the bug that made every
+        // sweep against the ROFL signer a 401 — after the console had already
+        // closed the goal on chain.
         const outcome = await sweepGoal(goalId, {
-          signerUrl: options.signerUrl,
+          signer: options.signer,
           facilitatorUrl: options.facilitatorUrl,
           usdcAddress: options.usdcAddress,
         });
