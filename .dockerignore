@@ -37,5 +37,21 @@
 **/.env
 **/.env.*
 **/*.bak
-**/.keys
 **/.git
+
+# Payer key material, in *both* spellings.
+#
+# `!services/signer` above re-admits that whole directory, so the key store is
+# back in scope unless it is named here — and .gitignore already records what a
+# single missing spelling costs: it carried `keys/` alone for a while, and "a
+# dot's difference was enough to leave real payer private keys stageable".
+# The same allowlist, the same directory, the same mistake available twice.
+**/.keys
+**/keys
+
+# `oasis rofl build` output. 84 MB, and it is the *previous* enclave bundle —
+# building an image that contains the last image is circular as well as large.
+# It postdates the Dockerfile, so the first build never saw one and nothing
+# caught it; .gitignore excludes `*.orc` for the same reason and this is the
+# missing half of that rule.
+**/*.orc

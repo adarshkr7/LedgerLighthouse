@@ -15,6 +15,16 @@
  * three from the chain and the caller has no field to express them in. The
  * orchestrator stays exactly as untrusted for a sweep as it is for a spend.
  *
+ * ## It takes a `SignerClient`, not a URL
+ *
+ * This used to reach the signer with its own `fetch` and a bare `signerUrl`,
+ * which meant it sent no `Authorization` header. Against a loopback signer that
+ * is invisible; against the ROFL-hosted one, where `SERVICE_TOKEN` is
+ * mandatory, every sweep was a 401 — and the console had already closed the
+ * goal on chain by the time it found out. `SignerClient` is the one place the
+ * token is read, so taking the client rather than an address is what keeps
+ * this leg authenticated by construction.
+ *
  * ## The payment requirements are derived, not asserted
  *
  * The facilitator cross-checks the authorization against the requirements it is
@@ -34,28 +44,20 @@ import {
   type SettleResponse,
 } from "@ntux402/shared";
 
+import type { SignedAuthorization, SignerClient } from "./signer-client.js";
+
 export type SweepOutcome =
   | { readonly kind: "settled"; readonly settlement: SettleResponse; readonly amount: string; readonly to: Address }
   | { readonly kind: "refused"; readonly status: number; readonly reason: string }
   | { readonly kind: "failed"; readonly reason: string };
 
 export interface SweepConfig {
-  readonly signerUrl: string;
+  /** The signer, already carrying its bearer token. Never a bare URL — see the header. */
+  readonly signer: SignerClient;
   readonly facilitatorUrl: string | undefined;
   readonly usdcAddress: Address;
+  /** For the facilitator leg only; the signer leg goes through `signer`. */
   readonly fetchImpl?: typeof fetch;
-}
-
-interface SignedSweep {
-  readonly authorization: {
-    readonly from: Address;
-    readonly to: Address;
-    readonly value: string;
-    readonly validAfter: string;
-    readonly validBefore: string;
-    readonly nonce: `0x${string}`;
-  };
-  readonly signature: `0x${string}`;
 }
 
 export async function sweepGoal(goalId: string, config: SweepConfig): Promise<SweepOutcome> {
@@ -72,27 +74,16 @@ export async function sweepGoal(goalId: string, config: SweepConfig): Promise<Sw
   }
 
   // --- ask the signer ------------------------------------------------------
-  let signed: SignedSweep;
-  try {
-    const response = await doFetch(`${config.signerUrl}/sweeps`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ goalId }),
-    });
-    const body: unknown = await response.json();
-    if (!response.ok) {
-      const reason =
-        typeof body === "object" && body !== null && "error" in body
-          ? String((body as { error: unknown }).error)
-          : `signer returned ${response.status}`;
-      // The signer's refusals are the informative ones — goal still open, no
-      // balance, wrong token — so they are passed through rather than flattened.
-      return { kind: "refused", status: response.status, reason };
-    }
-    signed = body as SignedSweep;
-  } catch (e) {
-    return { kind: "failed", reason: `signer unreachable: ${e instanceof Error ? e.message : String(e)}` };
+  const authorized = await config.signer.sweep(goalId);
+  if (authorized.kind === "unreachable") {
+    return { kind: "failed", reason: `signer unreachable: ${authorized.reason}` };
   }
+  if (authorized.kind === "refused") {
+    // The signer's refusals are the informative ones — goal still open, no
+    // balance, wrong token — so they are passed through rather than flattened.
+    return { kind: "refused", status: authorized.status, reason: authorized.reason };
+  }
+  const signed: SignedAuthorization = authorized.value;
 
   // --- submit it -----------------------------------------------------------
   const envelope = {

@@ -5,12 +5,19 @@
 #
 #   docker build -f services/signer/Dockerfile -t <user>/totem-signer .
 #
-# NOT YET BUILT OR DEPLOYED — Docker was unavailable in the environment that
-# wrote this file. Expect to iterate on the install layer in particular; the
-# rest is ordinary.
+# Built and deployed. The image this produced is pinned by digest in
+# compose.yaml and is the one running the live enclave.
 
 FROM node:22-alpine AS base
 RUN corepack enable
+
+# Corepack fetches the pinned pnpm on first use and caches it under `$HOME`.
+# That default is why the runtime user matters here: the build runs as root, so
+# the cache would land in `/root/.cache` where the unprivileged runtime user
+# cannot read it — and corepack's response to a cache miss is to go to the
+# network, which an enclave should not be relying on at boot. Pinning it to a
+# fixed path lets the final stage hand it to `node` along with everything else.
+ENV COREPACK_HOME=/opt/corepack
 WORKDIR /repo
 
 # ---------------------------------------------------------------- dependencies
@@ -83,6 +90,39 @@ ENV SIGNER_ROFL_SOCKET=/run/rofl-appd.sock \
     SIGNER_PORT=8402
 
 EXPOSE 8402
+
+# --------------------------------------------------------- dropping privilege
+# `su-exec` is the whole privilege-dropping mechanism: ~10 KB, does one thing,
+# and unlike the `git` above it has to stay in the image because it runs at
+# boot rather than at build time. See entrypoint.sh for why `USER node` alone
+# cannot do this job — `/data` is a bind mount and its ownership arrives from
+# the host, so a build-time chown of it is overwritten before the signer starts.
+RUN apk add --no-cache su-exec
+COPY services/signer/entrypoint.sh /usr/local/bin/entrypoint.sh
+
+# `HOME` is set explicitly because `su-exec` does not set it: it changes uid and
+# leaves the environment alone, so without this the signer would run as `node`
+# while still pointed at `/root`, and the first thing pnpm wanted to write there
+# would fail with EACCES. Naming it here also means the build populates the same
+# directory the runtime reads, rather than two that happen to agree.
+ENV HOME=/home/node
+
+# The two directories the runtime user must be able to *write*: the corepack
+# cache `pnpm` is launched through, and the home directory pnpm resolves its
+# own scratch paths against.
+#
+# `/repo` is deliberately not in that list. Root created it with the default
+# umask, so it is already world-readable and world-executable, which is the
+# whole of what the signer needs — it reads its own source and writes only
+# `/data/payers.json`. Chowning it would rewrite metadata for every file in a
+# fully installed pnpm workspace, and because a layer records changed metadata
+# as changed files, that single instruction would duplicate the largest layer
+# in the image. A TEE image that ships over a registry pays for that twice.
+RUN chmod +x /usr/local/bin/entrypoint.sh \
+ && mkdir -p /home/node \
+ && chown -R node:node /opt/corepack /home/node
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 
 # Deliberately no key material in the image, in a build arg, or in a secret.
 # There is nothing to inject: the payer key is derived inside the enclave at

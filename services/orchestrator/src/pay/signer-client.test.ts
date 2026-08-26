@@ -57,6 +57,40 @@ describe("SignerClient — service token", () => {
     expect(calls[0]?.headers.get("content-type")).toBe("application/json");
   });
 
+  /*
+   * The regression this file was written to catch, arriving through the one
+   * route that did not go through this client.
+   *
+   * `sweepGoal` called the signer with its own `fetch` and a bare URL, so it
+   * sent no bearer and every sweep against the ROFL signer was a 401 — reported
+   * to the console *after* it had closed the goal on chain. Asserted here
+   * rather than only in `sweep.test.ts` because the property belongs to the
+   * client: every signer route carries the token, no exceptions.
+   */
+  it("sends the bearer token on sweep, keeping content-type", async () => {
+    const { calls, fetch } = recorder();
+
+    await new SignerClient("http://signer.local", fetch, "s3cret").sweep("42");
+
+    expect(calls[0]?.url).toBe("http://signer.local/sweeps");
+    expect(calls[0]?.headers.get("authorization")).toBe("Bearer s3cret");
+    expect(calls[0]?.headers.get("content-type")).toBe("application/json");
+  });
+
+  it("sends only goalId in the sweep body", async () => {
+    const bodies: string[] = [];
+    const fetchImpl = (async (_url: string, init?: RequestInit) => {
+      bodies.push(String(init?.body));
+      return new Response("{}", { status: 200, headers: { "content-type": "application/json" } });
+    }) as unknown as typeof fetch;
+
+    await new SignerClient("http://signer.local", fetchImpl, "s3cret").sweep("42");
+
+    // The signer reads the amount, the payee and the token off the chain. A
+    // field here would be a field a caller could aim.
+    expect(Object.keys(JSON.parse(bodies[0]!) as object)).toEqual(["goalId"]);
+  });
+
   it("treats an empty token as no token", async () => {
     const { calls, fetch } = recorder();
 

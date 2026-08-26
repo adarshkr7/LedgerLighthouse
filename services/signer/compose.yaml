@@ -40,6 +40,21 @@ services:
       - SIGNER_ROFL_SOCKET=/run/rofl-appd.sock
       - SIGNER_ROFL_INDEX_PATH=/data/payers.json
       - SIGNER_PORT=8402
+      # Refuse to boot without an enclave.
+      #
+      # `openKeyStore` falls back to a file — or, with no key store path set as
+      # here, to memory — when the ROFL socket is missing. That fallback exists
+      # so the demo runs on a laptop, and it is precisely the assumption this
+      # deployment exists to retire. The Dockerfile's `ENV SIGNER_ROFL_SOCKET`
+      # means the socket is normally set twice over, but "normally" is doing
+      # unpaid work in that sentence: clear it in either place and the container
+      # comes up holding payer keys in process memory, logs a warning nobody is
+      # reading, and loses every minted key on the next restart.
+      #
+      # With this set that scenario is a refusal to start, which is the correct
+      # failure for anything holding money. It costs nothing when the socket is
+      # present — the flag is only consulted once the socket is found missing.
+      - SIGNER_REQUIRE_ROFL=true
       # The signer defaults to 127.0.0.1, which is right on a laptop and wrong
       # here: the process would listen only on the container's loopback and the
       # `ports:` mapping above would forward to nothing. The orchestrator gets a

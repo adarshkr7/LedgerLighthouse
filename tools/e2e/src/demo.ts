@@ -148,7 +148,16 @@ if (facilitatorUrl) {
 // mutable payer field lets whoever can write it redirect every signature.
 rule("1. mint the ephemeral payer key");
 
-const signer = new SignerClient(signerUrl, undefined, optional("SERVICE_TOKEN"));
+// `SIGNER_SERVICE_TOKEN`, not `SERVICE_TOKEN` — the first is what this script
+// presents, the second is what a service demands of its own callers. Reading
+// the wrong one sent no bearer to a ROFL-hosted signer, and the preflight above
+// could not catch it: `/health` is deliberately unguarded, so the signer looked
+// up right until the mint returned 401.
+const signer = new SignerClient(
+  signerUrl,
+  undefined,
+  optional("SIGNER_SERVICE_TOKEN") ?? optional("SERVICE_TOKEN"),
+);
 const payer = await signer.mintPayer();
 console.log(`  payer      ${payer}`);
 console.log(`  The signer generated this key and returned only the address.`);
