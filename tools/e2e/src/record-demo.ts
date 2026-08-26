@@ -96,13 +96,36 @@ const budgetUsdc = value("budget") ?? "0.30";
  * it only shrinks it relative to the frame. This is roughly the largest
  * viewport where the timeline still reads back on a phone.
  */
-const VIEWPORT = { width: 1600, height: 1000 } as const;
+/*
+ * `--viewport 1440x900` overrides it, and headed takes on a laptop usually need
+ * to. Playwright can hand a *headless* page any viewport it likes, but a headed
+ * one is bounded by the actual window: ask for more than the display has and
+ * Chrome clips the page rather than scrolling it, so the right-hand column and
+ * the foot of the timeline leave the frame — visible in the recording, not just
+ * on screen. A 1500x938 display cannot show this default.
+ */
+const VIEWPORT = ((): { width: number; height: number } => {
+  const raw = value("viewport");
+  if (!raw) return { width: 1600, height: 1000 };
+  const match = /^(\d+)x(\d+)$/.exec(raw.trim());
+  if (!match) throw new Error(`--viewport wants WxH, e.g. 1440x900 — got "${raw}"`);
+  return { width: Number(match[1]), height: Number(match[2]) };
+})();
 
 /*
  * The four that carry the argument, in the order the argument is made: two
  * settle, then two are refused for different reasons. `--calls` overrides it,
  * which is mostly useful for re-shooting one segment against a resumed goal.
  */
+/*
+ * Anchored, because a substring match on "Fund" also matches "Close goal ·
+ * return funds" — and once a goal is open both buttons are on screen at once,
+ * so the substring form resolved to two elements and Playwright's strict mode
+ * failed the take *after* `openGoal` had already been paid for. `\b` keeps
+ * "Fund 0.40 USDC" matching while the amount stays dynamic.
+ */
+const FUND_BUTTON = /^Fund\b/;
+
 const DEFAULT_CALLS = ["market-data", "bulk-archive", "compliance-audit", "premium-feed"];
 const callKeys = (value("calls") ?? DEFAULT_CALLS.join(","))
   .split(",")
@@ -583,6 +606,13 @@ async function record(config: OrchestratorConfig): Promise<void> {
     headless,
     ...(channel ? { channel } : {}),
     ...(slowMo ? { slowMo } : {}),
+    /*
+     * Ask for a window that can actually hold the viewport. Chrome still caps
+     * this at the display, which is why `--viewport` exists — but without it a
+     * headed window opens at Chrome's own default and clips a larger viewport
+     * from the first frame.
+     */
+    ...(headless ? {} : { args: [`--window-size=${VIEWPORT.width},${VIEWPORT.height + 120}`] }),
   });
   const context: BrowserContext = await browser.newContext({
     viewport: VIEWPORT,
@@ -653,14 +683,15 @@ async function record(config: OrchestratorConfig): Promise<void> {
          * the empty state is what says it landed — five minutes, because a
          * public RPC having a bad afternoon should not cost a take.
          */
-        await page
-          .getByRole("button", { name: "Fund", exact: false })
-          .waitFor({ state: "visible", timeout: 300_000 });
+        await page.getByRole("button", { name: FUND_BUTTON }).waitFor({
+          state: "visible",
+          timeout: 300_000,
+        });
         return `budget ${budgetUsdc} USDC, encrypted in the browser`;
       });
 
       await step(page, "fund", "fund the payer", async () => {
-        const fund = page.getByRole("button", { name: "Fund", exact: false });
+        const fund = page.getByRole("button", { name: FUND_BUTTON });
         const label = (await fund.textContent())?.trim();
         await fund.click();
         // The button is removed once `funded` is true, which is the signal.
@@ -677,10 +708,24 @@ async function record(config: OrchestratorConfig): Promise<void> {
 
     await step(page, "evidence", "evidence rail", async () => {
       const evidence = page.getByRole("button", { name: /^Evidence/ }).first();
-      if (await evidence.isVisible().catch(() => false)) {
-        await evidence.click();
-        await sleep(2000);
+      /*
+       * Enabled, not merely visible. The rail renders disabled until a run
+       * produces evidence to show, so `isVisible` is true either way and the
+       * click then waited the full timeout and threw — discarding a take that
+       * had already spent real USDC over its last and most cosmetic step.
+       *
+       * A disabled rail is a normal outcome, not a fault: it is what a goal
+       * whose final call was declined by the agent looks like.
+       */
+      const ready =
+        (await evidence.isVisible().catch(() => false)) &&
+        (await evidence.isEnabled().catch(() => false));
+      if (!ready) {
+        warn("evidence rail unavailable — no run produced evidence to open");
+        return "rail disabled";
       }
+      await evidence.click();
+      await sleep(2000);
       return resumeGoal ? `goal #${resumeGoal}` : undefined;
     });
   } finally {
