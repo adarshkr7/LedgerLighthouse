@@ -1,7 +1,7 @@
 /**
  * The Bearer header, and the two ways it can be wrong.
  *
- * Once the signer leaves loopback — a ROFL machine, docs/ROFL_RUNBOOK.md §8 —
+ * Once the signer leaves loopback — a ROFL machine, README.md —
  * `SERVICE_TOKEN` is the only thing between the payer key and the internet, and
  * the guard enforces it only when it has one. That makes the token a matched
  * pair across two processes: set on both sides, or on neither. A client that

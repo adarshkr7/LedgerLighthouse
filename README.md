@@ -257,13 +257,20 @@ Two traps worth knowing: `oasis rofl build` will not run on native Windows, and 
 | Path | Contents |
 |---|---|
 | `contracts/` | `PolicyVault`, `TraceAnchor`, Foundry tests, deployment broadcasts |
-| `services/orchestrator/` | The untrusted component: agent loop, payment loop, trace builder |
+| `services/orchestrator/` | The untrusted component: agent loop, payment loop, relay |
 | `services/signer/` | Authorization Signer. Runs in the ROFL enclave; holds the payer keys |
+| `services/trace/` | Trace builder, Merkle accumulator, and the standalone verifier |
 | `services/facilitator/` | Self-hosted x402 v1 facilitator. Outside the trust boundary |
-| `packages/shared/` | Types, the x402 client, the trace verifier, the shared HTTP guard |
+| `services/vendor-aisa/` | Live search vendor — real upstream calls, priced and sold over x402 |
+| `packages/shared/` | Types, the x402 client, chain helpers, the shared HTTP guard |
 | `apps/web/` | Console — MetaMask goal opening, funding, run visualisation |
+| `mock-api/` | Mock resource server — fabricated data at chosen prices |
 | `tools/e2e/` | Keygen, funding, and the end-to-end demo runner |
+| `scripts/` | `dev`, `verify`, ABI sync, and the CI import-boundary check |
 | `docs/` | Architecture, and recorded runs |
+
+The standalone verifier referenced above lives in [`services/trace/`](services/trace/): it needs only
+a trace file and a public RPC, and depends on no service in this repository.
 
 The import boundary is enforced in CI: `pnpm check:boundary` asserts that the orchestrator can reach
 neither the signer nor the vendor credential.

@@ -1,6 +1,6 @@
 /**
  * The Authorization Signer. **[ASSUMPTION]** — a trusted component that exists
- * because Inco provides neither key custody nor signing (ARCHITECTURE.md §7.6).
+ * because Inco provides neither key custody nor signing (ARCHITECTURE.md).
  *
  * It is deliberately, aggressively dumb. One question — "is `(goalId, seq)`
  * finalized-approved on chain?" — and if the answer is yes it signs exactly what
@@ -289,7 +289,7 @@ export class AuthorizationSigner {
 
     // The signer is bound to one token, configured out of band. Reading the
     // asset from anywhere else — above all from a 402 body — is the guardrail
-    // in IMPLEMENTATION.md §8 this check exists to make impossible.
+    // in ARCHITECTURE.md this check exists to make impossible.
     if (!isAddressEqual(goal.asset, this.#config.usdcAddress)) {
       return refuse(
         409,
@@ -315,7 +315,7 @@ export class AuthorizationSigner {
 
     if (!spend.approved) {
       // The bounce. Deliberately terminal: retrying with a smaller amount is
-      // the anti-pattern in IMPLEMENTATION.md §8, and there is nothing here to negotiate
+      // the anti-pattern in ARCHITECTURE.md, and there is nothing here to negotiate
       // with — the decision came from Inco, not from this service.
       return refuse(
         403,
@@ -356,7 +356,7 @@ export class AuthorizationSigner {
     // --- the validity window -------------------------------------------------
     // Read back, never regenerated. Regenerating it would produce a *different*
     // authorization on retry, and EIP-3009 would happily execute both
-    // (ARCHITECTURE.md §7.4). Expiry is therefore a refusal, not a re-issue.
+    // (ARCHITECTURE.md). Expiry is therefore a refusal, not a re-issue.
     const now = BigInt(this.#config.now());
     if (spend.validBefore <= now) {
       return refuse(

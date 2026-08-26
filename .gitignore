@@ -10,7 +10,7 @@ contracts/cache/
 contracts/broadcast/*/31337/
 !contracts/broadcast/*/84532/
 
-# env — .env.example IS committed deliberately (IMPLEMENTATION.md §9).
+# env — .env.example IS committed deliberately (see README.md).
 # The negation must come last: in gitignore, later rules win.
 .env
 .env.*
@@ -73,3 +73,7 @@ rofl*.utf8.log
 # history, and it is the one artifact of that pipeline that was reaching the
 # repository anyway.
 LedgerLighthouse_Submission.pdf
+
+# Demo recordings: video, per-step stills and the manifest cut against them.
+# Reproducible from `pnpm record:demo`, and a single take is tens of megabytes.
+recordings/

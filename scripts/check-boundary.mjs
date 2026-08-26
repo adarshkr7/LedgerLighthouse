@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-// Enforces IMPLEMENTATION.md §3 / Non-negotiable #1: the orchestrator is untrusted and must not
+// Enforces the ARCHITECTURE.md trust model: the orchestrator is untrusted and must not
 // be able to reach the components that hold spending authority. This checks import *paths*
 // (relative and bare), not the presence of viem/signing libraries in general — the
-// orchestrator legitimately holds the relay key (gas-only, see plan §5.1) and needs a wallet
+// orchestrator legitimately holds the relay key (gas-only, see ARCHITECTURE.md) and needs a wallet
 // client for that. What it must never do is import those packages or read from their source
 // trees, however the import is spelled.
 //
@@ -12,7 +12,7 @@
 //   services/vendor-aisa holds AISA_VENDOR_KEY. Compromise here is arbitrary spend against a
 //                        prepaid balance that PolicyVault never sees — no on-chain trace, no
 //                        confidential budget, nothing to bounce off. See
-//                        docs/AISA_INTEGRATION.md §2.
+//                        README.md.
 //
 // The second one also checks for the *credential name*, not just the import. A key does not
 // need an import to leak: reading it straight out of `process.env` in the orchestrator would be
@@ -38,13 +38,13 @@ const FORBIDDEN = [
     label: "signer",
     dir: join(repoRoot, "services", "signer") + sep,
     pkg: "@ntux402/signer",
-    reason: "IMPLEMENTATION.md §1 non-negotiable #1 and §3 target layout",
+    reason: "ARCHITECTURE.md trust model — the orchestrator holds no spending authority",
   },
   {
     label: "vendor-aisa",
     dir: join(repoRoot, "services", "vendor-aisa") + sep,
     pkg: "@ntux402/vendor-aisa",
-    reason: "docs/AISA_INTEGRATION.md §2 — the vendor key must not reach the untrusted component",
+    reason: "README.md — the vendor key must not reach the untrusted component",
   },
 ];
 
@@ -102,7 +102,7 @@ for (const file of walk(orchestratorSrc)) {
       const line = src.slice(0, index).split("\n").length;
       violations.push(
         `${relative(repoRoot, file)}:${line} names ${name} — that credential belongs to ` +
-          `services/vendor-aisa alone (docs/AISA_INTEGRATION.md §2)`,
+          `services/vendor-aisa alone (README.md)`,
       );
     }
   }
@@ -123,7 +123,7 @@ if (violations.length > 0) {
     "Dependency boundary violated: services/orchestrator must not reach the signer or the AIsa vendor.\n",
   );
   for (const v of violations) console.error(`  - ${v}`);
-  console.error("\nSee IMPLEMENTATION.md §1 non-negotiable #1 and docs/AISA_INTEGRATION.md §2.");
+  console.error("\nSee the trust model in ARCHITECTURE.md.");
   process.exit(1);
 }
 

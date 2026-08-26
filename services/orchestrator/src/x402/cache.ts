@@ -1,5 +1,5 @@
 /**
- * Response cache keyed by request (ARCHITECTURE.md §6.1).
+ * Response cache keyed by request (ARCHITECTURE.md).
  *
  * Its job is narrow and load-bearing: after a resource has been fetched
  * successfully — including when that success cost money — a repeat request must

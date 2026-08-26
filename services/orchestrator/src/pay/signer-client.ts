@@ -81,7 +81,7 @@ export class SignerClient {
    * `token` is the signer's `SERVICE_TOKEN`, and it is optional because the
    * signer's guard only enforces one when it has one. On a laptop both sides run
    * open and this stays undefined; the moment the signer binds to something
-   * other than loopback — a ROFL machine, per docs/ROFL_RUNBOOK.md §8 — it is
+   * other than loopback — a ROFL machine, per README.md — it is
    * the only thing between the payer key and the internet.
    *
    * Sending it costs nothing when the signer is open, so there is no mode to get
@@ -104,7 +104,7 @@ export class SignerClient {
   /**
    * Mints the per-goal ephemeral payer key. Returns an address; the key never
    * leaves the signer. **Must happen before `openGoal`**, because the payer
-   * address is a field of the goal record (ARCHITECTURE.md §5.3).
+   * address is a field of the goal record (ARCHITECTURE.md).
    */
   async mintPayer(): Promise<`0x${string}`> {
     const response = await this.#fetch(`${this.#url}/payer`, {

@@ -1,7 +1,7 @@
 /**
  * Merkle accumulator over the step hashes.
  *
- * Anchoring the root rather than the trace is the point (ARCHITECTURE.md §8.4): the full
+ * Anchoring the root rather than the trace is the point (ARCHITECTURE.md): the full
  * trace leaks prompts, purchased data and vendor relationships, and its cost
  * scales with volume. The root is 32 bytes and lets anyone holding the trace
  * verify it.

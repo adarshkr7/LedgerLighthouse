@@ -240,7 +240,7 @@ const inferenceKey = optional("AISA_INFERENCE_KEY");
 const vendorKey = optional("AISA_VENDOR_KEY");
 
 if (inferenceKey && vendorKey && inferenceKey === vendorKey) {
-  warn("key separation", "inference and vendor keys are identical — see docs/AISA_INTEGRATION.md §2");
+  warn("key separation", "inference and vendor keys are identical — see README.md");
 } else if (inferenceKey && vendorKey) {
   pass("key separation", "two distinct keys");
 }

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * Answers the AIsa unknowns that gate docs/AISA_RUNBOOK.md Step 1 and
- * docs/LLM_THINKING.md Step 3, in one pass, for a few cents.
+ * Answers the AIsa unknowns that gate the live-search
+ * integration, in one pass, for a few cents.
  *
  *   node scripts/aisa-probe.mjs [model-id ...]
  *
@@ -14,7 +14,7 @@
  *
  * What it reports, per model:
  *   - whether the OpenAI-compatible route answers at all
- *   - which of the four reasoning shapes comes back (docs/LLM_THINKING.md §1)
+ *   - which of the four reasoning shapes comes back
  *   - whether the reply parses as the {reasoning, proceed} decision object
  *
  * Responses are written to services/orchestrator/src/agent/__fixtures__/ so the
@@ -242,5 +242,5 @@ if (results.length > 0) {
 console.log(
   `\n   Still unanswered by curl: whether this account can hold two keys with\n` +
     `   separate scopes. Ask AIsa support — it decides whether the split in\n` +
-    `   docs/AISA_INTEGRATION.md §2 is a real control or only process isolation.\n`,
+    `   README.md is a real control or only process isolation.\n`,
 );

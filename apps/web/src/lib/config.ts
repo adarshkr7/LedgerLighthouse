@@ -2,7 +2,7 @@
  * Wallet and service wiring for the demo UI.
  *
  * Chain is pinned to Base Sepolia and re-asserted before every write. MetaMask
- * caches a stale `chainId` after a manual network change (IMPLEMENTATION.md §5.2), so
+ * caches a stale `chainId` after a manual network change (ARCHITECTURE.md), so
  * trusting connection-time state is how you write to the wrong chain.
  */
 

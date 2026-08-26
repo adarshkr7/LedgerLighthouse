@@ -15,7 +15,7 @@
  * ## Which key plays which role — the point of the exercise
  *
  * This script stands in for the *user*: it opens the goal and funds the payer,
- * both of which MetaMask does in the real demo (IMPLEMENTATION.md §5). It never touches
+ * both of which MetaMask does in the real demo (ARCHITECTURE.md). It never touches
  * the payer key, which lives only in the signer, and it never signs an EIP-3009
  * authorization. The orchestrator it drives holds the relay key and nothing
  * else. M2b's single-key script was fine for a latency measurement; this is the
@@ -87,7 +87,7 @@ const BUDGET = 200_000n; // 0.20 USDC, encrypted
 const PER_CALL_CAP = 6_000_000n; // 6.00 USDC, public — deliberately above run 2's price
 const CALLS_REMAINING = 5;
 /**
- * Above the encrypted budget so Inco binds first (ARCHITECTURE.md §5.5), and
+ * Above the encrypted budget so Inco binds first (ARCHITECTURE.md), and
  * above run 2's 0.35 ask so a skeptic cannot say the payer simply could not
  * afford it. The refusal has to be the budget and nothing else.
  */
@@ -144,7 +144,7 @@ if (facilitatorUrl) {
 
 // --------------------------------------------------------- mint the payer
 // Before openGoal, because the payer address is a field of the goal record
-// (ARCHITECTURE.md §5.3). Doing it afterwards would need a mutable payer field, and a
+// (ARCHITECTURE.md). Doing it afterwards would need a mutable payer field, and a
 // mutable payer field lets whoever can write it redirect every signature.
 rule("1. mint the ephemeral payer key");
 

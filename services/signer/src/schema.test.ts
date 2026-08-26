@@ -1,5 +1,5 @@
 /**
- * Non-negotiable #2 (IMPLEMENTATION.md §1): a request carrying any terms field
+ * Non-negotiable #2 (ARCHITECTURE.md): a request carrying any terms field
  * is **rejected by schema validation**, not accepted-and-ignored.
  *
  * These tests are the reason that sentence is true. If someone later "helpfully"

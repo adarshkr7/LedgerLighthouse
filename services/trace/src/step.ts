@@ -1,5 +1,5 @@
 /**
- * The trace step and its hash chain (ARCHITECTURE.md §8.1):
+ * The trace step and its hash chain (ARCHITECTURE.md):
  *
  *     step_hash = H(prior_hash || step_type || H(inputs) || H(outputs) || timestamp || H(attestation))
  *
@@ -56,7 +56,7 @@ export const VENDOR_ATTESTED_STEPS: readonly StepType[] = ["vendor-upstream"];
 
 /**
  * The three fields that make a payment step independently verifiable by someone
- * holding nothing but the trace and a public RPC (ARCHITECTURE.md §8.1).
+ * holding nothing but the trace and a public RPC (ARCHITECTURE.md).
  */
 export interface StepAttestation {
   /** The `ok` handle for this spend. */

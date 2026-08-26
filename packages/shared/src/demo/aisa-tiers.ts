@@ -1,7 +1,7 @@
 /**
  * What a live AIsa search costs, and what we charge for it.
  *
- * docs/AISA_LIVE_SEARCH.md §1: x402 makes the resource server state
+ * x402 makes the resource server state
  * `maxAmountRequired` in the 402, which is emitted *before* the upstream call
  * happens. So the shim cannot bill actual cost — it has to quote a price that
  * is a deterministic function of the request, and absorb any difference.

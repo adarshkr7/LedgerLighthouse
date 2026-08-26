@@ -1,5 +1,5 @@
 /**
- * Trace and verifier properties (IMPLEMENTATION.md §7):
+ * Trace and verifier properties (ARCHITECTURE.md):
  *
  *   "Passes when: the verifier validates a good trace, rejects a tampered step,
  *    rejects a swapped attestation, and runs with no dependency on your
@@ -311,7 +311,7 @@ describe("verifyTrace", () => {
     expect(result.findings.some((f) => f.check === "chain.link" && f.step === 0)).toBe(true);
   });
 
-  // Acceptance test 3 — the mandatory handle-match check from PRIMER.md §7.6.
+  // Acceptance test 3 — the mandatory handle-match check from ARCHITECTURE.md
   it("rejects a swapped attestation", async () => {
     // The trace is internally consistent and every hash recomputes. The only
     // thing wrong is that its attestation names a handle the vault never

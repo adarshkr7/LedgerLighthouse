@@ -1,6 +1,6 @@
 /**
  * The signer's request schema. This file is the enforcement point for
- * non-negotiable #2 (IMPLEMENTATION.md §1): the request carries `(goalId, seq)`
+ * non-negotiable #2 (ARCHITECTURE.md): the request carries `(goalId, seq)`
  * and **nothing else**.
  *
  * Not "validate and ignore" — an unknown key is a hard rejection. The

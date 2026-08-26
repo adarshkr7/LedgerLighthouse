@@ -14,12 +14,12 @@
  * ## Two shapes that look like bugs and are not
  *
  * **A rejection is terminal.** No retry, no smaller amount. Catching a policy
- * rejection and retrying is the anti-pattern in IMPLEMENTATION.md §8 — the bounce is the
+ * rejection and retrying is the anti-pattern in ARCHITECTURE.md — the bounce is the
  * product, so it is returned as a first-class outcome and surfaced.
  *
  * **A reveal timeout is not a rejection.** The debit committed at
  * `requestSpend`. If the compute server stalls, the budget has moved and the
- * decision is unobtainable — a distinct, reportable state (ARCHITECTURE.md §7.7). Merging
+ * decision is unobtainable — a distinct, reportable state (ARCHITECTURE.md). Merging
  * it into "rejected" would be a lie about where the money went.
  */
 

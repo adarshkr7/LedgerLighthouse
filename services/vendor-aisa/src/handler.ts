@@ -266,7 +266,7 @@ export async function handleRequest(
       data: upstream.body,
       /*
        * What it cost us against what we charged, reported rather than hidden.
-       * The trace wants both (docs/AISA_LIVE_SEARCH.md §8) and a vendor that
+       * The trace wants both and a vendor that
        * publishes its own margin is a better demo than one that does not.
        * `costAtomic` is undefined when AIsa omitted the header.
        */

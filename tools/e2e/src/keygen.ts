@@ -13,7 +13,7 @@
  *   FACILITATOR_PRIVATE_KEY  pays gas to submit transferWithAuthorization
  *
  * The **payer** key is deliberately absent. It is minted by the signer, per
- * goal, and never leaves it (IMPLEMENTATION.md §4). If you find yourself
+ * goal, and never leaves it (ARCHITECTURE.md). If you find yourself
  * wanting to add it here, the design has drifted.
  */
 

@@ -5,7 +5,7 @@
  * and goal closure when the user asks for their money back. It signs
  * **nothing inside the payment loop** —
  * that is what the ephemeral payer key is for, and what `e.reveal` makes
- * possible (ARCHITECTURE.md §5.5). If a wallet prompt ever appears while a run is in
+ * possible (ARCHITECTURE.md). If a wallet prompt ever appears while a run is in
  * flight, the design has drifted.
  */
 
@@ -180,7 +180,7 @@ const PRECONDITION_HINTS: Record<string, string> = {
  * So this asks the connector, and subscribes to the EIP-1193 provider directly
  * rather than to wagmi's re-broadcast of it — the same reasoning that already
  * makes `openGoal` re-read `wallet.getChainId()` before it writes
- * (IMPLEMENTATION.md §5.2), applied to the gate rather than only to the write.
+ * (ARCHITECTURE.md), applied to the gate rather than only to the write.
  */
 function useConnectorChainId(connector: Connector | undefined): number | undefined {
   const [chainId, setChainId] = useState<number>();
@@ -507,7 +507,7 @@ export default function App() {
       }
 
       // Re-read the chain rather than trusting connection-time state: MetaMask
-      // caches a stale chainId after a manual network change (IMPLEMENTATION.md §5.2).
+      // caches a stale chainId after a manual network change (ARCHITECTURE.md).
       const live = await wallet.getChainId();
       if (live !== CHAIN_ID) throw new Error(`Wallet is on chain ${live}, expected ${CHAIN_ID}`);
 

@@ -9,7 +9,7 @@
  * time while debugging.
  *
  * Holds the **relay key** and no other. If you ever find yourself wanting a
- * payer key here, the design has drifted (IMPLEMENTATION.md §7).
+ * payer key here, the design has drifted (ARCHITECTURE.md).
  */
 
 import { loadDotEnv, optional, required, requiredAddress, requiredHexKey } from "@ntux402/shared/node";
@@ -99,7 +99,7 @@ switch (result.kind) {
       `  DECISION UNAVAILABLE after ${result.attempts} attempts / ${Math.round(result.elapsedMs / 1000)}s.`,
     );
     console.log("  The debit committed at requestSpend. This is the [INCO] liveness case,");
-    console.log("  not a rejection — see ARCHITECTURE.md §7.7.");
+    console.log("  not a rejection — see ARCHITECTURE.md.");
     break;
   case "failed":
     console.log(`  FAILED  ${result.reason}`);

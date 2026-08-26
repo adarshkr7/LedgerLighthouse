@@ -1,7 +1,7 @@
 /**
  * The signer's only window onto the world: the chain.
  *
- * Non-negotiable #3 (IMPLEMENTATION.md §1) — "the signer reads the chain, never
+ * Non-negotiable #3 (ARCHITECTURE.md) — "the signer reads the chain, never
  * the caller." This module is that sentence in code. Every field the signer
  * later puts inside an EIP-3009 signature comes from here.
  *

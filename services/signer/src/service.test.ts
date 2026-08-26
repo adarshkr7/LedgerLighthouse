@@ -1,7 +1,7 @@
 /**
  * M2 acceptance tests for the Authorization Signer.
  *
- * From IMPLEMENTATION.md §7, M2 — "passes when … the signer refuses an
+ * M2 acceptance criteria — "passes when … the signer refuses an
  * unapproved (goalId, seq); a request carrying any terms field is rejected by
  * schema validation; the signer asserts the USDC address and chain id before
  * signing; an interrupted settlement retried with the identical authorization

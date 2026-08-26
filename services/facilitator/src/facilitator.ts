@@ -16,7 +16,7 @@
  *
  * Its key is a **gas key**. It submits `transferWithAuthorization` and pays for
  * the transaction; the USDC moves from the payer, who authorized it. This is a
- * fourth key beyond the three in IMPLEMENTATION.md §4, and it belongs to infrastructure
+ * fourth key beyond the three in ARCHITECTURE.md, and it belongs to infrastructure
  * that in production someone else operates.
  *
  * ## Verification order
@@ -188,7 +188,7 @@ export class Facilitator {
       return invalid(`authorization ${auth.nonce} has already been used by ${auth.from}`);
     }
     if (balance < BigInt(auth.value)) {
-      // The second, independent spending bound from ARCHITECTURE.md §5.5: the ephemeral
+      // The second, independent spending bound from ARCHITECTURE.md: the ephemeral
       // payer holds only what the user sent it.
       return invalid(
         `payer balance ${balance} is below the authorized ${auth.value} — the ephemeral account is underfunded`,
@@ -203,7 +203,7 @@ export class Facilitator {
    * separate calls over HTTP, and state can change between them.
    *
    * Idempotent by design. If the authorization was already consumed — the retry
-   * case from ARCHITECTURE.md §7.7, where the facilitator's outcome was unknown — this
+   * case from ARCHITECTURE.md, where the facilitator's outcome was unknown — this
    * reports success with `alreadySettled`, because the money did move and
    * submitting again would only waste gas on a revert.
    */

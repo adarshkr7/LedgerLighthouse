@@ -27,7 +27,7 @@ if (process.argv[1] && import.meta.url.endsWith(process.argv[1].replace(/\\/g, "
    * `AISA_INFERENCE_KEY`: the whole point of two names is that the orchestrator
    * holds one of them and this service holds the other, and a fallback would
    * quietly collapse that back into a single credential the moment someone
-   * forgot to set one. See docs/AISA_INTEGRATION.md §2.
+   * forgot to set one. See README.md.
    */
   const apiKey = required("AISA_VENDOR_KEY");
 

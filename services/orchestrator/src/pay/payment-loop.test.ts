@@ -6,7 +6,7 @@
  * The three that carry weight:
  *
  *  - a policy rejection is a first-class outcome, not an error, and is **not**
- *    retried at a smaller amount (IMPLEMENTATION.md §8);
+ *    retried at a smaller amount (ARCHITECTURE.md);
  *  - a reveal timeout is distinguished from a rejection, because the debit has
  *    already committed and conflating them misreports where the money went;
  *  - the request to the signer contains exactly two keys.
@@ -327,7 +327,7 @@ describe("PaymentLoop — the bounce", () => {
     expect(result.commitTx).toBeTruthy();
   });
 
-  // The anti-pattern IMPLEMENTATION.md §8 names explicitly: catching a rejection and
+  // The anti-pattern, stated explicitly: catching a rejection and
   // retrying with less. The bounce is the product.
   it("does not retry at a smaller amount", async () => {
     await buildLoop().fetchPaid("https://mock.local/resource/honest", 1n);

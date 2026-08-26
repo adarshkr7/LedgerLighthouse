@@ -4,7 +4,7 @@
  *
  *   node scripts/aisa-measure-tiers.mjs
  *
- * docs/AISA_LIVE_SEARCH.md Step 1: the x402 shim has to quote
+ * The x402 shim has to quote
  * `maxAmountRequired` in the 402, before the upstream call happens, so it needs
  * a deterministic price per tier rather than the actual cost of the call it is
  * about to make. AIsa publishes no per-call price for this endpoint and their
@@ -201,7 +201,7 @@ for (const tier of GRID) {
 
 // ------------------------------------------------------------- the summary
 
-rule("C. Tier table — the numbers docs/AISA_LIVE_SEARCH.md Step 1 needs");
+rule("C. Tier table — the numbers the x402 shim needs");
 
 const pad = (s, n) => String(s).padEnd(n);
 console.log(

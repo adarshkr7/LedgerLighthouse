@@ -243,7 +243,7 @@ export interface ExpectedPayment {
 /**
  * Selects the first entry matching our own configuration.
  *
- * The 402 body is a claim, not a source of configuration (ARCHITECTURE.md §7.7 / IMPLEMENTATION.md §8):
+ * The 402 body is a claim, not a source of configuration (ARCHITECTURE.md / ARCHITECTURE.md):
  * we filter the server's offers against what *we* already decided, rather than
  * adopting whatever it names. Address comparison is case-insensitive because
  * EIP-55 checksumming is presentational.
@@ -271,7 +271,7 @@ export function selectTerms(
 
 /**
  * The typed, non-free-text projection of terms — the **only** form that may
- * reach an LLM context (ARCHITECTURE.md §6.1).
+ * reach an LLM context (ARCHITECTURE.md).
  *
  * `description` and `extra` are omitted precisely because they are where an
  * injection arrives. Dropping them here is what makes "the component that

@@ -6,7 +6,7 @@
  *
  * Deliberately takes a file and an RPC URL and nothing else. If this needed a
  * running service it would not be a verifier — it would be a second opinion
- * from the same party (ARCHITECTURE.md §8.4).
+ * from the same party (ARCHITECTURE.md).
  */
 
 import { readFileSync } from "node:fs";
