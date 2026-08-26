@@ -14,7 +14,8 @@
     "balances": "tsx src/balances.ts",
     "keygen": "tsx src/keygen.ts",
     "fund": "tsx src/fund.ts",
-    "whois": "tsx src/whois.ts"
+    "whois": "tsx src/whois.ts",
+    "record": "tsx src/record-demo.ts"
   },
   "dependencies": {
     "@inco/lightning-js": "^1.0.2",
@@ -26,6 +27,7 @@
   "devDependencies": {
     "@types/node": "^26.2.0",
     "tsx": "^4.23.11",
-    "typescript": "^5.9.2"
+    "typescript": "^5.9.2",
+    "playwright": "^1.56.0"
   }
 }

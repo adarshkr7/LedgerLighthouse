@@ -15,7 +15,8 @@
     "verify": "node scripts/verify.mjs",
     "forge:build": "pnpm --filter @ntux402/contracts run compile",
     "forge:test": "pnpm --filter @ntux402/contracts run forge:test",
-    "dev": "node scripts/dev.mjs"
+    "dev": "node scripts/dev.mjs",
+    "record:demo": "pnpm --filter @ntux402/e2e run record"
   },
   "devDependencies": {
     "typescript": "^5.9.2"
