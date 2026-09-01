@@ -52,8 +52,14 @@ Base Sepolia, chain id `84532`. Both contracts are source-verified.
 
 Settlement asset: USDC at [`0x036CbD53842c5426634e7929541eC2318f3dCF7e`](https://sepolia.basescan.org/address/0x036CbD53842c5426634e7929541eC2318f3dCF7e).
 
-Sapphire testnet: ROFL app `rofl1qr0fv0qs2u8vmmah0ucmwegcj2cdz7kj4qzjduhp`, both enclave measurements
-whitelisted in its on-chain policy, one replica attested and running.
+Sapphire testnet: ROFL app `rofl1qr0fv0qs2u8vmmah0ucmwegcj2cdz7kj4qzjduhp` is registered, 100 TEST
+staked, with both enclave measurements whitelisted in its on-chain policy. That registration is
+permanent and checkable with `oasis rofl show`.
+
+A *running* replica is a separate matter: ROFL compute is rented by the hour, and no machine is
+rented at present. So the enclave deployment is reproducible from the manifest rather than currently
+live, and any run made without one falls back to the local key store — which is the assumption the
+enclave exists to retire.
 
 ### Transactions produced by the running system
 
