@@ -66,6 +66,12 @@ const services = [
   ...(config.SEARCH_VENDOR_KEY
     ? [{ name: "vendor-search", filter: "@ntux402/vendor-search", script: "start" }]
     : []),
+  // Same rule, gated on the payee rather than a key: the GPU vendor's provider
+  // adapter is a stand-in that needs no credential, but without somewhere for
+  // the USDC to land the service refuses to start.
+  ...(config.VENDOR_GPU_PAYEE
+    ? [{ name: "vendor-gpu", filter: "@ntux402/vendor-gpu", script: "start" }]
+    : []),
   ...(config.X402_FACILITATOR_URL
     ? [{ name: "facilitator", filter: "@ntux402/facilitator", script: "start" }]
     : []),

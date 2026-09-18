@@ -268,6 +268,7 @@ Two traps worth knowing: `oasis rofl build` will not run on native Windows, and 
 | `services/trace/` | Trace builder, Merkle accumulator, and the standalone verifier |
 | `services/facilitator/` | Self-hosted x402 v1 facilitator. Outside the trust boundary |
 | `services/vendor-search/` | Live search vendor — real upstream calls, priced and sold over x402 |
+| `services/vendor-gpu/` | GPU vendor — one prepaid job per payment, priced from a SKU table |
 | `packages/shared/` | Types, the x402 client, chain helpers, the shared HTTP guard |
 | `apps/web/` | Console — MetaMask goal opening, funding, run visualisation |
 | `mock-api/` | Mock resource server — fabricated data at chosen prices |
@@ -279,7 +280,12 @@ The standalone verifier referenced above lives in [`services/trace/`](services/t
 a trace file and a public RPC, and depends on no service in this repository.
 
 The import boundary is enforced in CI: `pnpm check:boundary` asserts that the orchestrator can reach
-neither the signer nor the vendor credential.
+neither the signer nor either vendor's credential.
+
+`services/vendor-gpu/` is phase 1 of [the GPU rental plan](docs/GPU_RENTAL_PLAN.md). It serves real
+402s at real prices and settles for real, and the machine behind it is a stand-in: no provider has
+been chosen yet, so every job result says `simulated: true` and the service refuses to start if
+`GPU_PROVIDER_KEY` is set.
 
 ---
 
