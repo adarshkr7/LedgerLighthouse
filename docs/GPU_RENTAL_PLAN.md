@@ -95,13 +95,20 @@ provisioning latency, because §5.4 shows that number lands directly on the paym
 ## 4. Naming and layout
 
 ```
-services/vendor-gpu/                  the x402 resource server
-  src/handler.ts                      request -> quote -> provision -> settle
-  src/lease.ts                        lease lifecycle and the lease store
-  src/providers/                      one adapter per supply source
-  src/upstream.ts                     SpendLedger, carried over
-packages/shared/src/demo/gpu-skus.ts  SKU table: the tier table's successor
+services/vendor-gpu/                     the x402 resource server
+  src/handler.ts                         request -> quote -> provision -> settle
+  src/lease.ts                           lease lifecycle and the lease store (phase 2)
+  src/providers/types.ts                 the adapter seam
+  src/providers/simulated.ts             the stand-in, until §8 q1 is answered
+packages/shared/src/demo/gpu-skus.ts     SKU table: the tier table's successor
+packages/shared/src/demo/gpu-request.ts  validation, shared for the §5.6 reason
+packages/shared/src/node/spend-ledger.ts SpendLedger, moved here from the search vendor
 ```
+
+`SpendLedger` moved rather than being copied. Two resource servers now need a spend ceiling and
+a security control with two implementations has one that is wrong; the caps differ, the
+arithmetic does not. `services/vendor-search/src/upstream.ts` re-exports it so the name still
+imports from where that service's boundary is.
 
 `services/vendor-search` stays. It is a working paid x402 resource server and it costs nothing
 to keep as the cheap end of the catalog.
@@ -243,10 +250,24 @@ it is today.
 `tools/e2e/src/adversary.ts` that runs the payer-capture attempt against a *deployed* vault
 rather than a Foundry double, which is the only version of it that exercises the signer.
 
-**Phase 1 — prepaid job.** `services/vendor-gpu` serving one bounded job per payment, one
-provider adapter, a SKU table, and a spend ceiling sized for GPUs. Reuses the search handler's
-structure including its ordering. End-to-end proof that the economics work before anything
-stateful exists.
+**Phase 1 — prepaid job.** Landed 19 September 2026. `services/vendor-gpu` serves one bounded
+job per payment: `GET /resource/gpu?sku=&minutes=&workload=`, priced from `gpu-skus.ts`, with
+the search handler's order of operations carried over unchanged. `SpendLedger` moved to
+`@ntux402/shared/node` rather than being copied, and the GPU ceiling starts at 25.00 per hour
+against the search vendor's 1.00. `scripts/check-boundary.mjs` now refuses `GPU_PROVIDER_KEY`
+in orchestrator source the same way it refuses the search key.
+
+Three things it does not do, each for a stated reason rather than an oversight. The provider
+adapter allocates nothing, because §8 question 1 is unanswered and an adapter written against an
+account nobody holds proves nothing; every job result carries `simulated: true` into the response
+and the trace so a demo run cannot be mistaken for a rental. The request names a workload from a
+closed set rather than carrying an image and a command, because arbitrary payloads need an
+isolation story that arrives with the provider. And nothing is keyed on the spend nonce yet —
+§5.2 stays open — so what stops a retry provisioning twice is the facilitator declining a
+consumed nonce at `/verify`, which is a check and not a lock.
+
+Still to wire: the orchestrator does not know this vendor exists. That needs a payee and a URL
+the way `VENDOR_SEARCH_PAYEE` does, and it is the next increment.
 
 **Phase 2 — leases.** Lease store keyed on the spend nonce, expiry and reclamation, credential
 issue and revoke, renewal through `seq + 1`. This is where §5.1 through §5.5 get built and where

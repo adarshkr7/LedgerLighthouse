@@ -1,0 +1,22 @@
+{
+  "name": "@ntux402/vendor-gpu",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "x402 resource server renting GPU time by the prepaid job. Holds GPU_PROVIDER_KEY; the orchestrator must never import it.",
+  "main": "./src/index.ts",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@ntux402/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "tsx": "^4.23.11",
+    "typescript": "^5.9.2",
+    "vitest": "^4.1.10"
+  }
+}

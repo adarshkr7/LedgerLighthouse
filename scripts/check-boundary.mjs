@@ -6,15 +6,19 @@
 // client for that. What it must never do is import those packages or read from their source
 // trees, however the import is spelled.
 //
-// Two boundaries, one mechanism:
+// Three boundaries, one mechanism:
 //
 //   services/signer      holds the payer key. Compromise here is arbitrary USDC spend.
 //   services/vendor-search holds SEARCH_VENDOR_KEY. Compromise here is arbitrary spend against a
 //                        prepaid balance that PolicyVault never sees — no on-chain trace, no
 //                        confidential budget, nothing to bounce off. See
 //                        README.md.
+//   services/vendor-gpu  holds GPU_PROVIDER_KEY. The same shape of compromise against a bill
+//                        larger by orders of magnitude: a key that allocates GPUs can run up a
+//                        four-figure invoice in an afternoon, and nothing on chain sees it.
+//                        See docs/GPU_RENTAL_PLAN.md.
 //
-// The second one also checks for the *credential name*, not just the import. A key does not
+// The two vendors also check for the *credential name*, not just the import. A key does not
 // need an import to leak: reading it straight out of `process.env` in the orchestrator would be
 // enough, and it is the kind of line that arrives in a hurry during a demo.
 //
@@ -46,10 +50,16 @@ const FORBIDDEN = [
     pkg: "@ntux402/vendor-search",
     reason: "README.md — the vendor key must not reach the untrusted component",
   },
+  {
+    label: "vendor-gpu",
+    dir: join(repoRoot, "services", "vendor-gpu") + sep,
+    pkg: "@ntux402/vendor-gpu",
+    reason: "docs/GPU_RENTAL_PLAN.md — the provider key allocates real hardware",
+  },
 ];
 
 /** Credential names the orchestrator may never mention, by any spelling. */
-const FORBIDDEN_ENV = ["SEARCH_VENDOR_KEY"];
+const FORBIDDEN_ENV = ["SEARCH_VENDOR_KEY", "GPU_PROVIDER_KEY"];
 
 const IMPORT_RE = /(?:import|export)\s+(?:[^'"]*?\sfrom\s*)?['"]([^'"]+)['"]|(?:import|require)\(\s*['"]([^'"]+)['"]\s*\)/g;
 
@@ -102,7 +112,7 @@ for (const file of walk(orchestratorSrc)) {
       const line = src.slice(0, index).split("\n").length;
       violations.push(
         `${relative(repoRoot, file)}:${line} names ${name} — that credential belongs to ` +
-          `services/vendor-search alone (README.md)`,
+          `the vendor that holds it, alone (README.md, docs/GPU_RENTAL_PLAN.md)`,
       );
     }
   }
@@ -120,7 +130,7 @@ if (existsSync(orchestratorPkgPath)) {
 
 if (violations.length > 0) {
   console.error(
-    "Dependency boundary violated: services/orchestrator must not reach the signer or the search vendor.\n",
+    "Dependency boundary violated: services/orchestrator must not reach the signer or a paid vendor.\n",
   );
   for (const v of violations) console.error(`  - ${v}`);
   console.error("\nSee the trust model in ARCHITECTURE.md.");
