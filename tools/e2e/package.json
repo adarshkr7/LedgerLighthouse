@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "state": "tsx src/vault-state.ts",
     "demo": "tsx src/demo.ts",
+    "adversary": "tsx src/adversary.ts",
     "tee-check": "tsx src/tee-check.ts",
     "balances": "tsx src/balances.ts",
     "keygen": "tsx src/keygen.ts",

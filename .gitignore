@@ -38,6 +38,14 @@ services/signer/.keys/
 submission/
 
 
+# The paper and its print artifacts. The venue is not picked and anonymization
+# is still open, and this repository is public: committing the manuscript
+# decides that question by accident. Covers paper/tools/ too, so the renderer
+# stays local until the decision is made.
+# Note this is ignored, not merely untracked, so `git clean -fd` leaves it
+# alone. Nothing else backs it up.
+paper/
+
 # Execution traces are run records: prompts, vendor relationships, amounts. They
 # are meant to be handed to an auditor deliberately, not committed by accident.
 # Scoped by name — a blanket *.json would swallow every package.json here.
