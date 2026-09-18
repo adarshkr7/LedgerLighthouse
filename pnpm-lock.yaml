@@ -222,6 +222,9 @@ importers:
       '@ntux402/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      viem:
+        specifier: ^2.55.11
+        version: 2.55.11(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)(zod@4.4.3)
     devDependencies:
       '@types/node':
         specifier: ^26.2.0

@@ -11,7 +11,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@ntux402/shared": "workspace:*"
+    "@ntux402/shared": "workspace:*",
+    "viem": "^2.55.11"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",

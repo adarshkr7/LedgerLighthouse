@@ -8,9 +8,10 @@
  * machine under somebody's desk.
  *
  * The interface is also where the phase boundary sits. Phase 1 buys one bounded
- * job and gets a result back, so `runJob` is the whole surface. Phase 2 adds a
- * lease — provision, hand back a credential, renew, revoke — and that is a
- * second method here, not a different shape of the same one.
+ * job and gets a result back, so `runJob` was the whole surface. Phase 2 adds
+ * the lease pair, `provisionLease` and `terminateLease`, as their own methods:
+ * a lease is not a job that happens to be long. A job ends by finishing and a
+ * lease ends by being taken away.
  *
  * ## Costs and failures
  *
@@ -84,9 +85,59 @@ export type JobResult =
       readonly provisioned: boolean;
     };
 
+export interface LeaseRequest {
+  readonly sku: GpuSku;
+  readonly workload: GpuWorkload;
+  readonly minutes: GpuBlockMinutes;
+  readonly idempotencyKey: string;
+  /**
+   * Epoch milliseconds past which the provider must stop the machine itself,
+   * whatever this vendor does or fails to do.
+   *
+   * The backstop plan §5.1 asks for. `LeaseStore.reclaimExpired` is the prompt
+   * path, and it is one timer in one process, which is not reclamation "with
+   * the same reliability as settlement" — a crash, a corrupt store or a lost
+   * record all end the same way, with a machine nobody is going to switch off.
+   * An adapter that cannot arrange a provider-side kill has to say so, because
+   * the honest consequence is that the operator is the backstop.
+   *
+   * Set past the block's own expiry, so the ordinary path is this vendor
+   * reclaiming on time and the provider kill is what catches the rest.
+   */
+  readonly hardExpiryAt: number;
+}
+
+export type LeaseProvisionResult =
+  | {
+      readonly ok: true;
+      /** The provider's own identifier. Everything revocation needs. */
+      readonly providerHandle: string;
+      /** Where the buyer reaches the machine. An origin, with no secret in it. */
+      readonly endpoint: string;
+      readonly provider: string;
+      readonly simulated: boolean;
+      readonly provisionMs: number;
+      /** False when the adapter could not arrange a provider-side kill. */
+      readonly hardExpirySet: boolean;
+    }
+  | {
+      readonly ok: false;
+      readonly status: number;
+      readonly error: string;
+      readonly provisioned: boolean;
+    };
+
 /** One supply source. See the header for why this is all of it. */
 export interface GpuProvider {
   /** Human-readable name of the adapter, for logs and the response body. */
   readonly name: string;
   runJob(request: JobRequest): Promise<JobResult>;
+  /** Phase 2. Allocates a machine and leaves it running until it is taken away. */
+  provisionLease(request: LeaseRequest): Promise<LeaseProvisionResult>;
+  /**
+   * Gives a machine back. Idempotent: terminating a handle that is already gone
+   * is an `ok`, because the reclaimer retries whatever it could not finish and
+   * a second attempt must not turn a success into a permanent failure.
+   */
+  terminateLease(providerHandle: string): Promise<{ ok: boolean; error?: string }>;
 }

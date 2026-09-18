@@ -18,9 +18,18 @@ import {
 } from "@ntux402/shared";
 import { SpendLedger } from "@ntux402/shared/node";
 
+import { LeaseStore } from "./lease.js";
+import type { PayerCheck } from "./payer-check.js";
+
 import { handleRequest, type HandlerOptions } from "./handler.js";
 import type { PaymentGateway } from "./gateway.js";
-import type { GpuProvider, JobRequest, JobResult } from "./providers/index.js";
+import type {
+  GpuProvider,
+  JobRequest,
+  JobResult,
+  LeaseProvisionResult,
+  LeaseRequest,
+} from "./providers/index.js";
 
 const PAYEE = "0x4444444444444444444444444444444444444444" as Address;
 const ASSET = "0x036CbD53842c5426634e7929541eC2318f3dCF7e" as Address;
@@ -45,10 +54,29 @@ const OK_JOB: JobResult = {
 class SpyProvider implements GpuProvider {
   readonly name = "spy";
   calls: JobRequest[] = [];
+  leaseCalls: LeaseRequest[] = [];
+  terminated: string[] = [];
+  leaseResult: LeaseProvisionResult = {
+    ok: true,
+    providerHandle: "spy-box-1",
+    endpoint: "https://spy-box-1.gpu.invalid",
+    provider: "spy",
+    simulated: true,
+    provisionMs: 30_000,
+    hardExpirySet: true,
+  };
   constructor(private readonly result: JobResult = OK_JOB) {}
   async runJob(request: JobRequest): Promise<JobResult> {
     this.calls.push(request);
     return this.result;
+  }
+  async provisionLease(request: LeaseRequest): Promise<LeaseProvisionResult> {
+    this.leaseCalls.push(request);
+    return this.leaseResult;
+  }
+  async terminateLease(providerHandle: string): Promise<{ ok: boolean }> {
+    this.terminated.push(providerHandle);
+    return { ok: true };
   }
 }
 
@@ -396,5 +424,222 @@ describe("a paid rental", () => {
     expect(res.status).toBe(200);
     const settlement = decodeSettlementHeader(res.headers[HEADER_PAYMENT_RESPONSE] ?? "");
     expect(settlement.ok && settlement.value.simulated).toBe(true);
+  });
+});
+
+describe("leases", () => {
+  const LEASE = "/resource/gpu/lease?sku=rtx4090&minutes=15&workload=gpu-burn";
+
+  /** Accepts everything, so a test can isolate the lock from the signature. */
+  const anyPayer: PayerCheck = { signedByPayer: async () => true };
+  const noPayer: PayerCheck = { signedByPayer: async () => false };
+
+  const withLeases = (extra: Partial<HandlerOptions> = {}) => {
+    const leases = new LeaseStore();
+    const provider = new SpyProvider();
+    const gateway = new SpyGateway();
+    return {
+      leases,
+      provider,
+      gateway,
+      options: { leases, provider, gateway, payerCheck: anyPayer, ...extra },
+    };
+  };
+
+  /*
+   * A vendor that cannot remember a lease could not reclaim it either, and
+   * §5.1 is entirely about the machine outliving the block.
+   */
+  it("501s the lease route when no store is configured", async () => {
+    const res = await get(LEASE);
+    expect(res.status).toBe(501);
+  });
+
+  it("quotes the same price as the equivalent job", async () => {
+    const { options } = withLeases();
+    const res = await get(LEASE, {}, options);
+    expect(res.status).toBe(402);
+    const parsed = parsePaymentRequired(res.body);
+    expect(parsed.ok && parsed.value.accepts[0]?.amount).toBe(120_000n);
+  });
+
+  it("hands back a credential, an expiry and a renewal deadline", async () => {
+    const { options, gateway } = withLeases();
+    const res = await get(LEASE, { [HEADER_PAYMENT]: paymentHeader() }, options);
+
+    expect(res.status).toBe(200);
+    const body = res.body as {
+      capability: string;
+      renewLeadSeconds: number;
+      lease: { id: string; credential: string; expiresAt: number; renewBy: number; blocks: number };
+    };
+    expect(body.capability).toBe("gpu-lease");
+    expect(body.lease.credential).toContain(body.lease.id);
+    expect(body.lease.blocks).toBe(1);
+    expect(body.lease.expiresAt - body.lease.renewBy).toBe(body.renewLeadSeconds * 1000);
+    expect(gateway.settleCalls).toBe(1);
+    expect(res.headers[HEADER_PAYMENT_RESPONSE]).toBeDefined();
+  });
+
+  it("sets a provider-side kill past the block's own expiry", async () => {
+    const { options, provider } = withLeases();
+    await get(LEASE, { [HEADER_PAYMENT]: paymentHeader() }, options);
+
+    const request = provider.leaseCalls[0];
+    expect(request?.hardExpiryAt).toBeGreaterThan(Date.now() + 15 * 60_000);
+  });
+
+  describe("the §5.2 lock", () => {
+    it("returns the same lease on a retry and provisions nothing", async () => {
+      const { options, provider, gateway } = withLeases();
+      const header = { [HEADER_PAYMENT]: paymentHeader() };
+
+      const first = await get(LEASE, header, options);
+      const retry = await get(LEASE, header, options);
+
+      const id = (body: unknown) => (body as { lease: { id: string } }).lease.id;
+      expect(id(retry.body)).toBe(id(first.body));
+      expect(provider.leaseCalls).toHaveLength(1);
+      // Already settled. The absent header is how the buyer can tell.
+      expect(gateway.settleCalls).toBe(1);
+      expect(retry.headers[HEADER_PAYMENT_RESPONSE]).toBeUndefined();
+    });
+
+    /*
+     * The spend nonce is public — hashed from two integers, emitted in an
+     * event, written into every trace. Knowing one must not be enough to be
+     * handed a live credential.
+     */
+    it("refuses to re-issue a credential without the payer's signature", async () => {
+      const { options, provider } = withLeases({ payerCheck: noPayer });
+      const header = { [HEADER_PAYMENT]: paymentHeader() };
+
+      // First purchase goes through: the lock is what the signature gates, not
+      // the sale, so a fresh nonce is unaffected.
+      const first = await get(LEASE, header, { ...options, payerCheck: anyPayer });
+      expect(first.status).toBe(200);
+
+      const replay = await get(LEASE, header, options);
+      expect(replay.status).toBe(403);
+      expect(JSON.stringify(replay.body)).not.toContain("credential");
+      // The lock still held: nothing was provisioned a second time.
+      expect(provider.leaseCalls).toHaveLength(1);
+    });
+
+    it("never provisions twice even when the signature check fails", async () => {
+      const { options, provider } = withLeases({ payerCheck: noPayer });
+      const header = { [HEADER_PAYMENT]: paymentHeader() };
+      await get(LEASE, header, { ...options, payerCheck: anyPayer });
+      await get(LEASE, header, options);
+      await get(LEASE, header, options);
+      expect(provider.leaseCalls).toHaveLength(1);
+    });
+  });
+
+  /*
+   * §5.4 closing badly. The machine exists and the money did not move, so it
+   * goes back at once — otherwise it is a meter running against the vendor.
+   */
+  it("terminates immediately when settlement fails", async () => {
+    const leases = new LeaseStore();
+    const provider = new SpyProvider();
+    const gateway = new SpyGateway({ isValid: true }, { success: false, errorReason: "no funds" });
+
+    const res = await get(
+      LEASE,
+      { [HEADER_PAYMENT]: paymentHeader() },
+      { leases, provider, gateway, payerCheck: anyPayer },
+    );
+
+    expect(res.status).toBe(402);
+    expect(provider.terminated).toEqual(["spy-box-1"]);
+    // And nothing was recorded, so there is no orphan to reconcile.
+    expect(leases.active()).toHaveLength(0);
+  });
+
+  it("502s a provisioning failure and settles nothing", async () => {
+    const { options, provider, gateway } = withLeases();
+    provider.leaseResult = {
+      ok: false,
+      status: 503,
+      error: "no capacity in region",
+      provisioned: false,
+    };
+
+    const res = await get(LEASE, { [HEADER_PAYMENT]: paymentHeader() }, options);
+
+    expect(res.status).toBe(502);
+    expect(res.body).toMatchObject({ providerStatus: 503, provisioned: false });
+    expect(gateway.settleCalls).toBe(0);
+  });
+
+  describe("renewal", () => {
+    const renew = (id: string) => `${LEASE}&renew=${id}`;
+
+    const openOne = async (options: Partial<HandlerOptions>) => {
+      const res = await get(LEASE, { [HEADER_PAYMENT]: paymentHeader() }, options);
+      return (res.body as { lease: { id: string; expiresAt: number } }).lease;
+    };
+
+    it("extends the block without provisioning again", async () => {
+      const { options, provider, gateway } = withLeases();
+      const lease = await openOne(options);
+
+      const res = await get(
+        renew(lease.id),
+        { [HEADER_PAYMENT]: paymentHeader({ nonce: `0x${"ab".repeat(32)}` }) },
+        options,
+      );
+
+      expect(res.status).toBe(200);
+      const body = res.body as { lease: { blocks: number; expiresAt: number } };
+      expect(body.lease.blocks).toBe(2);
+      expect(body.lease.expiresAt).toBe(lease.expiresAt + 15 * 60_000);
+      expect(provider.leaseCalls).toHaveLength(1);
+      expect(gateway.settleCalls).toBe(2);
+    });
+
+    it("404s a lease it has never heard of", async () => {
+      const { options } = withLeases();
+      const res = await get(renew("lease-nope"), { [HEADER_PAYMENT]: paymentHeader() }, options);
+      expect(res.status).toBe(404);
+    });
+
+    /*
+     * 409, not 402. Nothing is wrong with the payment; the machine is gone, and
+     * extending the lease would sell time on hardware nobody holds.
+     */
+    it("409s a lease that has already ended", async () => {
+      const leases = new LeaseStore({ now: () => Date.now() - 60 * 60_000 });
+      const provider = new SpyProvider();
+      const options = { leases, provider, gateway: new SpyGateway(), payerCheck: anyPayer };
+      const lease = await openOne(options);
+
+      const res = await get(
+        renew(lease.id),
+        { [HEADER_PAYMENT]: paymentHeader({ nonce: `0x${"cd".repeat(32)}` }) },
+        options,
+      );
+      expect(res.status).toBe(409);
+    });
+
+    it("400s a renewal that names a different card", async () => {
+      const { options } = withLeases();
+      const lease = await openOne(options);
+
+      const res = await get(
+        `/resource/gpu/lease?sku=h100-80gb&minutes=15&workload=gpu-burn&renew=${lease.id}`,
+        { [HEADER_PAYMENT]: paymentHeader({ value: "900000", nonce: `0x${"ef".repeat(32)}` }) },
+        options,
+      );
+      expect(res.status).toBe(400);
+      expect(JSON.stringify(res.body)).toContain("rtx4090");
+    });
+
+    it("400s a renewal aimed at the one-shot job route", async () => {
+      const { options } = withLeases();
+      const res = await get(`${RENTAL}&renew=lease-whatever`, {}, options);
+      expect(res.status).toBe(400);
+    });
   });
 });
