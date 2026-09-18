@@ -31,6 +31,17 @@
  *  4. **Rate limit.** Per-IP, in-memory, on the expensive routes. Not a
  *     distributed limiter and not trying to be — it stops a loop, not a
  *     botnet.
+ *
+ * ## Where opt-in is not good enough
+ *
+ * Controls 2 through 4 bound what a stranger can *do*, and for these services
+ * that is enough: the vault bounds the loss on every route that spends, so the
+ * worst a stranger achieves is griefing a goal they do not own.
+ *
+ * A route that returns data is not in that set. Nothing on chain bounds
+ * disclosure, and there is no later refusal to fall back on — once a record has
+ * been served it has been served. `exposedWithoutToken()` below is the
+ * predicate such a route asks, and it fails closed rather than open.
  */
 
 import type { IncomingMessage, ServerResponse } from "node:http";
@@ -93,6 +104,34 @@ export function corsHeaders(req: IncomingMessage): Record<string, string> {
 export function serviceToken(): string | undefined {
   const token = process.env["SERVICE_TOKEN"];
   return token === undefined || token === "" ? undefined : token;
+}
+
+/** True for the addresses that are only reachable from the machine itself. */
+function isLoopbackHost(host: string): boolean {
+  const bare = host.startsWith("[") && host.endsWith("]") ? host.slice(1, -1) : host;
+  return bare === "127.0.0.1" || bare === "localhost" || bare === "::1";
+}
+
+/**
+ * True when this process is listening on the network and has no credential.
+ *
+ * Both halves of the guard are opt-in, and that is the right default for the
+ * routes where the vault bounds the damage: a stranger who starts a run burns a
+ * goal they do not own and gets nothing. It is the wrong default for a route
+ * that hands out *data*, because no on-chain bound covers disclosure and there
+ * is no equivalent of "the policy refused it".
+ *
+ * So this is the predicate such a route asks before serving. Loopback is
+ * unaffected, which keeps `pnpm dev` and a curl against a local trace working
+ * exactly as before. A deployment that binds `0.0.0.0` has to name a token, and
+ * that is a sentence someone writes rather than a default nobody reads.
+ *
+ * `BIND_HOST` rather than the socket's own address on purpose: it is the same
+ * value `bindHost()` hands to `listen`, so the two cannot disagree, and a
+ * container that maps a port outward is still publishing whatever it bound.
+ */
+export function exposedWithoutToken(): boolean {
+  return !isLoopbackHost(bindHost()) && serviceToken() === undefined;
 }
 
 /**

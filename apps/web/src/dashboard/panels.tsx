@@ -195,6 +195,29 @@ export function EvidenceBody({
   );
 }
 
+const NO_TRACE_YET = "No trace yet for this goal — run a request first.";
+
+/**
+ * What to tell the viewer when `/traces/:goalId` says no.
+ *
+ * A refusal and a miss are different problems with different fixes, and only
+ * the second one is theirs to solve. A trace is a run record — the model's
+ * reasoning, the payees, the amounts — so the orchestrator will not serve one
+ * to the network without a credential, and that is an operator setting rather
+ * than anything this page can present.
+ */
+function traceFailure(status: number): string {
+  if (status === 404) return NO_TRACE_YET;
+  if (status === 401 || status === 403) {
+    return (
+      "The orchestrator is refusing to release traces to this page. They are run records, so it " +
+      "serves them over loopback, or to a caller holding SERVICE_TOKEN — which a browser bundle " +
+      "cannot hold. Fetch it from the machine running the service."
+    );
+  }
+  return `The orchestrator answered ${status}.`;
+}
+
 /**
  * Pulls the run's trace and hands it over as a file.
  *
@@ -205,13 +228,46 @@ export function EvidenceBody({
  */
 function TraceDownload({ goalId }: { goalId: string | undefined }) {
   const [state, setState] = useState<"idle" | "working" | "failed">("idle");
+  /*
+   * Why it failed, not just that it did.
+   *
+   * This used to report every failure as "no trace yet — run a request first",
+   * which was a guess. It is now wrong more often than it is right: the
+   * orchestrator refuses to serve traces at all when it is bound to a network
+   * interface without a token, and a page told to go run a request would go
+   * round that loop forever.
+   */
+  const [reason, setReason] = useState(NO_TRACE_YET);
+
+  /*
+   * Three ways this fails and they are told apart, because the fix differs
+   * every time: nobody home, a refusal from a service that is up, or a browser
+   * that would not save a file it already had. One `catch` around the lot
+   * reported all three as the first guess.
+   */
+  function fail(why: string) {
+    setReason(why);
+    setState("failed");
+  }
 
   async function download() {
     if (!goalId) return;
     setState("working");
+
+    let response: Response;
     try {
-      const response = await fetch(`${ORCHESTRATOR_URL}/traces/${goalId}`);
-      if (!response.ok) throw new Error(String(response.status));
+      response = await fetch(`${ORCHESTRATOR_URL}/traces/${goalId}`);
+    } catch {
+      fail(`Could not reach the orchestrator at ${ORCHESTRATOR_URL}.`);
+      return;
+    }
+
+    if (!response.ok) {
+      fail(traceFailure(response.status));
+      return;
+    }
+
+    try {
       const blob = new Blob([await response.text()], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
@@ -221,7 +277,7 @@ function TraceDownload({ goalId }: { goalId: string | undefined }) {
       URL.revokeObjectURL(url);
       setState("idle");
     } catch {
-      setState("failed");
+      fail("The trace arrived, but the browser would not save it.");
     }
   }
 
@@ -245,7 +301,7 @@ function TraceDownload({ goalId }: { goalId: string | undefined }) {
         )}
       </button>
       {state === "failed" ? (
-        <p className="d-caption">No trace yet for this goal — run a request first.</p>
+        <p className="d-caption">{reason}</p>
       ) : (
         <>
           <p className="d-caption">Verify it independently — the file and a public RPC are enough:</p>

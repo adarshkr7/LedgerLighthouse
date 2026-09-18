@@ -11,6 +11,7 @@ import {
   bindHost,
   createLogger,
   describeGuard,
+  exposedWithoutToken,
   loadDotEnv,
   optional,
   optionalAddress,
@@ -193,6 +194,18 @@ const server = createOrchestratorServer({
 
 server.listen(port, bindHost(), () => {
   log.info(`listening on http://${bindHost()}:${port}`, { guard: describeGuard() });
+  /*
+   * Said at boot rather than discovered at the download button. The trace route
+   * refuses in this combination, and an operator who bound the service outward
+   * on purpose should hear about the consequence while they are still looking
+   * at the terminal.
+   */
+  if (exposedWithoutToken()) {
+    log.warn(
+      "bound to the network with no SERVICE_TOKEN — GET /traces/:goalId will refuse. " +
+        "Traces are run records; set a token, or bind loopback and fetch them from this machine.",
+    );
+  }
   log.info("relay", { address: relay.relayAddress, note: "gas only" });
   log.info("agent", {
     source: agentIsLive ? "live LLM" : "scripted stand-in",

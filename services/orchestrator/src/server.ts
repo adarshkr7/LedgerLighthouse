@@ -13,6 +13,10 @@
  *   POST /runs            { goalId, mode } -> SSE stream of PaymentEvents
  *   POST /sweeps          { goalId } -> returns the payer balance to the owner
  *   GET  /traces/:goalId  the trace built from the last run for that goal
+ *
+ * `/health` and `/config` answer anyone. Everything else is guarded, and
+ * `/traces/` most of all — see the route for why a run record is a different
+ * kind of thing from a run.
  */
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
@@ -24,7 +28,7 @@ import {
   validateQuery,
   vendorUpstreamOf,
 } from "@ntux402/shared";
-import { RateLimiter, corsHeaders, rejected } from "@ntux402/shared/node";
+import { RateLimiter, corsHeaders, exposedWithoutToken, rejected } from "@ntux402/shared/node";
 import type { Address } from "viem";
 
 import type { PaymentEvent, PaymentLoop, PaymentResult } from "./pay/payment-loop.js";
@@ -96,6 +100,16 @@ export interface OrchestratorServerOptions {
  * a human driving a UI rather than a script.
  */
 const RUN_LIMIT = new RateLimiter({ windowMs: 60_000, max: 20 });
+
+/**
+ * Its own bucket, not `RUN_LIMIT`.
+ *
+ * Downloading three traces should not spend a viewer's budget for starting
+ * runs; the two routes cost different things and bound different risks. Higher
+ * than `RUN_LIMIT` because a trace read is an LRU hit or one small file, and
+ * still low enough that walking the id space is slow rather than instant.
+ */
+const TRACE_LIMIT = new RateLimiter({ windowMs: 60_000, max: 60 });
 
 function send(
   res: ServerResponse,
@@ -213,7 +227,48 @@ export function createOrchestratorServer(options: OrchestratorServerOptions): Se
         return;
       }
 
+      /*
+       * The one route here that hands back data rather than doing something.
+       *
+       * It was open, and open is wrong for it. Goal ids are small sequential
+       * integers, so `GET /traces/1`, `/traces/2`, ... walks every run the
+       * process has ever recorded — and a trace carries the vendor's prose, the
+       * model's own reasoning, the payee, the amounts and the resource URLs.
+       * `.gitignore` already says these are meant to be handed to an auditor
+       * deliberately. Serving them to anyone who can reach the port is the
+       * opposite of deliberately.
+       *
+       * Two controls, and they answer different questions. `rejected()` is the
+       * same guard the mutating routes use: the bearer when one is configured,
+       * and a limiter that makes enumeration slow. `exposedWithoutToken()` is
+       * the floor underneath it, because the bearer is opt-in and the useful
+       * default for `/runs` is the dangerous one here — a stranger who starts a
+       * run burns a goal they do not own, and a stranger who reads a trace
+       * keeps it.
+       */
       if (req.method === "GET" && path.startsWith("/traces/")) {
+        if (rejected(req, res, { limiter: TRACE_LIMIT })) return;
+
+        if (exposedWithoutToken()) {
+          /*
+           * 403, not 401. A 401 with `www-authenticate` invites the caller to
+           * present a credential, and there is no credential that would work:
+           * the operator has not configured one. The fault is this side of the
+           * wire and the message says so.
+           */
+          send(
+            res,
+            403,
+            {
+              error:
+                "refused: traces are run records and this process is bound to a network " +
+                "interface with no SERVICE_TOKEN set. Set one, or bind BIND_HOST to 127.0.0.1.",
+            },
+            cors,
+          );
+          return;
+        }
+
         const goalId = path.slice("/traces/".length);
         const trace = traces.get(goalId);
         if (!trace) {
