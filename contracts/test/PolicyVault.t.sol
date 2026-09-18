@@ -7,6 +7,24 @@ import {ebool, euint256, e, inco} from "@inco/lightning/src/Lib.sol";
 
 import {PolicyVault} from "../src/PolicyVault.sol";
 
+/// Produces a trivially-encrypted, revealed handle inside a single call.
+///
+/// `e.asEbool` grants the caller *transient* access to the handle it creates,
+/// and from Foundry 1.8 transient storage is cleared between the top-level
+/// calls a test makes. Encrypting on one line and revealing on the next loses
+/// the permission in between, so `reveal` answers `SenderNotAllowedForHandle`.
+///
+/// A contract never meets that boundary. `PolicyVault` encrypts, computes and
+/// reveals within one `requestSpend`, and doing the same here keeps the test on
+/// the path production takes. The reveal is what leaves the handle publicly
+/// decryptable, which is what lets the covalidator attest to it afterwards.
+contract RevealedHandleMinter {
+    function revealedTrue() external returns (ebool handle) {
+        handle = e.asEbool(true);
+        e.reveal(handle);
+    }
+}
+
 /// Tests for the on-chain policy vault.
 ///
 /// Written before the contract, because the properties they pin down are the
@@ -312,8 +330,7 @@ contract PolicyVaultTest is IncoTest {
         uint64 seq = _requestSpend(50_000);
 
         // A real, correctly-signed attestation — for an unrelated handle.
-        ebool decoy = e.asEbool(true);
-        e.reveal(decoy);
+        ebool decoy = new RevealedHandleMinter().revealedTrue();
         processAllOperations();
 
         (, bytes[] memory decoySignatures) = getDecryptionAttestation(
