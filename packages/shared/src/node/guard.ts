@@ -151,6 +151,23 @@ export class RateLimiter {
     entry.count += 1;
     return entry.count <= this.#max;
   }
+
+  /**
+   * Whole seconds until `key`'s window resets — what to put in `retry-after`.
+   *
+   * `rejected()` below answers a flat `60` because every limiter it serves uses
+   * a one-minute window. Callers with a configurable window need the real
+   * number, and a caller told to wait longer than it has to is a caller that
+   * backs off further than the limit actually requires.
+   *
+   * Rounded up and floored at 1: `retry-after: 0` invites an immediate retry,
+   * which is the opposite of the point.
+   */
+  retryAfterSeconds(key: string): number {
+    const entry = this.#hits.get(key);
+    if (entry === undefined) return 0;
+    return Math.max(1, Math.ceil((entry.resetAt - Date.now()) / 1000));
+  }
 }
 
 /** Best-effort client identity. `x-forwarded-for` only when behind a proxy. */

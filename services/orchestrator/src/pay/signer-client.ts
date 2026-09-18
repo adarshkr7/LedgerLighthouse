@@ -53,6 +53,15 @@ export type AuthorizeOutcome =
   | { readonly kind: "signed"; readonly value: SignedAuthorization }
   /** The decision is committed but not yet finalized on chain. Poll and retry. */
   | { readonly kind: "not-ready"; readonly reason: string }
+  /**
+   * The signer is rate limited — its own edge limiter, or the cap on enclave key
+   * operations. Retryable, and kept distinct from `refused` for the same reason
+   * 425 is: the budget for this spend is **already debited on chain**, so
+   * treating a limit that clears in seconds as terminal abandons money.
+   *
+   * `retryAfterSeconds` is the signer's `retry-after`, or 0 when it sent none.
+   */
+  | { readonly kind: "rate-limited"; readonly reason: string; readonly retryAfterSeconds: number }
   /** The policy said no, or the signer refused. Terminal — do not retry smaller. */
   | { readonly kind: "refused"; readonly status: number; readonly reason: string }
   | { readonly kind: "unreachable"; readonly reason: string };
@@ -71,6 +80,24 @@ export type SweepAuthorizationOutcome =
   /** Goal still open, no balance, wrong token, or no key. Informative — pass it on. */
   | { readonly kind: "refused"; readonly status: number; readonly reason: string }
   | { readonly kind: "unreachable"; readonly reason: string };
+
+/**
+ * `retry-after` in whole seconds, or 0 when absent or unusable.
+ *
+ * Only the delta-seconds form is read. The HTTP-date form is legal and no
+ * signer here emits one, and parsing a date would mean trusting a remote clock
+ * to decide how long this process sleeps.
+ *
+ * Clamped rather than trusted: a header saying `86400` would otherwise park the
+ * payment loop for a day, and the value is arriving over the network.
+ */
+function retryAfter(response: Response): number {
+  const raw = response.headers.get("retry-after");
+  if (raw === null) return 0;
+  const seconds = Number(raw.trim());
+  if (!Number.isFinite(seconds) || seconds <= 0) return 0;
+  return Math.min(Math.ceil(seconds), 60);
+}
 
 export class SignerClient {
   readonly #url: string;
@@ -149,6 +176,13 @@ export class SignerClient {
     // chain yet. Distinct from a refusal, and treating it as one would abandon
     // a spend the budget has already been debited for.
     if (response.status === 425) return { kind: "not-ready", reason: error };
+
+    // 429 is the same shape of mistake waiting to happen. The signer limits
+    // both its HTTP edge and its enclave key operations, and either can trip on
+    // a burst that has nothing to do with this spend's validity.
+    if (response.status === 429) {
+      return { kind: "rate-limited", reason: error, retryAfterSeconds: retryAfter(response) };
+    }
 
     return { kind: "refused", status: response.status, reason: error };
   }

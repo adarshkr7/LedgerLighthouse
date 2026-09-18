@@ -29,6 +29,11 @@ import {
   requiredAddress,
 } from "@ntux402/shared/node";
 
+import {
+  RateLimitedKeyStore,
+  describeEnclaveLimits,
+  enclaveLimitsFromEnv,
+} from "./enclave-limit.js";
 import { openKeyStore } from "./keystore.js";
 import { createSignerServer } from "./http.js";
 import { AuthorizationSigner } from "./service.js";
@@ -142,13 +147,29 @@ function migrate(legacy: string, canonical: string): void {
 
 // ROFL when a socket is configured, file/memory otherwise. See keystore.ts for
 // why the fallback exists rather than being treated as a misconfiguration.
-const keys = openKeyStore({
-  roflSocket: process.env["SIGNER_ROFL_SOCKET"],
-  roflIndexPath: process.env["SIGNER_ROFL_INDEX_PATH"],
-  filePath: keyStorePath(),
-  // Turns a silent downgrade to keys-on-disk into a refusal to boot.
-  requireRofl: process.env["SIGNER_REQUIRE_ROFL"] === "true",
-});
+//
+// Read before the store is opened so a malformed limit fails the boot next to
+// the other configuration errors, rather than after a socket has been probed.
+const enclaveLimits = enclaveLimitsFromEnv();
+
+/*
+ * Wrapped, not configured in: the rate limit belongs to the enclave's key
+ * daemon rather than to any one store, and applying it out here means the
+ * laptop stores get it too. See enclave-limit.ts for why this is separate from
+ * the per-IP limiter in http.ts — on the deployed ROFL machine every caller
+ * arrives from the Oasis proxy's address, so per-IP cannot tell them apart and
+ * this is the bound that actually holds.
+ */
+const keys = new RateLimitedKeyStore(
+  openKeyStore({
+    roflSocket: process.env["SIGNER_ROFL_SOCKET"],
+    roflIndexPath: process.env["SIGNER_ROFL_INDEX_PATH"],
+    filePath: keyStorePath(),
+    // Turns a silent downgrade to keys-on-disk into a refusal to boot.
+    requireRofl: process.env["SIGNER_REQUIRE_ROFL"] === "true",
+  }),
+  enclaveLimits,
+);
 
 const signer = new AuthorizationSigner({
   vault,
@@ -164,6 +185,9 @@ const server = createSignerServer({
 server.listen(port, bindHost(), () => {
   const roflSocket = process.env["SIGNER_ROFL_SOCKET"];
   log.info(`listening on http://${bindHost()}:${port}`, { guard: describeGuard() });
+  log.info("enclave key operations are rate limited", {
+    limits: describeEnclaveLimits(enclaveLimits),
+  });
   log.info("bound to chain", { chainId, vault: process.env["POLICY_VAULT_ADDRESS"] });
   log.info("key store", {
     // The resolved absolute path, not the raw setting: which file this is was
