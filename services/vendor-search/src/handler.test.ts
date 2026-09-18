@@ -96,14 +96,14 @@ const base = (options: Partial<HandlerOptions> = {}): HandlerOptions => ({
   ...options,
 });
 
-const SEARCH = "/resource/aisa/search?q=base%20sepolia%20usdc&tier=basic";
+const SEARCH = "/resource/search?q=base%20sepolia%20usdc&tier=basic";
 
 const get = (path: string, headers: Record<string, string> = {}) =>
   handleRequest({ method: "GET", path, headers }, base());
 
 describe("routing and validation", () => {
   it("404s an unknown path and 405s a non-GET", async () => {
-    expect((await get("/resource/aisa/nope")).status).toBe(404);
+    expect((await get("/resource/nope")).status).toBe(404);
     expect(
       (await handleRequest({ method: "POST", path: SEARCH, headers: {} }, base())).status,
     ).toBe(405);
@@ -122,9 +122,9 @@ describe("routing and validation", () => {
    */
   it("400s a bad query or tier without quoting a price", async () => {
     const long = `q=${"a".repeat(300)}`;
-    expect((await get(`/resource/aisa/search?${long}`)).status).toBe(400);
-    expect((await get("/resource/aisa/search?q=")).status).toBe(400);
-    expect((await get("/resource/aisa/search?q=hi&tier=free")).status).toBe(400);
+    expect((await get(`/resource/search?${long}`)).status).toBe(400);
+    expect((await get("/resource/search?q=")).status).toBe(400);
+    expect((await get("/resource/search?q=hi&tier=free")).status).toBe(400);
   });
 });
 
@@ -145,7 +145,7 @@ describe("the 402", () => {
   });
 
   it("prices the deep tier higher than the basic one", async () => {
-    const deep = await get("/resource/aisa/search?q=hi&tier=deep");
+    const deep = await get("/resource/search?q=hi&tier=deep");
     const parsed = parsePaymentRequired(deep.body);
     expect(parsed.ok && parsed.value.accepts[0]?.amount).toBe(
       BigInt(SEARCH_TIERS.deep.priceAtomic),
@@ -182,7 +182,7 @@ describe("the paid path", () => {
     await handleRequest(
       {
         method: "GET",
-        path: "/resource/aisa/search?q=hi&tier=deep&search_depth=advanced&max_results=99",
+        path: "/resource/search?q=hi&tier=deep&search_depth=advanced&max_results=99",
         headers: { [HEADER_PAYMENT]: paymentHeader({ value: SEARCH_TIERS.deep.priceAtomic }) },
       },
       base({ upstream, gateway: new SpyGateway({ isValid: true }) }),
@@ -195,7 +195,7 @@ describe("the paid path", () => {
 describe("what must not cost us money", () => {
   /*
    * The griefing case `/verify` exists to close: a well-formed authorization
-   * that will fail at settlement. Without the verify step we would pay AIsa for
+   * that will fail at settlement. Without the verify step we would pay the provider for
    * a search before discovering it, and a loop of these drains the vendor's
    * balance for free.
    */

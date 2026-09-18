@@ -555,7 +555,7 @@ export default function App() {
              */
             allowlist: [
               ...DEMO_PAYEES,
-              ...(config.vendorAisaPayee ? [config.vendorAisaPayee] : []),
+              ...(config.vendorSearchPayee ? [config.vendorSearchPayee] : []),
             ],
           },
         ],
@@ -1025,7 +1025,7 @@ export default function App() {
                 to search them would be a control that quietly does nothing.
               */}
               {resource.upstream ? (
-                config?.vendorAisaUrl ? (
+                config?.vendorSearchUrl ? (
                   <label className="d-search">
                     <span className="d-search-label">Search for</span>
                     <input

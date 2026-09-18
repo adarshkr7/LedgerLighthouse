@@ -11,8 +11,8 @@
  * **Mock-served** — the original four. Fabricated data at a fixed price, from
  * the bundled `mock-api`. They exist to make an argument, not to be useful.
  *
- * **Upstream-served** — the live AIsa searches, carrying an `upstream` field
- * and served by `services/vendor-aisa` against a real, paid API. Their prices
+ * **Upstream-served** — the live searches, carrying an `upstream` field
+ * and served by `services/vendor-search` against a real, paid API. Their prices
  * come from `SEARCH_TIERS`, measured rather than invented, so what the console
  * displays is what the 402 demands and what the vault is asked to approve.
  *
@@ -42,7 +42,7 @@
  * before anything is refused.
  */
 
-import { SEARCH_TIERS, type SearchTierName } from "./aisa-tiers.js";
+import { SEARCH_TIERS, type SearchTierName } from "./search-tiers.js";
 
 export type GoalKind = "honest" | "malicious";
 
@@ -62,7 +62,7 @@ export type GoalTactic = "none" | "overcharge" | "injection";
  * every consumer should route on rather than matching key names.
  */
 export interface UpstreamRef {
-  readonly vendor: "aisa";
+  readonly vendor: "search";
   readonly capability: "search";
   readonly tier: SearchTierName;
   /**
@@ -89,7 +89,7 @@ export interface DemoGoal {
    *
    * Absent for upstream goals, and that is not an oversight: the live vendor's
    * payee is an address the *operator* controls and can sweep, configured as
-   * `VENDOR_AISA_PAYEE`, so a shared package compiled into a browser bundle
+   * `VENDOR_SEARCH_PAYEE`, so a shared package compiled into a browser bundle
    * cannot know it. Resolved at run time from the orchestrator's `/config` and
    * allowlisted alongside `DEMO_PAYEES` when the goal is opened.
    */
@@ -196,14 +196,14 @@ export const DEMO_GOALS: readonly DemoGoal[] = [
    * rather than as a per-call limit, which none of the four above can show.
    */
   {
-    key: "aisa-search-basic",
+    key: "search-basic",
     label: SEARCH_TIERS.basic.label,
     blurb: SEARCH_TIERS.basic.blurb,
     kind: "honest",
     tactic: "none",
     priceAtomic: SEARCH_TIERS.basic.priceAtomic,
     upstream: {
-      vendor: "aisa",
+      vendor: "search",
       capability: "search",
       tier: "basic",
       defaultQuery: "x402 payment protocol",
@@ -212,14 +212,14 @@ export const DEMO_GOALS: readonly DemoGoal[] = [
       "Approved and settled, and the data is real — live search results bought from a real paid API, not a fixture. Run it several times and watch the encrypted budget draw down.",
   },
   {
-    key: "aisa-search-deep",
+    key: "search-deep",
     label: SEARCH_TIERS.deep.label,
     blurb: SEARCH_TIERS.deep.blurb,
     kind: "honest",
     tactic: "none",
     priceAtomic: SEARCH_TIERS.deep.priceAtomic,
     upstream: {
-      vendor: "aisa",
+      vendor: "search",
       capability: "search",
       tier: "deep",
       defaultQuery: "confidential computing for autonomous agent payments",
@@ -255,7 +255,7 @@ export const MOCK_GOALS: readonly (DemoGoal & { payTo: `0x${string}` })[] =
  * Every *statically known* payee, allowlisted when a goal is opened.
  *
  * Upstream goals are absent by construction — their payee is operator-configured
- * (`VENDOR_AISA_PAYEE`) and arrives from the orchestrator's `/config`. A goal
+ * (`VENDOR_SEARCH_PAYEE`) and arrives from the orchestrator's `/config`. A goal
  * opened without that address allowlisted will have its spend reverted by the
  * vault with `PayeeNotAllowlisted`, which is the correct failure and a
  * confusing one, so the console must union the two before opening.

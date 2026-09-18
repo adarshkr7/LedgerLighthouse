@@ -30,7 +30,7 @@
  * signed.
  */
 
-import { findSearchTier, type SearchTier } from "./aisa-tiers.js";
+import { findSearchTier, type SearchTier } from "./search-tiers.js";
 
 /**
  * Longest query accepted.
@@ -89,7 +89,7 @@ export function validateQuery(raw: unknown): ValidationResult<string> {
  * Resolves a tier name to its priced definition.
  *
  * The caller names a tier; it never sends a price, a depth or a result count.
- * That is the whole reason tiers exist — see `aisa-tiers.ts`. A request that
+ * That is the whole reason tiers exist — see `search-tiers.ts`. A request that
  * could dial `search_depth` could dial our cost, and a request that could dial
  * `maxAmountRequired` could dial what the vault is asked to approve.
  */

@@ -94,7 +94,7 @@ const SERVICES = [
   { name: "facilitator", url: `http://127.0.0.1:${port("FACILITATOR_PORT", 8403)}/health`, blocking: true },
   { name: "orchestrator", url: `http://127.0.0.1:${port("ORCHESTRATOR_PORT", 8404)}/health`, blocking: true },
   { name: "mock-api", url: `http://127.0.0.1:${port("MOCK_API_PORT", 4021)}/health`, blocking: true },
-  { name: "vendor-aisa", url: `http://127.0.0.1:${port("VENDOR_AISA_PORT", 4022)}/health`, blocking: false },
+  { name: "vendor-search", url: `http://127.0.0.1:${port("VENDOR_SEARCH_PORT", 4022)}/health`, blocking: false },
 ] as const;
 
 let vendorHealth: Record<string, unknown> | undefined;
@@ -106,7 +106,7 @@ for (const service of SERVICES) {
     service.blocking ? fail(service.name, detail) : warn(service.name, `${detail} — live search off`);
     continue;
   }
-  if (service.name === "vendor-aisa") vendorHealth = res.body as Record<string, unknown>;
+  if (service.name === "vendor-search") vendorHealth = res.body as Record<string, unknown>;
   pass(service.name, `${res.status} ${service.url.replace("/health", "")}`);
 }
 
@@ -134,15 +134,15 @@ if (!config) {
 
   config["agent"] === "llm"
     ? pass("agent", "live model")
-    : warn("agent", "scripted stand-in — set AISA_INFERENCE_KEY and LLM_MODEL for a real model");
+    : warn("agent", "scripted stand-in — set LLM_API_KEY and LLM_MODEL for a real model");
 
-  config["vendorAisaUrl"]
-    ? pass("live search", String(config["vendorAisaUrl"]))
+  config["vendorSearchUrl"]
+    ? pass("live search", String(config["vendorSearchUrl"]))
     : warn("live search", "not configured — the two search goals cannot run");
 
-  config["vendorAisaPayee"]
-    ? pass("vendor payee", String(config["vendorAisaPayee"]))
-    : warn("vendor payee", "unset — VENDOR_AISA_PAYEE gates live search");
+  config["vendorSearchPayee"]
+    ? pass("vendor payee", String(config["vendorSearchPayee"]))
+    : warn("vendor payee", "unset — VENDOR_SEARCH_PAYEE gates live search");
 }
 
 optional("TRACE_ANCHOR_ADDRESS")
@@ -215,7 +215,7 @@ if (rpcRaw) {
     }
   }
 
-  const payee = optional("VENDOR_AISA_PAYEE");
+  const payee = optional("VENDOR_SEARCH_PAYEE");
   if (payee) {
     const owned = await client.readContract({
       address: USDC_BASE_SEPOLIA,
@@ -231,13 +231,13 @@ console.log(
   `\n  \x1b[2mThe wallet that opens goals needs its own ETH and USDC — check MetaMask, not this.\x1b[0m`,
 );
 
-// --------------------------------------------------------------------- AIsa
+// ------------------------------------------------------------------ gateway
 
-rule("AIsa");
+rule("gateway");
 
-const base = (optional("AISA_API_BASE_URL") ?? "https://api.aisa.one").replace(/\/$/, "");
-const inferenceKey = optional("AISA_INFERENCE_KEY");
-const vendorKey = optional("AISA_VENDOR_KEY");
+const base = (optional("LLM_BASE_URL") ?? "").replace(/\/$/, "");
+const inferenceKey = optional("LLM_API_KEY");
+const vendorKey = optional("SEARCH_VENDOR_KEY");
 
 if (inferenceKey && vendorKey && inferenceKey === vendorKey) {
   warn("key separation", "inference and vendor keys are identical — see README.md");
@@ -247,7 +247,7 @@ if (inferenceKey && vendorKey && inferenceKey === vendorKey) {
 
 const model = optional("LLM_MODEL");
 if (!inferenceKey || !model) {
-  warn("model", "AISA_INFERENCE_KEY or LLM_MODEL unset — the scripted agent will run");
+  warn("model", "LLM_API_KEY or LLM_MODEL unset — the scripted agent will run");
 } else {
   // Free when it fails, which is the case worth catching.
   try {
@@ -284,8 +284,9 @@ if (vendorHealth) {
     : warn("vendor settlement", "stub — note the upstream call still costs real credits");
 }
 
-if (spend && vendorKey) {
-  const res = await fetch(`${base}/apis/v1/tavily/search`, {
+if (spend && vendorKey && optional("SEARCH_API_BASE_URL")) {
+  const searchBase = (optional("SEARCH_API_BASE_URL") ?? "").replace(/\/$/, "");
+  const res = await fetch(`${searchBase}/apis/v1/tavily/search`, {
     method: "POST",
     headers: { authorization: `Bearer ${vendorKey}`, "content-type": "application/json" },
     body: JSON.stringify({ query: "showtime check", search_depth: "basic", max_results: 5 }),
@@ -293,7 +294,11 @@ if (spend && vendorKey) {
   }).catch(() => undefined);
   if (!res) fail("vendor key (paid)", "request failed");
   else if (!res.ok) fail("vendor key (paid)", `HTTP ${res.status}`);
-  else pass("vendor key (paid)", `200, cost ${res.headers.get("x-aisa-customer-cost-micros-usd") ?? "?"} µUSD`);
+  else {
+    const costHeader = optional("SEARCH_COST_HEADER");
+    const cost = costHeader ? (res.headers.get(costHeader) ?? "?") : "unreported";
+    pass("vendor key (paid)", `200, cost ${cost} µUSD`);
+  }
 } else if (vendorKey) {
   console.log(`  \x1b[2m       vendor key not exercised — re-run with --spend (~$0.008)\x1b[0m`);
 }

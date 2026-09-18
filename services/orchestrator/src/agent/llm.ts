@@ -49,8 +49,14 @@ import type { ModelSafeTerms } from "@ntux402/shared";
 
 import type { SpendAgent } from "../pay/payment-loop.js";
 
-/** Where the OpenAI-compatible routes live. Overridable for a different gateway. */
-export const DEFAULT_BASE_URL = "https://api.aisa.one";
+/*
+ * There is no default base URL. The gateway is configuration
+ * (`LLM_BASE_URL`), not a constant: a default names one provider inside the
+ * component whose whole argument is that it is interchangeable, and a stale
+ * one fails as a mid-run connection error rather than as a boot refusal.
+ * `llmConfigured` treats an absent base URL exactly as it treats an absent key
+ * — the scripted stand-in runs instead.
+ */
 
 const SYSTEM_PROMPT = [
   "You are an autonomous purchasing agent working through a list of API resources on behalf",
@@ -107,7 +113,8 @@ export interface LlmAgentOptions {
    * gateway's own catalog.
    */
   readonly model: string;
-  readonly baseUrl?: string;
+  /** Gateway origin. Required — there is no default. See the note above. */
+  readonly baseUrl: string;
   /** What the agent believes it is buying things for. */
   readonly goal?: string;
   readonly maxTokens?: number;
@@ -152,11 +159,12 @@ export class GatewayUnavailableError extends Error {
 export async function probeGateway(options: {
   readonly apiKey: string;
   readonly model: string;
-  readonly baseUrl?: string | undefined;
+  /** Gateway origin. Required — there is no default. */
+  readonly baseUrl: string;
   readonly fetchImpl?: typeof fetch | undefined;
   readonly timeoutMs?: number | undefined;
 }): Promise<{ ok: boolean; detail: string }> {
-  const baseUrl = (options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/$/, "");
+  const baseUrl = options.baseUrl.replace(/\/$/, "");
   const doFetch = options.fetchImpl ?? globalThis.fetch;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), options.timeoutMs ?? 10_000);
@@ -196,7 +204,7 @@ export class LlmAgent implements SpendAgent {
   constructor(options: LlmAgentOptions) {
     this.#apiKey = options.apiKey;
     this.#model = options.model;
-    this.#baseUrl = (options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/$/, "");
+    this.#baseUrl = options.baseUrl.replace(/\/$/, "");
     /*
      * Wide on purpose, and this is a load-bearing detail rather than copy.
      *

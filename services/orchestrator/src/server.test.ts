@@ -17,7 +17,7 @@ const MOCK = "http://mock.test";
 const VENDOR = "http://vendor.test";
 
 const urlFor = (mode: string, extra: Record<string, string | undefined> = {}) =>
-  resourceUrlFor({ mode, mockApiUrl: MOCK, vendorAisaUrl: VENDOR, ...extra });
+  resourceUrlFor({ mode, mockApiUrl: MOCK, vendorSearchUrl: VENDOR, ...extra });
 
 describe("resourceUrlFor", () => {
   it("sends mock-served goals to the mock vendor", () => {
@@ -26,13 +26,13 @@ describe("resourceUrlFor", () => {
     }
   });
 
-  it("sends upstream goals to the AIsa vendor, never the mock", () => {
+  it("sends upstream goals to the search vendor, never the mock", () => {
     const live = DEMO_GOALS.filter((g) => g.upstream !== undefined);
     expect(live.length).toBeGreaterThan(0);
 
     for (const goal of live) {
       const url = urlFor(goal.key);
-      expect(url, goal.key).toContain(`${VENDOR}/resource/aisa/search`);
+      expect(url, goal.key).toContain(`${VENDOR}/resource/search`);
       expect(url, goal.key).not.toContain(MOCK);
     }
   });
@@ -50,14 +50,14 @@ describe("resourceUrlFor", () => {
   });
 
   it("carries the tier and the goal's default query", () => {
-    const goal = findDemoGoal("aisa-search-deep");
-    const url = new URL(urlFor("aisa-search-deep"));
+    const goal = findDemoGoal("search-deep");
+    const url = new URL(urlFor("search-deep"));
     expect(url.searchParams.get("tier")).toBe("deep");
     expect(url.searchParams.get("q")).toBe(goal?.upstream?.defaultQuery);
   });
 
   it("prefers an explicit query over the default", () => {
-    const url = new URL(urlFor("aisa-search-basic", { query: "what is x402" }));
+    const url = new URL(urlFor("search-basic", { query: "what is x402" }));
     expect(url.searchParams.get("q")).toBe("what is x402");
   });
 
@@ -69,14 +69,14 @@ describe("resourceUrlFor", () => {
    */
   it("encodes a query so it cannot break out of the query string", () => {
     const nasty = "a b&tier=deep#frag/../../etc";
-    const raw = urlFor("aisa-search-basic", { query: nasty });
+    const raw = urlFor("search-basic", { query: nasty });
 
     // Exactly one `?`, and the tier is still the goal's own.
     expect(raw.split("?")).toHaveLength(2);
     const url = new URL(raw);
     expect(url.searchParams.get("q")).toBe(nasty);
     expect(url.searchParams.get("tier")).toBe("basic");
-    expect(url.pathname).toBe("/resource/aisa/search");
+    expect(url.pathname).toBe("/resource/search");
   });
 
   it("honours the price override only on the mock path", () => {
@@ -84,12 +84,12 @@ describe("resourceUrlFor", () => {
       `${MOCK}/resource/compliance-audit?price=350000`,
     );
     // The live vendor prices from the tier table; a caller cannot retune it.
-    expect(urlFor("aisa-search-basic", { priceAtomic: "999" })).not.toContain("999");
+    expect(urlFor("search-basic", { priceAtomic: "999" })).not.toContain("999");
   });
 
   it("quotes each live goal at its measured tier price", () => {
-    expect(findDemoGoal("aisa-search-basic")?.priceAtomic).toBe(SEARCH_TIERS.basic.priceAtomic);
-    expect(findDemoGoal("aisa-search-deep")?.priceAtomic).toBe(SEARCH_TIERS.deep.priceAtomic);
+    expect(findDemoGoal("search-basic")?.priceAtomic).toBe(SEARCH_TIERS.basic.priceAtomic);
+    expect(findDemoGoal("search-deep")?.priceAtomic).toBe(SEARCH_TIERS.deep.priceAtomic);
   });
 });
 
@@ -117,8 +117,8 @@ describe("request bodies", () => {
       usdcAddress: `0x${"33".repeat(20)}`,
       chainId: 84532,
       mockApiUrl: "http://mock.test",
-      vendorAisaUrl: undefined,
-      vendorAisaPayee: undefined,
+      vendorSearchUrl: undefined,
+      vendorSearchPayee: undefined,
       signerUrl: "http://signer.test",
       anchors: undefined,
       facilitatorUrl: undefined,

@@ -2,12 +2,12 @@
 /**
  * Measures what a Tavily search actually costs, per tier.
  *
- *   node scripts/aisa-measure-tiers.mjs
+ *   node scripts/search-measure-tiers.mjs
  *
  * The x402 shim has to quote
  * `maxAmountRequired` in the 402, before the upstream call happens, so it needs
  * a deterministic price per tier rather than the actual cost of the call it is
- * about to make. AIsa publishes no per-call price for this endpoint and their
+ * about to make. The gateway publishes no per-call price for this endpoint and its
  * own pricing guidance says to measure with representative requests instead of
  * copying a number out of an article. This is that measurement.
  *
@@ -16,7 +16,7 @@
  * or whether it is flat and the tiers should collapse into one.
  *
  * Spends real credits: 4 search calls, plus free 404s while looking for a
- * balance endpoint. Reads AISA_VENDOR_KEY (falling back to AISA_INFERENCE_KEY)
+ * balance endpoint. Reads SEARCH_VENDOR_KEY (falling back to LLM_API_KEY)
  * from .env and never prints it.
  */
 
@@ -43,11 +43,16 @@ function loadEnv() {
 
 loadEnv();
 
-const BASE = (process.env["AISA_API_BASE_URL"] ?? "https://api.aisa.one").replace(/\/$/, "");
-const KEY = process.env["AISA_VENDOR_KEY"] ?? process.env["AISA_INFERENCE_KEY"];
+const BASE = (process.env["SEARCH_API_BASE_URL"] ?? "").replace(/\/$/, "");
+const KEY = process.env["SEARCH_VENDOR_KEY"];
+
+if (!BASE) {
+  console.error("Set SEARCH_API_BASE_URL in .env and re-run — there is no default gateway.");
+  process.exit(1);
+}
 
 if (!KEY) {
-  console.error("Set AISA_VENDOR_KEY or AISA_INFERENCE_KEY in .env and re-run.");
+  console.error("Set SEARCH_VENDOR_KEY in .env and re-run.");
   process.exit(1);
 }
 
@@ -222,4 +227,4 @@ console.log(
   }`,
 );
 console.log(`   Raw responses saved to services/orchestrator/src/agent/__fixtures__/`);
-console.log(`   Convert credits -> USD from the AIsa dashboard, then + margin -> USDC atomic.\n`);
+console.log(`   Convert credits -> USD from the provider dashboard, then + margin -> USDC atomic.\n`);

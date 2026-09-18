@@ -1,15 +1,18 @@
 /**
- * Picks the agent implementation. The gateway-backed LLM when it has both an
- * API key and a model id, the scripted stand-in otherwise.
+ * Picks the agent implementation. The gateway-backed LLM when it has an API
+ * key, a model id and a gateway to send them to; the scripted stand-in
+ * otherwise.
  *
  * The fallback is deliberate and not a degradation of the security claim: the
  * point being demonstrated is that *whatever* the agent concludes, it cannot
  * move money. A conference room with no network still gets to see that.
  *
- * **Both** are required now, not just the key. The gateway has no default model
- * — see `LlmAgentOptions.model` for why guessing one is worse than falling
- * back — so a key with no model id is not a usable configuration, and treating
- * it as one would surface as a 404 mid-run instead of a scripted agent at boot.
+ * **All three** are required, not just the key. There is no default model and,
+ * since the gateway itself is configuration, no default base URL either — see
+ * `llm.ts` for why guessing either is worse than falling back. A key with no
+ * model id, or no gateway to send it to, is not a usable configuration, and
+ * treating one as usable surfaces as a 404 or a connection error mid-run
+ * instead of a scripted agent at boot.
  *
  * ## Configured is not reachable
  *
@@ -28,7 +31,8 @@ export interface AgentFactoryOptions {
   readonly apiKey: string | undefined;
   /** Gateway model id. No default; absent means the fallback is used. */
   readonly model: string | undefined;
-  readonly baseUrl?: string | undefined;
+  /** Gateway origin. No default; absent means the fallback is used. */
+  readonly baseUrl: string | undefined;
   readonly goal?: string | undefined;
   /** Used when the LLM is not fully configured, and when it cannot answer. */
   readonly fallback: SpendAgent;
@@ -48,8 +52,9 @@ export interface AgentProbe {
 export function llmConfigured(options: {
   apiKey: string | undefined;
   model: string | undefined;
+  baseUrl: string | undefined;
 }): boolean {
-  return Boolean(options.apiKey && options.model);
+  return Boolean(options.apiKey && options.model && options.baseUrl);
 }
 
 export async function buildAgent(options: AgentFactoryOptions): Promise<SpendAgent> {
@@ -62,7 +67,7 @@ export async function buildAgent(options: AgentFactoryOptions): Promise<SpendAge
   const primary = new LlmAgent({
     apiKey: options.apiKey as string,
     model: options.model as string,
-    ...(options.baseUrl === undefined ? {} : { baseUrl: options.baseUrl }),
+    baseUrl: options.baseUrl as string,
     ...(options.goal === undefined ? {} : { goal: options.goal }),
     ...(options.fetchImpl === undefined ? {} : { fetchImpl: options.fetchImpl }),
   });
@@ -84,7 +89,7 @@ export async function buildAgent(options: AgentFactoryOptions): Promise<SpendAge
 export async function probeAgent(options: {
   readonly apiKey: string | undefined;
   readonly model: string | undefined;
-  readonly baseUrl?: string | undefined;
+  readonly baseUrl: string | undefined;
   readonly timeoutMs?: number | undefined;
 }): Promise<AgentProbe | undefined> {
   if (!llmConfigured(options)) return undefined;
@@ -93,7 +98,7 @@ export async function probeAgent(options: {
   return probeGateway({
     apiKey: options.apiKey as string,
     model: options.model as string,
-    baseUrl: options.baseUrl,
+    baseUrl: options.baseUrl as string,
     timeoutMs: options.timeoutMs,
   });
 }

@@ -1,9 +1,9 @@
 {
-  "name": "@ntux402/vendor-aisa",
+  "name": "@ntux402/vendor-search",
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "description": "x402 resource server fronting AIsa's paid search API. Holds AISA_VENDOR_KEY; the orchestrator must never import it.",
+  "description": "x402 resource server fronting a paid search API. Holds SEARCH_VENDOR_KEY; the orchestrator must never import it.",
   "main": "./src/index.ts",
   "scripts": {
     "start": "tsx src/index.ts",

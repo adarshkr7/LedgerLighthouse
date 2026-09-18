@@ -183,7 +183,7 @@ const warn = (line: string): void => {
 interface OrchestratorConfig {
   readonly signerUrl: string;
   readonly mockApiUrl: string;
-  readonly vendorAisaUrl?: string;
+  readonly vendorSearchUrl?: string;
   readonly settlement: "live" | "stub";
   readonly agent: "llm" | "scripted";
   readonly agentModel?: string;
@@ -229,8 +229,8 @@ async function preflight(): Promise<OrchestratorConfig> {
     { label: "signer", url: `${config.signerUrl}/health`, blocking: !dryRun },
     { label: "mock api", url: `${config.mockApiUrl}/health`, blocking: !dryRun },
   ];
-  if (config.vendorAisaUrl) {
-    probes.push({ label: "vendor", url: `${config.vendorAisaUrl}/health`, blocking: false });
+  if (config.vendorSearchUrl) {
+    probes.push({ label: "vendor", url: `${config.vendorSearchUrl}/health`, blocking: false });
   }
 
   for (const probe of probes) {

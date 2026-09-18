@@ -41,17 +41,17 @@ export interface OrchestratorServerOptions {
   readonly usdcAddress: Address;
   readonly chainId: number;
   readonly mockApiUrl: string;
-  /** Base URL of `services/vendor-aisa`. Absent when live search is not configured. */
-  readonly vendorAisaUrl: string | undefined;
+  /** Base URL of `services/vendor-search`. Absent when live search is not configured. */
+  readonly vendorSearchUrl: string | undefined;
   /**
-   * `VENDOR_AISA_PAYEE`, republished so the console can allowlist it.
+   * `VENDOR_SEARCH_PAYEE`, republished so the console can allowlist it.
    *
    * A public address, not a credential — the vendor's *key* is fenced off from
    * this service by `scripts/check-boundary.mjs`, and this is deliberately not
    * that. The console needs it because an upstream goal's payee cannot live in
    * the shared catalog: it is the operator's own address.
    */
-  readonly vendorAisaPayee: Address | undefined;
+  readonly vendorSearchPayee: Address | undefined;
   readonly signerUrl: string;
   /**
    * The signer, already carrying its bearer token.
@@ -201,8 +201,8 @@ export function createOrchestratorServer(options: OrchestratorServerOptions): Se
             // Both vendors are reported: one field cannot describe two servers,
             // and the console disables live search rather than offering a
             // button that 500s when the shim is not running.
-            vendorAisaUrl: options.vendorAisaUrl,
-            vendorAisaPayee: options.vendorAisaPayee,
+            vendorSearchUrl: options.vendorSearchUrl,
+            vendorSearchPayee: options.vendorSearchPayee,
             // Rendered in the UI so a stubbed run can never be mistaken for a real one.
             settlement: options.facilitatorUrl ? "live" : "stub",
             agent: options.agentSource,
@@ -319,15 +319,15 @@ export function createOrchestratorServer(options: OrchestratorServerOptions): Se
         // here, at the request, rather than as a fetch failure twenty seconds
         // in with a goal already debited.
         const selectedGoal = findDemoGoal(mode);
-        if (selectedGoal?.upstream !== undefined && options.vendorAisaUrl === undefined) {
+        if (selectedGoal?.upstream !== undefined && options.vendorSearchUrl === undefined) {
           send(
             res,
             503,
             {
               error:
-                `mode ${mode} is served by the live AIsa vendor, which is not configured. ` +
+                `mode ${mode} is served by the live search vendor, which is not configured. ` +
                 `Fill in the live-search section of .env (see .env.example) and start ` +
-                `@ntux402/vendor-aisa.`,
+                `@ntux402/vendor-search.`,
             },
             cors,
           );
@@ -401,7 +401,7 @@ export function createOrchestratorServer(options: OrchestratorServerOptions): Se
  * Which vendor serves this run, and at what URL.
  *
  * Routing is on the catalog entry's `upstream` field, never on the shape of the
- * key. A name-prefix rule (`mode.startsWith("aisa-")`) would send a renamed
+ * key. A name-prefix rule (`mode.startsWith("search-")`) would send a renamed
  * goal to the wrong server, and the failure would be a 200 carrying the wrong
  * product at the right price — which is the one bug this catalog exists to
  * prevent.
@@ -414,7 +414,7 @@ export function createOrchestratorServer(options: OrchestratorServerOptions): Se
 export function resourceUrlFor(ctx: {
   mode: string;
   mockApiUrl: string;
-  vendorAisaUrl?: string | undefined;
+  vendorSearchUrl?: string | undefined;
   priceAtomic?: string | undefined;
   query?: string | undefined;
 }): string {
@@ -425,7 +425,7 @@ export function resourceUrlFor(ctx: {
       q: ctx.query ?? goal.upstream.defaultQuery,
       tier: goal.upstream.tier,
     });
-    return `${ctx.vendorAisaUrl}/resource/aisa/${goal.upstream.capability}?${params.toString()}`;
+    return `${ctx.vendorSearchUrl}/resource/${goal.upstream.capability}?${params.toString()}`;
   }
 
   // `?price=` is honoured by the mock vendor alone, and only for its overcharge
@@ -534,7 +534,7 @@ async function streamRun(
         // stale, and that belongs somewhere a human reads.
         ctx.log(
           `vendor sold below cost on goal ${ctx.goalId}: quoted ${upstream.quotedAtomic}, ` +
-            `cost ${upstream.costAtomic} (atomic). Re-run scripts/aisa-measure-tiers.mjs.`,
+            `cost ${upstream.costAtomic} (atomic). Re-run scripts/search-measure-tiers.mjs.`,
         );
       }
     }

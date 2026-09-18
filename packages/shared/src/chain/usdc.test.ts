@@ -6,7 +6,7 @@ import type { Address } from "../x402/protocol.js";
 describe("assertPayoutAddress", () => {
   it("accepts an ordinary wallet address", () => {
     const wallet = "0x25e0a349480f32A474bdf24c1c7956c2F919e825" as Address;
-    expect(assertPayoutAddress("VENDOR_AISA_PAYEE", wallet)).toBe(wallet);
+    expect(assertPayoutAddress("VENDOR_SEARCH_PAYEE", wallet)).toBe(wallet);
   });
 
   /*
@@ -16,17 +16,17 @@ describe("assertPayoutAddress", () => {
    * records a genuine payment, and the money is gone.
    */
   it("rejects the USDC token contract, in either case", () => {
-    expect(() => assertPayoutAddress("VENDOR_AISA_PAYEE", USDC_BASE_SEPOLIA)).toThrow(
+    expect(() => assertPayoutAddress("VENDOR_SEARCH_PAYEE", USDC_BASE_SEPOLIA)).toThrow(
       /USDC token contract/,
     );
     expect(() =>
-      assertPayoutAddress("VENDOR_AISA_PAYEE", USDC_BASE_SEPOLIA.toLowerCase() as Address),
+      assertPayoutAddress("VENDOR_SEARCH_PAYEE", USDC_BASE_SEPOLIA.toLowerCase() as Address),
     ).toThrow(/USDC token contract/);
   });
 
   it("rejects the zero address", () => {
     const zero = "0x0000000000000000000000000000000000000000" as Address;
-    expect(() => assertPayoutAddress("VENDOR_AISA_PAYEE", zero)).toThrow(/burned/);
+    expect(() => assertPayoutAddress("VENDOR_SEARCH_PAYEE", zero)).toThrow(/burned/);
   });
 
   it("names the offending variable so the message is actionable", () => {

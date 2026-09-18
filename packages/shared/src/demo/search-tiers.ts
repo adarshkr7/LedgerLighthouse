@@ -1,5 +1,5 @@
 /**
- * What a live AIsa search costs, and what we charge for it.
+ * What a live search costs, and what we charge for it.
  *
  * x402 makes the resource server state
  * `maxAmountRequired` in the 402, which is emitted *before* the upstream call
@@ -12,16 +12,17 @@
  *
  * ## Where these numbers come from
  *
- * Measured, not published. AIsa lists no price on the Tavily endpoint's
- * reference page, and their pricing guidance says to determine cost with
+ * Measured, not published. The gateway lists no price on the Tavily endpoint's
+ * reference page, and its pricing guidance says to determine cost with
  * representative requests rather than copying a figure out of an article.
- * `scripts/aisa-measure-tiers.mjs` is that measurement; re-run it to refresh
+ * `scripts/search-measure-tiers.mjs` is that measurement; re-run it to refresh
  * `VERIFIED_ON`.
  *
- * The response carries two undocumented headers — `x-aisa-customer-cost-micros-usd`
- * and `x-aisa-provider-cost-micros-usd` — reporting exact cost in millionths of
- * a dollar. USDC also has six decimals, so **a micros-USD figure is already a
- * USDC atomic amount**, and no conversion is needed anywhere in this file.
+ * Provider cost arrives in a response header naming millionths of a dollar.
+ * USDC also has six decimals, so **a micros-USD figure is already a USDC atomic
+ * amount**, and no conversion is needed anywhere in this file. Which header
+ * carries it is provider-specific and therefore configured at the vendor
+ * (`SEARCH_COST_HEADER`), not fixed here.
  *
  * ## What the measurement showed
  *
@@ -31,8 +32,9 @@
  * than a pricing input.
  *
  * At the time of measurement customer cost equalled provider cost exactly at
- * both depths, so AIsa was passing this endpoint through without a markup of
- * its own. That is theirs to change and nothing here should assume it holds.
+ * both depths, so the gateway was passing this endpoint through without a
+ * markup of its own. That is the provider's to change and nothing here should
+ * assume it holds.
  */
 
 /** Date the costs below were last confirmed against the live API. */
@@ -81,8 +83,8 @@ export const SEARCH_TIERS: Readonly<Record<SearchTierName, SearchTier>> = {
     measuredCostAtomic: "8000", // $0.008
     priceAtomic: "10000", // 0.01 USDC
     observedLatencyMs: 3600,
-    label: "AIsa web search",
-    blurb: "Live results from AIsa's search API — the ordinary case",
+    label: "Web search",
+    blurb: "Live results from a production search API — the ordinary case",
   },
   deep: {
     name: "deep",
@@ -91,7 +93,7 @@ export const SEARCH_TIERS: Readonly<Record<SearchTierName, SearchTier>> = {
     measuredCostAtomic: "16000", // $0.016
     priceAtomic: "20000", // 0.02 USDC
     observedLatencyMs: 9800,
-    label: "AIsa deep search",
+    label: "Deep web search",
     blurb: "Advanced depth, more sources — twice the price, three times the wait",
   },
 } as const;
@@ -101,17 +103,6 @@ export const SEARCH_TIER_NAMES = Object.keys(SEARCH_TIERS) as readonly SearchTie
 export function findSearchTier(name: string): SearchTier | undefined {
   return (SEARCH_TIERS as Record<string, SearchTier>)[name];
 }
-
-/**
- * Headers AIsa returns with the true cost of a call.
- *
- * Undocumented, so read defensively and never required: a shim that refuses to
- * serve because a header went missing would be trading a working product for a
- * reconciliation figure. Absent, the quoted price stands unreconciled and the
- * trace records that it could not be checked.
- */
-export const COST_HEADER_CUSTOMER = "x-aisa-customer-cost-micros-usd";
-export const COST_HEADER_PROVIDER = "x-aisa-provider-cost-micros-usd";
 
 /**
  * True when a call cost more than the tier quoted for it.

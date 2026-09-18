@@ -281,20 +281,21 @@ console.log(`  payer balance confirmed at ${formatUsdc(payerStartingBalance)} US
 rule("4. hand off to the orchestrator");
 
 const relay = new VaultRelay({ rpcUrl, vaultAddress, relayKey, chainId: BASE_SEPOLIA_CHAIN_ID });
-const agentKey = optional("AISA_INFERENCE_KEY");
+const agentKey = optional("LLM_API_KEY");
 const agentModel = optional("LLM_MODEL");
+const agentBaseUrl = optional("LLM_BASE_URL");
 const agent = await buildAgent({
   apiKey: agentKey,
   model: agentModel,
-  baseUrl: optional("AISA_API_BASE_URL"),
+  baseUrl: agentBaseUrl,
   fallback: new ScriptedAgent(),
   onFallback: (detail) =>
     console.warn(`  model gateway did not answer — scripted stand-in decided: ${detail}`),
 });
 console.log(
-  llmConfigured({ apiKey: agentKey, model: agentModel })
+  llmConfigured({ apiKey: agentKey, model: agentModel, baseUrl: agentBaseUrl })
     ? `  agent: live LLM (${agentModel})`
-    : `  agent: scripted stand-in (set AISA_INFERENCE_KEY and LLM_MODEL for a live model)`,
+    : `  agent: scripted stand-in (set LLM_API_KEY, LLM_MODEL and LLM_BASE_URL for a live model)`,
 );
 console.log(`  From here on there are no wallet prompts. That is the product.`);
 

@@ -209,7 +209,7 @@ cp .env.example .env
 | `SIGNER_ROFL_SOCKET` | `/run/rofl-appd.sock`. Set **only** inside a deployed enclave |
 | `SIGNER_REQUIRE_ROFL` | `true` refuses to boot the signer without an enclave, so the file-store fallback cannot be enabled by accident |
 | `SIGNER_SERVICE_TOKEN` | What the orchestrator *presents* to the signer. Distinct from `SERVICE_TOKEN`, which is what a service *demands* of its own callers |
-| `AISA_VENDOR_KEY` | Deliberately a different credential from the inference key. CI fails if the orchestrator so much as names it |
+| `SEARCH_VENDOR_KEY` | Deliberately a different credential from the inference key. CI fails if the orchestrator so much as names it |
 
 Then generate and fund the two gas-only roles:
 
@@ -267,7 +267,7 @@ Two traps worth knowing: `oasis rofl build` will not run on native Windows, and 
 | `services/signer/` | Authorization Signer. Runs in the ROFL enclave; holds the payer keys |
 | `services/trace/` | Trace builder, Merkle accumulator, and the standalone verifier |
 | `services/facilitator/` | Self-hosted x402 v1 facilitator. Outside the trust boundary |
-| `services/vendor-aisa/` | Live search vendor — real upstream calls, priced and sold over x402 |
+| `services/vendor-search/` | Live search vendor — real upstream calls, priced and sold over x402 |
 | `packages/shared/` | Types, the x402 client, chain helpers, the shared HTTP guard |
 | `apps/web/` | Console — MetaMask goal opening, funding, run visualisation |
 | `mock-api/` | Mock resource server — fabricated data at chosen prices |
