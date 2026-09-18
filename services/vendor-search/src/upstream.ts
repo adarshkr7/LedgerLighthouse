@@ -1,5 +1,5 @@
 /**
- * The AIsa client, and the only place `AISA_VENDOR_KEY` is used.
+ * The upstream search client, and the only place `SEARCH_VENDOR_KEY` is used.
  *
  * Tavily's search route is a POST. The x402 client that buys from us is
  * GET-only — `X402Client.fetchResource` hardcodes the method and keys its cache
@@ -9,24 +9,39 @@
  *
  * ## Cost
  *
- * AIsa returns the true cost of a call in two undocumented headers,
- * `x-aisa-customer-cost-micros-usd` and `x-aisa-provider-cost-micros-usd`.
- * Micros USD and USDC atomic units are both millionths, so the header value is
- * already an atomic amount and nothing here converts anything.
+ * Gateways that report per-call cost do it in a response header carrying micros
+ * USD. Micros USD and USDC atomic units are both millionths, so the header
+ * value is already an atomic amount and nothing here converts anything.
  *
- * They are read defensively and never required. Refusing to serve a call we
- * have already paid for, because a header we were never promised went missing,
- * would trade the product for a reconciliation figure.
+ * *Which* header is provider-specific, so it is configuration
+ * (`SEARCH_COST_HEADER`) rather than a constant. Unset means cost simply is not
+ * reported, and the code below is written for that: the header is read
+ * defensively and never required. Refusing to serve a call we have already paid
+ * for, because a header we were never promised went missing, would trade the
+ * product for a reconciliation figure.
+ *
+ * ## There is no default base URL
+ *
+ * `baseUrl` is required. A default would name one provider in a file whose
+ * whole point is that it names none, and a stale default is worse than a
+ * missing one: it fails at the first paid call rather than at boot.
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
-import { COST_HEADER_CUSTOMER, type SearchTier } from "@ntux402/shared";
+import { type SearchTier } from "@ntux402/shared";
 
 export interface UpstreamOptions {
   readonly apiKey: string;
-  readonly baseUrl?: string;
+  /** Gateway origin. Required — see the header. */
+  readonly baseUrl: string;
+  /**
+   * Response header carrying this call's cost in micros USD, if the provider
+   * sends one. Omitted means cost goes unreported and the quoted price stands
+   * unreconciled.
+   */
+  readonly costHeader?: string | undefined;
   /** Injectable so tests never reach the network and never spend a cent. */
   readonly fetchImpl?: typeof fetch;
 }
@@ -35,8 +50,10 @@ export type UpstreamResult =
   | {
       readonly ok: true;
       readonly body: unknown;
-      /** Reported cost in USDC atomic units, when AIsa said. */
+      /** Reported cost in USDC atomic units, when the provider said. */
       readonly costAtomic: string | undefined;
+      /** The header the figure above was read from, when one is configured. */
+      readonly costHeader?: string | undefined;
       readonly requestId: string | undefined;
       readonly latencyMs: number;
     }
@@ -52,14 +69,16 @@ export interface UpstreamSearch {
   search(query: string, tier: SearchTier): Promise<UpstreamResult>;
 }
 
-export class AisaSearch implements UpstreamSearch {
+export class GatewaySearch implements UpstreamSearch {
   readonly #apiKey: string;
   readonly #baseUrl: string;
+  readonly #costHeader: string | undefined;
   readonly #fetch: typeof fetch;
 
   constructor(options: UpstreamOptions) {
     this.#apiKey = options.apiKey;
-    this.#baseUrl = (options.baseUrl ?? "https://api.aisa.one").replace(/\/$/, "");
+    this.#baseUrl = options.baseUrl.replace(/\/$/, "");
+    this.#costHeader = options.costHeader;
     this.#fetch = options.fetchImpl ?? globalThis.fetch;
   }
 
@@ -107,7 +126,8 @@ export class AisaSearch implements UpstreamSearch {
       };
     }
 
-    const rawCost = response.headers.get(COST_HEADER_CUSTOMER);
+    const rawCost =
+      this.#costHeader === undefined ? null : response.headers.get(this.#costHeader);
     const costAtomic = rawCost !== null && /^[0-9]+$/.test(rawCost.trim())
       ? rawCost.trim()
       : undefined;
@@ -117,7 +137,14 @@ export class AisaSearch implements UpstreamSearch {
         ? (body as { request_id: string }).request_id
         : undefined;
 
-    return { ok: true, body, costAtomic, requestId, latencyMs: Date.now() - started };
+    return {
+      ok: true,
+      body,
+      costAtomic,
+      ...(this.#costHeader === undefined ? {} : { costHeader: this.#costHeader }),
+      requestId,
+      latencyMs: Date.now() - started,
+    };
   }
 }
 
@@ -125,7 +152,7 @@ export class AisaSearch implements UpstreamSearch {
  * A spend ceiling denominated in money rather than in calls.
  *
  * Six candidate balance endpoints were probed and all six 404'd, so there is no
- * account balance to poll and no way to ask AIsa to stop. What there is, is the
+ * account balance to poll and no way to ask the provider to stop. What there is, is the
  * per-call cost header — which makes a local running total the only spend
  * control that exists, and lets it be expressed in dollars instead of in a
  * proxy for them.

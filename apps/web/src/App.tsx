@@ -555,7 +555,7 @@ export default function App() {
              */
             allowlist: [
               ...DEMO_PAYEES,
-              ...(config.vendorAisaPayee ? [config.vendorAisaPayee] : []),
+              ...(config.vendorSearchPayee ? [config.vendorSearchPayee] : []),
             ],
           },
         ],
@@ -1025,7 +1025,7 @@ export default function App() {
                 to search them would be a control that quietly does nothing.
               */}
               {resource.upstream ? (
-                config?.vendorAisaUrl ? (
+                config?.vendorSearchUrl ? (
                   <label className="d-search">
                     <span className="d-search-label">Search for</span>
                     <input
@@ -1248,7 +1248,14 @@ export default function App() {
                 // overnight comes back in. Gated on the payer alone, the button
                 // stayed enabled through it and the click bought a failed run
                 // instead of a signing prompt.
-                disabled={!payer || !wallet || !isConnected || wrongChain || !!busy}
+                //
+                // And `goalId`, because the mint button disables itself once a
+                // payer exists: without this the button stayed live after a
+                // successful open, and a second click reused the same payer.
+                // The vault now refuses that outright (`PayerAlreadyBound`), so
+                // the click can only ever be a wasted signing prompt and a
+                // reverted transaction.
+                disabled={!payer || !!goalId || !wallet || !isConnected || wrongChain || !!busy}
                 onClick={() => {
                   void openGoal();
                   closeModal();
@@ -1259,6 +1266,11 @@ export default function App() {
               {!payer ? (
                 <p className="d-hint">
                   Mint the payer first — its address is a field of the goal record.
+                </p>
+              ) : goalId ? (
+                <p className="d-hint">
+                  Goal {goalId} already holds this payer. A payer belongs to one goal and the vault
+                  will refuse a second, so opening another means reloading and minting a fresh one.
                 </p>
               ) : wrongChain ? (
                 <p className="d-hint">

@@ -1,0 +1,116 @@
+$ tsx src/adversary.ts
+
+--- Track 2 — A2 adversary campaign -----------------------------------
+
+  Threat model: arbitrary code execution in the orchestrator.
+  No agent, no model. The adversary calls requestSpend directly.
+
+  chain  84532
+  vault  0x0C759D06a1c14F43852D7b078Db2f8C342F15921
+  signer http://127.0.0.1:8402
+
+--- opening goals -----------------------------------------------------
+
+  goal 70 (budget-bound)
+    budget      0.25 USDC  (encrypted)
+    cap x calls 0.2 x 3 = 0.6 USDC  (public)
+    payer       0x8d80C54Ea64436E252AfAC965eE66A84f3334306
+  goal 71 (cap-bound)
+    budget      1.0 USDC  (encrypted)
+    cap x calls 0.1 x 2 = 0.2 USDC  (public)
+    payer       0x53c8d29f12fC3dE570e62Cdb17c5523391624a2d
+  goal 72 (refusals)
+    budget      0.003 USDC  (encrypted)
+    cap x calls 0.1 x 4 = 0.4 USDC  (public)
+    payer       0xA4ad430481f1214f22e4e65B48e19D9A47FC35D9
+
+--- C1 — maximum extraction -------------------------------------------
+
+
+  C1 on goal 70 (budget-bound) — asking perCallCap every call
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x760f3349e0347a74e7c456946efde6657d0f9fb035c4e7b3c02a478cff9d0000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x760f3349e0347a74e7c456946efde6657d0f9fb035c4e7b3c02a478cff9d0000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x760f3349e0347a74e7c456946efde6657d0f9fb035c4e7b3c02a478cff9d0000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x760f3349e0347a74e7c456946efde6657d0f9fb035c4e7b3c02a478cff9d0000 not found, it might not have been processed yet, try again later
+    seq 1: ask 0.2 -> APPROVED, signer signed (0.2 authorized)
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x5b991d9fb7471c4162f5d4c74d8e51a6e1c1f72f88fa40d2f6d85c2ea5890000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x5b991d9fb7471c4162f5d4c74d8e51a6e1c1f72f88fa40d2f6d85c2ea5890000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x5b991d9fb7471c4162f5d4c74d8e51a6e1c1f72f88fa40d2f6d85c2ea5890000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x5b991d9fb7471c4162f5d4c74d8e51a6e1c1f72f88fa40d2f6d85c2ea5890000 not found, it might not have been processed yet, try again later
+    seq 2: ask 0.2 -> REJECTED by policy
+    budget exhausted after 0.2
+[  ok  ] C1   max extraction (budget-bound)
+         expected: <= 0.25 = min(budget 0.25, cap x calls 0.6)
+         observed: 0.2 authorized
+
+  C1 on goal 71 (cap-bound) — asking perCallCap every call
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x54cc3497923ce25cb8b1a4d79d223793a2a8f13b09257c92e3ac2ff8656d0000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x54cc3497923ce25cb8b1a4d79d223793a2a8f13b09257c92e3ac2ff8656d0000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x54cc3497923ce25cb8b1a4d79d223793a2a8f13b09257c92e3ac2ff8656d0000 not found, it might not have been processed yet, try again later
+    seq 1: ask 0.1 -> APPROVED, signer signed (0.1 authorized)
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x52fef90c78390fd46d8ff733540fc114efe22f239f74c62d2e3a369b35860000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x52fef90c78390fd46d8ff733540fc114efe22f239f74c62d2e3a369b35860000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x52fef90c78390fd46d8ff733540fc114efe22f239f74c62d2e3a369b35860000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x52fef90c78390fd46d8ff733540fc114efe22f239f74c62d2e3a369b35860000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x52fef90c78390fd46d8ff733540fc114efe22f239f74c62d2e3a369b35860000 not found, it might not have been processed yet, try again later
+    seq 2: ask 0.1 -> APPROVED, signer signed (0.1 authorized)
+[  ok  ] C1   max extraction (cap-bound)
+         expected: <= 0.2 = min(budget 1.0, cap x calls 0.2)
+         observed: 0.2 authorized
+
+--- C2, C3, C4, C8, C9, C10 — refusals --------------------------------
+
+[  ok  ] C2   settlement to a non-allowlisted payee
+         expected: refusal containing "PayeeNotAllowlisted"
+         observed: refused: PayeeNotAllowlisted
+[  ok  ] C4   two concurrent requestSpend on one goal
+         expected: refusal containing "SpendPending"
+         observed: refused: SpendPending
+[  ok  ] C10  signer asked before finalisation
+         expected: not-ready (HTTP 425)
+         observed: not-ready
+    seq 1: ask 0.0005 -> APPROVED (C8 now has a genuine attestation)
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x3b94e38707764c5897c4c01e79b6d98c493c552280fed98fe117cb2361cb0000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x3b94e38707764c5897c4c01e79b6d98c493c552280fed98fe117cb2361cb0000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x3b94e38707764c5897c4c01e79b6d98c493c552280fed98fe117cb2361cb0000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x3b94e38707764c5897c4c01e79b6d98c493c552280fed98fe117cb2361cb0000 not found, it might not have been processed yet, try again later
+[  ok  ] C3   ask exceeding the encrypted budget
+         expected: REJECTED on chain at seq 2, not reverted
+         observed: REJECTED on chain at seq 2
+[  ok  ] C9   signer asked for a policy-rejected spend
+         expected: refused, HTTP 403, terminal
+         observed: refused (HTTP 403)
+[  ok  ] C8   genuine attestation from another seq, replayed
+         expected: refusal containing "InvalidAttestation"
+         observed: refused: InvalidAttestation
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0xb4f575549f0b5003629d638c04005e3b14e84ba887bc80c6be47562bf3370000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0xb4f575549f0b5003629d638c04005e3b14e84ba887bc80c6be47562bf3370000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0xb4f575549f0b5003629d638c04005e3b14e84ba887bc80c6be47562bf3370000 not found, it might not have been processed yet, try again later
+
+--- C5 — idempotency --------------------------------------------------
+
+[  ok  ] C5   authorization replay returns an identical tuple
+         expected: byte-identical, including validAfter/validBefore
+         observed: identical
+[ ??   ] C6   expired frozen window refused with 410
+         expected: refused, HTTP 410
+         observed: NOT RUN — needs a window older than AUTHORIZATION_WINDOW (1h). Regeneration half covered by C5.
+[  ok  ] C7   terms substituted between request and signature
+         expected: no channel exists
+         observed: authorize() accepts (goalId, seq) only — nothing to substitute
+
+--- verdict -----------------------------------------------------------
+
+  strategies run   11
+  held             10
+  deviated         0
+  inconclusive     1
+
+  extraction, budget-bound goal   0.2 USDC
+    predicted ceiling             0.25 (budget binds first)
+  extraction, cap-bound goal      0.2 USDC
+    predicted ceiling             0.2 (cap x calls binds first)
+
+  Note: extraction is counted as *authorized*, not settled. A released
+  EIP-3009 signature is the spending authority; settlement is downstream.
+REAL EXIT CODE: 0

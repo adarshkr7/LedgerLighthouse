@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /**
- * Answers the AIsa unknowns that gate the live-search
+ * Answers the gateway unknowns that gate the live-search
  * integration, in one pass, for a few cents.
  *
- *   node scripts/aisa-probe.mjs [model-id ...]
+ *   node scripts/llm-probe.mjs [model-id ...]
  *
- * Reads AISA_INFERENCE_KEY (and optionally AISA_VENDOR_KEY) from .env. The key
+ * Reads LLM_API_KEY (and optionally SEARCH_VENDOR_KEY) from .env. The key
  * is never printed, never written anywhere, and never placed on a command line
  * — so it stays out of shell history and out of this script's output.
  *
@@ -46,12 +46,17 @@ function loadEnv() {
 
 loadEnv();
 
-const BASE = (process.env["AISA_API_BASE_URL"] ?? "https://api.aisa.one").replace(/\/$/, "");
-const INFERENCE_KEY = process.env["AISA_INFERENCE_KEY"];
-const VENDOR_KEY = process.env["AISA_VENDOR_KEY"] ?? INFERENCE_KEY;
+const BASE = (process.env["LLM_BASE_URL"] ?? "").replace(/\/$/, "");
+const INFERENCE_KEY = process.env["LLM_API_KEY"];
+const VENDOR_KEY = process.env["SEARCH_VENDOR_KEY"] ?? INFERENCE_KEY;
+
+if (!BASE) {
+  console.error("LLM_BASE_URL is not set. Add it to .env — there is no default gateway.");
+  process.exit(1);
+}
 
 if (!INFERENCE_KEY) {
-  console.error("AISA_INFERENCE_KEY is not set. Add it to .env (which is gitignored) and re-run.");
+  console.error("LLM_API_KEY is not set. Add it to .env (which is gitignored) and re-run.");
   console.error("This script never prints or transmits the key anywhere but the gateway.");
   process.exit(1);
 }
@@ -92,7 +97,7 @@ rule(`B. POST /v1/chat/completions — inference and reasoning shape`);
 
 if (models.length === 0) {
   console.log("   No model ids to probe. Pass them as arguments:");
-  console.log("   node scripts/aisa-probe.mjs <model-id> <model-id> ...");
+  console.log("   node scripts/llm-probe.mjs <model-id> <model-id> ...");
 } else {
   mkdirSync(fixtureDir, { recursive: true });
 }
@@ -241,6 +246,6 @@ if (results.length > 0) {
 
 console.log(
   `\n   Still unanswered by curl: whether this account can hold two keys with\n` +
-    `   separate scopes. Ask AIsa support — it decides whether the split in\n` +
+    `   separate scopes. Ask the gateway's support — it decides whether the split in\n` +
     `   README.md is a real control or only process isolation.\n`,
 );

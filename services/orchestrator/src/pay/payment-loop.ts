@@ -391,7 +391,15 @@ export class PaymentLoop {
           : `signer ${authorization.kind}: ${authorization.reason}`;
       emit({
         type: "signer-refused",
-        status: authorization.kind === "refused" ? authorization.status : 0,
+        // Reaching here with `rate-limited` means the retry budget above was
+        // spent and the limiter never cleared. Reported as the 429 it is, so
+        // the console does not show a limit as an unexplained status 0.
+        status:
+          authorization.kind === "refused"
+            ? authorization.status
+            : authorization.kind === "rate-limited"
+              ? 429
+              : 0,
         reason,
       });
       return { kind: "failed", reason };
@@ -568,13 +576,38 @@ export class PaymentLoop {
     }
   }
 
+  /**
+   * Polls the signer until it answers something other than "ask again".
+   *
+   * Two outcomes mean that, and both are retried here rather than surfaced:
+   *
+   *   - `not-ready` (425) — the decision is committed but `finalizeDecision`
+   *     has not landed. Fixed 1s, because it clears on the next block.
+   *   - `rate-limited` (429) — a limiter tripped, at the signer's HTTP edge or
+   *     on its enclave key operations. Waits what the signer asked for.
+   *
+   * The retry-after is capped at 10s per attempt even though the client already
+   * clamps it to 60. A single 60s sleep would eat five attempts' worth of the
+   * budget in one go and leave the loop looking hung; the signer's window is
+   * fixed at a minute, so several shorter waits land on the reset just as
+   * surely and keep the worst case bounded and legible.
+   *
+   * Retrying at all is the point. The budget for this spend is already debited
+   * on chain by the time we get here, so giving up on a limiter that clears in
+   * seconds would strand it.
+   */
   async #authorizeWithRetry(goalId: bigint, seq: bigint): Promise<AuthorizeOutcome> {
     const attempts = this.#config.signerRetries ?? 12;
     let last: AuthorizeOutcome = { kind: "not-ready", reason: "not attempted" };
     for (let i = 0; i < attempts; i++) {
       last = await this.#config.signer.authorize(goalId, seq);
-      if (last.kind !== "not-ready") return last;
-      await new Promise((r) => setTimeout(r, 1_000));
+      if (last.kind !== "not-ready" && last.kind !== "rate-limited") return last;
+
+      // A signer that sent no usable retry-after reports 0, which must not
+      // become a busy loop against the thing already asking us to slow down.
+      const asked = last.kind === "rate-limited" ? last.retryAfterSeconds : 0;
+      const waitSeconds = Math.min(Math.max(asked, 1), 10);
+      await new Promise((r) => setTimeout(r, waitSeconds * 1_000));
     }
     return last;
   }

@@ -44,8 +44,11 @@ function completion(content: string): unknown {
   return { choices: [{ message: { content } }] };
 }
 
+/** Any origin will do; the point is that one must be given. */
+const GATEWAY = "https://gateway.test";
+
 function agentWith(fetchImpl: typeof fetch): LlmAgent {
-  return new LlmAgent({ apiKey: "k", model: "test-model", fetchImpl });
+  return new LlmAgent({ apiKey: "k", model: "test-model", baseUrl: GATEWAY, fetchImpl });
 }
 
 describe("LlmAgent — no decision is never dressed up as one", () => {
@@ -184,6 +187,7 @@ describe("probeGateway", () => {
     const probe = await probeGateway({
       apiKey: "k",
       model: "test-model",
+      baseUrl: GATEWAY,
       fetchImpl: gateway(200, completion("ok")),
     });
 
@@ -195,6 +199,7 @@ describe("probeGateway", () => {
     const probe = await probeGateway({
       apiKey: "k",
       model: "claude-opus-4-6",
+      baseUrl: GATEWAY,
       fetchImpl: gateway(402, { error: "insufficient balance" }),
     });
 
@@ -206,6 +211,7 @@ describe("probeGateway", () => {
     const probe = await probeGateway({
       apiKey: "k",
       model: "test-model",
+      baseUrl: GATEWAY,
       fetchImpl: (async () => {
         throw new Error("getaddrinfo ENOTFOUND");
       }) as unknown as typeof fetch,
@@ -219,19 +225,45 @@ describe("probeGateway", () => {
 describe("buildAgent", () => {
   it("uses the offline agent when the model id is missing", async () => {
     // A key alone is not a usable configuration.
-    expect(llmConfigured({ apiKey: "k", model: undefined })).toBe(false);
+    expect(llmConfigured({ apiKey: "k", model: undefined, baseUrl: "https://gw.test" })).toBe(false);
 
     const fallback = new ScriptedAgent();
-    const agent = await buildAgent({ apiKey: "k", model: undefined, fallback });
+    const agent = await buildAgent({
+      apiKey: "k",
+      model: undefined,
+      baseUrl: "https://gw.test",
+      fallback,
+    });
 
     expect(agent).toBe(fallback);
     expect((await agent.consider(TERMS, HONEST)).source).toBe("scripted");
+  });
+
+  it("uses the offline agent when no gateway is configured", async () => {
+    /*
+     * The provider is configuration now, not a constant, so "no gateway" is a
+     * configuration state the factory has to recognise. Before this it would
+     * have built a live agent pointed at a default that no longer exists and
+     * failed at the first resource instead of at boot.
+     */
+    expect(llmConfigured({ apiKey: "k", model: "test-model", baseUrl: undefined })).toBe(false);
+
+    const fallback = new ScriptedAgent();
+    const agent = await buildAgent({
+      apiKey: "k",
+      model: "test-model",
+      baseUrl: undefined,
+      fallback,
+    });
+
+    expect(agent).toBe(fallback);
   });
 
   it("wraps a configured model so a dead gateway degrades instead of failing", async () => {
     const agent = await buildAgent({
       apiKey: "k",
       model: "test-model",
+      baseUrl: "https://gw.test",
       fallback: new ScriptedAgent(),
       fetchImpl: (async () => {
         throw new Error("ECONNREFUSED");

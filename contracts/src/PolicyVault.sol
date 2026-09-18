@@ -23,8 +23,9 @@ import {ebool, euint256, e, inco} from "@inco/lightning/src/Lib.sol";
 /// Two kinds of checks, deliberately handled differently:
 ///
 ///   - **Structural validity** — allowlist, asset, expiry, goal open, caller is
-///     the relay. These `revert`. A malformed request is not a policy decision
-///     and should never reach the chain as one.
+///     the relay, payer not already bound to another goal. These `revert`. A
+///     malformed request is not a policy decision and should never reach the
+///     chain as one.
 ///   - **Policy** — `perCallCap`, `callsRemaining`, `remainingBudget`. These
 ///     resolve into the decision rather than reverting, *including the public
 ///     ones*. An over-cap request must land on chain and bounce visibly. If it
@@ -47,7 +48,8 @@ contract PolicyVault {
 
     struct Goal {
         address owner; // opened the goal; only they may close it
-        address payer; // ephemeral EOA that will sign EIP-3009. Immutable.
+        address payer; // ephemeral EOA that will sign EIP-3009. Immutable, and bound
+            // to this goal alone — see `payerGoal`.
         address relay; // may call requestSpend; pays gas, authorizes nothing
         address asset; // token the signer is bound to. Never read from a 402.
         uint32 callsRemaining; // public
@@ -97,6 +99,25 @@ contract PolicyVault {
     /// 0 when no spend awaits finalisation.
     mapping(uint256 goalId => uint64) public pendingSeq;
 
+    /// The goal a payer belongs to, or 0 if the address has never been used.
+    ///
+    /// One payer, one goal. Every other control here is scoped to a goal —
+    /// `perCallCap`, `callsRemaining`, the encrypted budget, the allowlist —
+    /// and that scoping only bounds anything if a payer cannot appear in two
+    /// goals at once. It could. Payer addresses are public in `GoalOpened`, so
+    /// anyone could open their own goal naming somebody else's payer, supply
+    /// their own budget ciphertext, cap and allowlist, and have the
+    /// Authorization Signer sign a transfer out of that payer: the signer reads
+    /// the payer off whichever goal it is handed and holds the key either way.
+    /// `closeGoal` plus a sweep was the cheaper version of the same move.
+    ///
+    /// The binding is never cleared, not at `closeGoal` and not after a sweep.
+    /// Releasing it would restore the whole attack against any payer whose goal
+    /// had finished, which is exactly the state a payer holding a leftover
+    /// balance is in. Payer keys are ephemeral and minting another is one call,
+    /// so nothing legitimate wants to reuse one.
+    mapping(address payer => uint256 goalId) public payerGoal;
+
     // ----------------------------------------------------------------- events
 
     event GoalOpened(
@@ -127,6 +148,7 @@ contract PolicyVault {
 
     error FeeNotPaid();
     error InvalidPayer();
+    error PayerAlreadyBound();
     error InvalidRelay();
     error InvalidAsset();
     error InvalidExpiry();
@@ -159,6 +181,10 @@ contract PolicyVault {
     function openGoal(OpenGoalParams calldata params) external payable returns (uint256 goalId) {
         require(msg.value == inco.getFee(), FeeNotPaid());
         require(params.payer != address(0), InvalidPayer());
+        // Structural, so it reverts: naming a payer that is already somebody
+        // else's is not a request the policy has an opinion about. See
+        // `payerGoal` for what it costs to leave this out.
+        require(payerGoal[params.payer] == 0, PayerAlreadyBound());
         require(params.relay != address(0), InvalidRelay());
         require(params.asset != address(0), InvalidAsset());
         require(params.expiry > block.timestamp, InvalidExpiry());
@@ -187,6 +213,9 @@ contract PolicyVault {
             open: true
         });
         perCallCap[goalId] = params.perCallCap;
+        // Written alongside the goal record it describes, so the two cannot be
+        // added separately and drift.
+        payerGoal[params.payer] = goalId;
 
         for (uint256 i = 0; i < params.allowlist.length; i++) {
             allowlisted[goalId][params.allowlist[i]] = true;

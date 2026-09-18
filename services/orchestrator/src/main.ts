@@ -46,9 +46,9 @@ const relay = new VaultRelay({
 const zap = await Lightning.baseSepoliaTestnet({ hostChainRpcUrls: [...rpcUrls(rpcUrl)] });
 
 const agent = await buildAgent({
-  apiKey: optional("AISA_INFERENCE_KEY"),
+  apiKey: optional("LLM_API_KEY"),
   model: optional("LLM_MODEL"),
-  baseUrl: optional("AISA_API_BASE_URL"),
+  baseUrl: optional("LLM_BASE_URL"),
   fallback: new ScriptedAgent(),
   onFallback: (detail) =>
     console.warn(`  model gateway did not answer — scripted stand-in decided: ${detail}`),

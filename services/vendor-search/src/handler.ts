@@ -1,7 +1,7 @@
 /**
- * x402 **v1** resource server fronting AIsa's live search.
+ * x402 **v1** resource server fronting a paid live-search API.
  *
- *   GET /resource/aisa/search?q=<urlencoded>&tier=basic|deep
+ *   GET /resource/search?q=<urlencoded>&tier=basic|deep
  *
  * Pure request/response logic, transport-free so tests can drive it directly.
  * `server.ts` wraps it in node:http.
@@ -15,13 +15,13 @@
  *   2. spend ceiling                         free
  *   3. local payload sanity (payee, amount)  free
  *   4. facilitator `/verify`                 free, no money moves
- *   5. upstream AIsa call                    COSTS US
+ *   5. upstream search call                  COSTS US
  *   6. facilitator `/settle`                 moves the buyer's USDC
  *
  * Step 4 is the one that is easy to leave out and expensive to omit. Without
  * it, anyone can send a well-formed authorization that will fail at settlement
- * — an already-consumed nonce, an unfunded payer — and we will have paid AIsa
- * for a search before finding out. Repeat that in a loop and the vendor's
+ * — an already-consumed nonce, an unfunded payer — and we will have paid the
+ * upstream provider for a search before finding out. Repeat that in a loop and the vendor's
  * balance is drained by someone who never spends a cent. `/verify` exists in
  * the x402 protocol precisely so a resource server can ask "would this pay?"
  * before doing the work, and this is what it is for.
@@ -41,7 +41,6 @@
  */
 
 import {
-  COST_HEADER_CUSTOMER,
   HEADER_PAYMENT,
   HEADER_PAYMENT_RESPONSE,
   NETWORK_BASE_SEPOLIA,
@@ -93,7 +92,7 @@ export async function handleRequest(
   options: HandlerOptions,
 ): Promise<VendorResponse> {
   const network = options.network ?? NETWORK_BASE_SEPOLIA;
-  const baseUrl = options.baseUrl ?? "https://vendor-aisa.local";
+  const baseUrl = options.baseUrl ?? "https://vendor-search.local";
 
   if (req.method !== "GET") {
     return { status: 405, headers: JSON_HEADERS, body: { error: "method not allowed" } };
@@ -115,7 +114,7 @@ export async function handleRequest(
     };
   }
 
-  if (rawPath !== "/resource/aisa/search") {
+  if (rawPath !== "/resource/search") {
     return { status: 404, headers: JSON_HEADERS, body: { error: "not found" } };
   }
 
@@ -169,7 +168,7 @@ export async function handleRequest(
           // testnet toy. See the settlement-network note in the agent's system
           // prompt — this is the same false inference, cut off at its source.
           description:
-            `Live web search via AIsa — ${tier.label}. Returns current results from a ` +
+            `${tier.label} — live. Returns current results from a ` +
             `production search API, priced per call.`,
           mimeType: "application/json",
           maxTimeoutSeconds: MAX_TIMEOUT_SECONDS,
@@ -268,14 +267,14 @@ export async function handleRequest(
        * What it cost us against what we charged, reported rather than hidden.
        * The trace wants both and a vendor that
        * publishes its own margin is a better demo than one that does not.
-       * `costAtomic` is undefined when AIsa omitted the header.
+       * `costAtomic` is undefined when the provider reported no cost.
        */
       upstream: {
         requestId: upstream.requestId,
         latencyMs: upstream.latencyMs,
         costAtomic: upstream.costAtomic,
         quotedAtomic: tier.priceAtomic,
-        costHeader: COST_HEADER_CUSTOMER,
+        costHeader: upstream.costHeader,
       },
     },
   };

@@ -118,3 +118,75 @@ describe("SignerClient — service token", () => {
     expect(Object.keys(JSON.parse(bodies[0]!) as object).sort()).toEqual(["goalId", "seq"]);
   });
 });
+
+/**
+ * The signer limits both its HTTP edge (per-IP) and its enclave key operations
+ * (global). Either can answer 429 to a request whose `(goalId, seq)` is
+ * perfectly valid and whose budget the vault has **already debited**.
+ *
+ * So the distinction these tests defend is the same one 425 gets: a 429 must
+ * not arrive as `refused`, because `refused` is terminal and the payment loop
+ * would abandon a spend that has been paid for.
+ */
+describe("SignerClient — rate limiting", () => {
+  /** Answers one status, with optional headers. */
+  function answering(status: number, headers: Record<string, string> = {}): typeof fetch {
+    return (async () =>
+      new Response(JSON.stringify({ error: "rate limit exceeded" }), {
+        status,
+        headers: { "content-type": "application/json", ...headers },
+      })) as unknown as typeof fetch;
+  }
+
+  it("reports 429 as rate-limited rather than refused", async () => {
+    const client = new SignerClient("http://signer.local", answering(429, { "retry-after": "17" }));
+
+    const outcome = await client.authorize(1n, 2n);
+
+    expect(outcome).toEqual({
+      kind: "rate-limited",
+      reason: "rate limit exceeded",
+      retryAfterSeconds: 17,
+    });
+  });
+
+  it("reports 0 when the signer sends no retry-after", async () => {
+    const outcome = await new SignerClient("http://signer.local", answering(429)).authorize(1n, 2n);
+
+    expect(outcome).toMatchObject({ kind: "rate-limited", retryAfterSeconds: 0 });
+  });
+
+  // The header arrives over the network. Left untrusted, `retry-after: 86400`
+  // would park the payment loop for a day on a limit that clears in a minute.
+  it.each([
+    ["86400", 60],
+    ["0", 0],
+    ["-5", 0],
+    ["soon", 0],
+    ["Wed, 21 Oct 2026 07:28:00 GMT", 0],
+    ["2.4", 3],
+  ])("clamps a retry-after of %s to %i", async (header, expected) => {
+    const client = new SignerClient("http://signer.local", answering(429, { "retry-after": header }));
+
+    const outcome = await client.authorize(1n, 2n);
+
+    expect(outcome).toMatchObject({ kind: "rate-limited", retryAfterSeconds: expected });
+  });
+
+  it("still treats other 4xx as terminal refusals", async () => {
+    // 403 is the policy saying no. Retrying that is the anti-pattern the
+    // architecture explicitly forbids, so the two must not blur together.
+    const outcome = await new SignerClient("http://signer.local", answering(403)).authorize(1n, 2n);
+
+    expect(outcome).toMatchObject({ kind: "refused", status: 403 });
+  });
+
+  it("passes a 429 on a sweep through as a refusal, with the signer's own words", async () => {
+    // A sweep strands nothing — the goal stays closed and the balance stays
+    // put — so it needs no retry channel, only a message the operator can act
+    // on.
+    const outcome = await new SignerClient("http://signer.local", answering(429)).sweep("42");
+
+    expect(outcome).toMatchObject({ kind: "refused", status: 429, reason: "rate limit exceeded" });
+  });
+});

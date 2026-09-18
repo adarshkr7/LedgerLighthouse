@@ -36,7 +36,7 @@ const ROLES = [
    * has left that path for good. An address whose key you lose is USDC you
    * cannot retrieve.
    */
-  ["VENDOR_AISA_PAYEE", "receives vendor revenue — KEEP THIS KEY, nothing sweeps it"],
+  ["VENDOR_SEARCH_PAYEE", "receives vendor revenue — KEEP THIS KEY, nothing sweeps it"],
 ] as const;
 
 console.log("\nThrowaway Base Sepolia keys. Paste into .env, then fund each with a little ETH.\n");
@@ -46,7 +46,7 @@ for (const [name, note] of ROLES) {
   const { address } = privateKeyToAccount(key);
   console.log(`# ${note}`);
 
-  if (name === "VENDOR_AISA_PAYEE") {
+  if (name === "VENDOR_SEARCH_PAYEE") {
     // This variable wants the *address* — the vendor advertises it as `payTo`
     // and the console allowlists it. The key is what you keep, somewhere that
     // is not this repo, so the revenue can be swept later.

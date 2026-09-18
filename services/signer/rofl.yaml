@@ -55,6 +55,6 @@ deployments:
       default:
         provider: oasis1qp2ens0hsp7gh23wajxa4hpetkdek3swyyulyrmz
         offer: playground_short
-        id: 000000000000069a
+        id: 00000000000006a1
 tooling:
   version: 0.19.1

@@ -11,6 +11,7 @@ import {
   bindHost,
   createLogger,
   describeGuard,
+  exposedWithoutToken,
   loadDotEnv,
   optional,
   optionalAddress,
@@ -56,12 +57,12 @@ const mockApiUrl = optional("MOCK_API_URL") ?? `http://127.0.0.1:${process.env["
  * if that credential's name appears anywhere in this source tree — including in
  * a comment, which is why this one does not spell it out.
  */
-const vendorAisaPayeeRaw = optionalAddress("VENDOR_AISA_PAYEE");
-const vendorAisaPayee = vendorAisaPayeeRaw
-  ? assertPayoutAddress("VENDOR_AISA_PAYEE", vendorAisaPayeeRaw)
+const vendorSearchPayeeRaw = optionalAddress("VENDOR_SEARCH_PAYEE");
+const vendorSearchPayee = vendorSearchPayeeRaw
+  ? assertPayoutAddress("VENDOR_SEARCH_PAYEE", vendorSearchPayeeRaw)
   : undefined;
-const vendorAisaUrl = vendorAisaPayee
-  ? (optional("VENDOR_AISA_URL") ?? `http://127.0.0.1:${process.env["VENDOR_AISA_PORT"] ?? 4022}`)
+const vendorSearchUrl = vendorSearchPayee
+  ? (optional("VENDOR_SEARCH_URL") ?? `http://127.0.0.1:${process.env["VENDOR_SEARCH_PORT"] ?? 4022}`)
   : undefined;
 
 /*
@@ -122,15 +123,15 @@ const zap = await withRetry("Inco Lightning handshake", () =>
   Lightning.baseSepoliaTestnet({ hostChainRpcUrls: [...rpcUrls(rpcUrl)] }),
 );
 
-const apiKey = optional("AISA_INFERENCE_KEY");
+const apiKey = optional("LLM_API_KEY");
 const model = optional("LLM_MODEL");
-const baseUrl = optional("AISA_API_BASE_URL");
+const baseUrl = optional("LLM_BASE_URL");
 /*
- * Both, not just the key — `buildAgent` needs both to return a live model, so
- * reporting on the key alone would announce "live LLM" for a run that is about
- * to be decided by the scripted stand-in.
+ * All three, not just the key — `buildAgent` needs a key, a model id and a
+ * gateway to return a live model, so reporting on the key alone would announce
+ * "live LLM" for a run that is about to be decided by the scripted stand-in.
  */
-const agentIsLive = llmConfigured({ apiKey, model });
+const agentIsLive = llmConfigured({ apiKey, model, baseUrl });
 const agent = await buildAgent({
   apiKey,
   model,
@@ -177,8 +178,8 @@ const server = createOrchestratorServer({
   usdcAddress,
   chainId,
   mockApiUrl,
-  vendorAisaUrl,
-  vendorAisaPayee,
+  vendorSearchUrl,
+  vendorSearchPayee,
   signerUrl,
   signer,
   anchors,
@@ -193,6 +194,18 @@ const server = createOrchestratorServer({
 
 server.listen(port, bindHost(), () => {
   log.info(`listening on http://${bindHost()}:${port}`, { guard: describeGuard() });
+  /*
+   * Said at boot rather than discovered at the download button. The trace route
+   * refuses in this combination, and an operator who bound the service outward
+   * on purpose should hear about the consequence while they are still looking
+   * at the terminal.
+   */
+  if (exposedWithoutToken()) {
+    log.warn(
+      "bound to the network with no SERVICE_TOKEN — GET /traces/:goalId will refuse. " +
+        "Traces are run records; set a token, or bind loopback and fetch them from this machine.",
+    );
+  }
   log.info("relay", { address: relay.relayAddress, note: "gas only" });
   log.info("agent", {
     source: agentIsLive ? "live LLM" : "scripted stand-in",
@@ -206,12 +219,12 @@ server.listen(port, bindHost(), () => {
   }
   log.info("trace anchoring", { contract: anchorAddress ?? "not configured" });
   log.info("live search", {
-    vendor: vendorAisaUrl ?? "not configured",
-    ...(vendorAisaPayee ? { payee: vendorAisaPayee } : {}),
+    vendor: vendorSearchUrl ?? "not configured",
+    ...(vendorSearchPayee ? { payee: vendorSearchPayee } : {}),
   });
-  if (!vendorAisaPayee) {
+  if (!vendorSearchPayee) {
     log.warn(
-      "live AIsa search is unavailable — set VENDOR_AISA_PAYEE (and run @ntux402/vendor-aisa)",
+      "live search is unavailable — set VENDOR_SEARCH_PAYEE (and run @ntux402/vendor-search)",
     );
   }
 

@@ -16,7 +16,7 @@ export interface SearchResultItem {
   readonly score?: number;
 }
 
-/** The 200 body `services/vendor-aisa` returns once a payment has settled. */
+/** The 200 body `services/vendor-search` returns once a payment has settled. */
 export interface SearchPayload {
   readonly capability?: string;
   readonly tier?: string;

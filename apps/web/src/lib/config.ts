@@ -54,7 +54,7 @@ export interface OrchestratorConfig {
   readonly signerUrl: string;
   readonly mockApiUrl: string;
   /** Live-search vendor. Absent when it is not configured — the picker greys those goals out. */
-  readonly vendorAisaUrl?: string | undefined;
+  readonly vendorSearchUrl?: string | undefined;
   /**
    * The live vendor's payee, which is **not** in the shared catalog.
    *
@@ -63,7 +63,7 @@ export interface OrchestratorConfig {
    * every live spend reverts `PayeeNotAllowlisted` — the correct failure, and a
    * thoroughly confusing one to watch.
    */
-  readonly vendorAisaPayee?: `0x${string}` | undefined;
+  readonly vendorSearchPayee?: `0x${string}` | undefined;
   /** "stub" means payloads are validated but no money moves. Shown, never hidden. */
   readonly settlement: "live" | "stub";
   readonly agent: "llm" | "scripted";

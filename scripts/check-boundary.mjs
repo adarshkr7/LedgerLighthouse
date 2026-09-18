@@ -9,7 +9,7 @@
 // Two boundaries, one mechanism:
 //
 //   services/signer      holds the payer key. Compromise here is arbitrary USDC spend.
-//   services/vendor-aisa holds AISA_VENDOR_KEY. Compromise here is arbitrary spend against a
+//   services/vendor-search holds SEARCH_VENDOR_KEY. Compromise here is arbitrary spend against a
 //                        prepaid balance that PolicyVault never sees — no on-chain trace, no
 //                        confidential budget, nothing to bounce off. See
 //                        README.md.
@@ -41,15 +41,15 @@ const FORBIDDEN = [
     reason: "ARCHITECTURE.md trust model — the orchestrator holds no spending authority",
   },
   {
-    label: "vendor-aisa",
-    dir: join(repoRoot, "services", "vendor-aisa") + sep,
-    pkg: "@ntux402/vendor-aisa",
+    label: "vendor-search",
+    dir: join(repoRoot, "services", "vendor-search") + sep,
+    pkg: "@ntux402/vendor-search",
     reason: "README.md — the vendor key must not reach the untrusted component",
   },
 ];
 
 /** Credential names the orchestrator may never mention, by any spelling. */
-const FORBIDDEN_ENV = ["AISA_VENDOR_KEY"];
+const FORBIDDEN_ENV = ["SEARCH_VENDOR_KEY"];
 
 const IMPORT_RE = /(?:import|export)\s+(?:[^'"]*?\sfrom\s*)?['"]([^'"]+)['"]|(?:import|require)\(\s*['"]([^'"]+)['"]\s*\)/g;
 
@@ -102,7 +102,7 @@ for (const file of walk(orchestratorSrc)) {
       const line = src.slice(0, index).split("\n").length;
       violations.push(
         `${relative(repoRoot, file)}:${line} names ${name} — that credential belongs to ` +
-          `services/vendor-aisa alone (README.md)`,
+          `services/vendor-search alone (README.md)`,
       );
     }
   }
@@ -120,7 +120,7 @@ if (existsSync(orchestratorPkgPath)) {
 
 if (violations.length > 0) {
   console.error(
-    "Dependency boundary violated: services/orchestrator must not reach the signer or the AIsa vendor.\n",
+    "Dependency boundary violated: services/orchestrator must not reach the signer or the search vendor.\n",
   );
   for (const v of violations) console.error(`  - ${v}`);
   console.error("\nSee the trust model in ARCHITECTURE.md.");

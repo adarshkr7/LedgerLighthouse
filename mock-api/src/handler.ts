@@ -113,7 +113,7 @@ function routeFor(path: string): Route | undefined {
 
   /*
    * A catalog entry is not automatically ours. The live search goals are served
-   * by `services/vendor-aisa` against a real API, and answering for one here
+   * by `services/vendor-search` against a real API, and answering for one here
    * would hand back fabricated market data at a price the console displayed for
    * something else entirely — a 200, a settlement, and the wrong product.
    * 404 is the honest answer: this server does not have that resource.

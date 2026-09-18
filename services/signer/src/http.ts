@@ -15,6 +15,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 
 import { RateLimiter, corsHeaders, rejected } from "@ntux402/shared/node";
 
+import { EnclaveRateLimitError } from "./enclave-limit.js";
 import type { AuthorizationSigner } from "./service.js";
 
 /** Bounded so a hostile body cannot be used to exhaust memory. */
@@ -33,6 +34,14 @@ const MAX_BODY_BYTES = 8 * 1024;
  * What was genuinely wrong was unbounded key *minting*: every call writes a new
  * private key to the file store, so a loop grew the file without limit. That is
  * what the limiter below is for.
+ *
+ * These two are keyed per-IP, which is worth reading as what it is: the cheap
+ * edge filter, applied before a body is read. On the deployed ROFL machine the
+ * source address is the Oasis proxy's for every caller alike, so it cannot tell
+ * them apart there. `enclave-limit.ts` is the floor underneath that holds
+ * regardless — it bounds the `rofl-appd` calls themselves, and its refusals
+ * arrive as `EnclaveRateLimitError` and become the 429 at the bottom of this
+ * file.
  */
 
 /** Key minting is cheap to call and expensive to serve. */
@@ -178,6 +187,19 @@ export function createSignerServer(options: SignerServerOptions): Server {
 
       send(res, 404, { error: "not found" }, cors);
     })().catch((e: unknown) => {
+      /*
+       * The enclave limiter throws rather than returning an outcome (see
+       * `enclave-limit.ts` for why), so it surfaces here alongside genuine
+       * faults. Answering 500 would be a lie the caller acts on: `SignerClient`
+       * treats a 5xx as `refused`, which is terminal, and a spend the vault has
+       * already debited would be abandoned over a limit that clears in seconds.
+       */
+      if (e instanceof EnclaveRateLimitError) {
+        log(`${req.method} ${(req.url ?? "/").split("?")[0]} -> 429 ${e.message}`);
+        const headers = { ...cors, "retry-after": String(e.retryAfterSeconds) };
+        send(res, 429, { error: e.message }, headers);
+        return;
+      }
       send(res, 500, { error: e instanceof Error ? e.message : String(e) }, cors);
     });
   });

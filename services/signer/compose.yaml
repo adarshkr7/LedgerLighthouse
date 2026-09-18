@@ -69,6 +69,19 @@ services:
       # (goalId, seq) and cannot be argued into signing anything else, so the
       # worst case is a stranger burning a goal's callsRemaining.
       - SERVICE_TOKEN=${SERVICE_TOKEN}
+      # Left at their defaults (30 and 240 per minute), listed here because this
+      # deployment is the reason they exist.
+      #
+      # The per-IP limiter in http.ts cannot tell callers apart from in here:
+      # requests arrive via the Oasis proxy named by `oasis rofl machine show`,
+      # so `remoteAddress` is the proxy's for everyone alike, and the per-IP
+      # buckets collapse into one nobody sized on purpose. The limiter in
+      # enclave-limit.ts is global by design and sits underneath, bounding calls
+      # into rofl-appd over the socket mounted below.
+      #
+      # Uncomment to change; a non-integer value refuses the boot.
+      # - SIGNER_ENCLAVE_MINT_PER_MIN=30
+      # - SIGNER_ENCLAVE_DERIVE_PER_MIN=240
       - CHAIN_ID=84532
       # Supplied via `oasis rofl secret set`, not baked into the image.
       - BASE_SEPOLIA_RPC_URL=${BASE_SEPOLIA_RPC_URL}

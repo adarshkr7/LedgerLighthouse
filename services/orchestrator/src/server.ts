@@ -13,6 +13,10 @@
  *   POST /runs            { goalId, mode } -> SSE stream of PaymentEvents
  *   POST /sweeps          { goalId } -> returns the payer balance to the owner
  *   GET  /traces/:goalId  the trace built from the last run for that goal
+ *
+ * `/health` and `/config` answer anyone. Everything else is guarded, and
+ * `/traces/` most of all — see the route for why a run record is a different
+ * kind of thing from a run.
  */
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
@@ -24,7 +28,7 @@ import {
   validateQuery,
   vendorUpstreamOf,
 } from "@ntux402/shared";
-import { RateLimiter, corsHeaders, rejected } from "@ntux402/shared/node";
+import { RateLimiter, corsHeaders, exposedWithoutToken, rejected } from "@ntux402/shared/node";
 import type { Address } from "viem";
 
 import type { PaymentEvent, PaymentLoop, PaymentResult } from "./pay/payment-loop.js";
@@ -41,17 +45,17 @@ export interface OrchestratorServerOptions {
   readonly usdcAddress: Address;
   readonly chainId: number;
   readonly mockApiUrl: string;
-  /** Base URL of `services/vendor-aisa`. Absent when live search is not configured. */
-  readonly vendorAisaUrl: string | undefined;
+  /** Base URL of `services/vendor-search`. Absent when live search is not configured. */
+  readonly vendorSearchUrl: string | undefined;
   /**
-   * `VENDOR_AISA_PAYEE`, republished so the console can allowlist it.
+   * `VENDOR_SEARCH_PAYEE`, republished so the console can allowlist it.
    *
    * A public address, not a credential — the vendor's *key* is fenced off from
    * this service by `scripts/check-boundary.mjs`, and this is deliberately not
    * that. The console needs it because an upstream goal's payee cannot live in
    * the shared catalog: it is the operator's own address.
    */
-  readonly vendorAisaPayee: Address | undefined;
+  readonly vendorSearchPayee: Address | undefined;
   readonly signerUrl: string;
   /**
    * The signer, already carrying its bearer token.
@@ -96,6 +100,16 @@ export interface OrchestratorServerOptions {
  * a human driving a UI rather than a script.
  */
 const RUN_LIMIT = new RateLimiter({ windowMs: 60_000, max: 20 });
+
+/**
+ * Its own bucket, not `RUN_LIMIT`.
+ *
+ * Downloading three traces should not spend a viewer's budget for starting
+ * runs; the two routes cost different things and bound different risks. Higher
+ * than `RUN_LIMIT` because a trace read is an LRU hit or one small file, and
+ * still low enough that walking the id space is slow rather than instant.
+ */
+const TRACE_LIMIT = new RateLimiter({ windowMs: 60_000, max: 60 });
 
 function send(
   res: ServerResponse,
@@ -201,8 +215,8 @@ export function createOrchestratorServer(options: OrchestratorServerOptions): Se
             // Both vendors are reported: one field cannot describe two servers,
             // and the console disables live search rather than offering a
             // button that 500s when the shim is not running.
-            vendorAisaUrl: options.vendorAisaUrl,
-            vendorAisaPayee: options.vendorAisaPayee,
+            vendorSearchUrl: options.vendorSearchUrl,
+            vendorSearchPayee: options.vendorSearchPayee,
             // Rendered in the UI so a stubbed run can never be mistaken for a real one.
             settlement: options.facilitatorUrl ? "live" : "stub",
             agent: options.agentSource,
@@ -213,7 +227,48 @@ export function createOrchestratorServer(options: OrchestratorServerOptions): Se
         return;
       }
 
+      /*
+       * The one route here that hands back data rather than doing something.
+       *
+       * It was open, and open is wrong for it. Goal ids are small sequential
+       * integers, so `GET /traces/1`, `/traces/2`, ... walks every run the
+       * process has ever recorded — and a trace carries the vendor's prose, the
+       * model's own reasoning, the payee, the amounts and the resource URLs.
+       * `.gitignore` already says these are meant to be handed to an auditor
+       * deliberately. Serving them to anyone who can reach the port is the
+       * opposite of deliberately.
+       *
+       * Two controls, and they answer different questions. `rejected()` is the
+       * same guard the mutating routes use: the bearer when one is configured,
+       * and a limiter that makes enumeration slow. `exposedWithoutToken()` is
+       * the floor underneath it, because the bearer is opt-in and the useful
+       * default for `/runs` is the dangerous one here — a stranger who starts a
+       * run burns a goal they do not own, and a stranger who reads a trace
+       * keeps it.
+       */
       if (req.method === "GET" && path.startsWith("/traces/")) {
+        if (rejected(req, res, { limiter: TRACE_LIMIT })) return;
+
+        if (exposedWithoutToken()) {
+          /*
+           * 403, not 401. A 401 with `www-authenticate` invites the caller to
+           * present a credential, and there is no credential that would work:
+           * the operator has not configured one. The fault is this side of the
+           * wire and the message says so.
+           */
+          send(
+            res,
+            403,
+            {
+              error:
+                "refused: traces are run records and this process is bound to a network " +
+                "interface with no SERVICE_TOKEN set. Set one, or bind BIND_HOST to 127.0.0.1.",
+            },
+            cors,
+          );
+          return;
+        }
+
         const goalId = path.slice("/traces/".length);
         const trace = traces.get(goalId);
         if (!trace) {
@@ -319,15 +374,15 @@ export function createOrchestratorServer(options: OrchestratorServerOptions): Se
         // here, at the request, rather than as a fetch failure twenty seconds
         // in with a goal already debited.
         const selectedGoal = findDemoGoal(mode);
-        if (selectedGoal?.upstream !== undefined && options.vendorAisaUrl === undefined) {
+        if (selectedGoal?.upstream !== undefined && options.vendorSearchUrl === undefined) {
           send(
             res,
             503,
             {
               error:
-                `mode ${mode} is served by the live AIsa vendor, which is not configured. ` +
+                `mode ${mode} is served by the live search vendor, which is not configured. ` +
                 `Fill in the live-search section of .env (see .env.example) and start ` +
-                `@ntux402/vendor-aisa.`,
+                `@ntux402/vendor-search.`,
             },
             cors,
           );
@@ -401,7 +456,7 @@ export function createOrchestratorServer(options: OrchestratorServerOptions): Se
  * Which vendor serves this run, and at what URL.
  *
  * Routing is on the catalog entry's `upstream` field, never on the shape of the
- * key. A name-prefix rule (`mode.startsWith("aisa-")`) would send a renamed
+ * key. A name-prefix rule (`mode.startsWith("search-")`) would send a renamed
  * goal to the wrong server, and the failure would be a 200 carrying the wrong
  * product at the right price — which is the one bug this catalog exists to
  * prevent.
@@ -414,7 +469,7 @@ export function createOrchestratorServer(options: OrchestratorServerOptions): Se
 export function resourceUrlFor(ctx: {
   mode: string;
   mockApiUrl: string;
-  vendorAisaUrl?: string | undefined;
+  vendorSearchUrl?: string | undefined;
   priceAtomic?: string | undefined;
   query?: string | undefined;
 }): string {
@@ -425,7 +480,7 @@ export function resourceUrlFor(ctx: {
       q: ctx.query ?? goal.upstream.defaultQuery,
       tier: goal.upstream.tier,
     });
-    return `${ctx.vendorAisaUrl}/resource/aisa/${goal.upstream.capability}?${params.toString()}`;
+    return `${ctx.vendorSearchUrl}/resource/${goal.upstream.capability}?${params.toString()}`;
   }
 
   // `?price=` is honoured by the mock vendor alone, and only for its overcharge
@@ -534,7 +589,7 @@ async function streamRun(
         // stale, and that belongs somewhere a human reads.
         ctx.log(
           `vendor sold below cost on goal ${ctx.goalId}: quoted ${upstream.quotedAtomic}, ` +
-            `cost ${upstream.costAtomic} (atomic). Re-run scripts/aisa-measure-tiers.mjs.`,
+            `cost ${upstream.costAtomic} (atomic). Re-run scripts/search-measure-tiers.mjs.`,
         );
       }
     }

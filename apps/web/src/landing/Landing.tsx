@@ -75,11 +75,11 @@ const NAV_LINKS: ReadonlyArray<readonly [id: string, label: string]> = [
 /**
  * The stack, as bare wordmarks. No logo files, so the type is the mark.
  *
- * AIsa was absent, which was simply wrong: it runs the inference the agent
+ * The inference gateway was absent, which was simply wrong: it runs the model the agent
  * thinks with *and* sells the search the agent buys. Two load-bearing roles and
  * no mention anywhere on this page.
  */
-const STACK = ["INCO", "AISA", "BASE", "X402", "EIP-3009", "METAMASK", "VIEM"];
+const STACK = ["INCO", "BASE", "X402", "EIP-3009", "METAMASK", "VIEM"];
 
 /**
  * The three numbers, and only numbers the system can defend. "3" is the
@@ -440,7 +440,7 @@ export function Landing({
           </div>
 
           <div className="gf-footer-base gf-mono gf-dim">
-            <span>Built with Inco and AIsa</span>
+            <span>Built with Inco</span>
             <span>Base Sepolia</span>
           </div>
         </div>
