@@ -32,7 +32,13 @@
 
 import { GPU_WORKLOADS, type GpuWorkload } from "@ntux402/shared";
 
-import type { GpuProvider, JobRequest, JobResult } from "./types.js";
+import type {
+  GpuProvider,
+  JobRequest,
+  JobResult,
+  LeaseProvisionResult,
+  LeaseRequest,
+} from "./types.js";
 
 export interface SimulatedProviderOptions {
   /**
@@ -57,6 +63,11 @@ export interface SimulatedProviderOptions {
    * meter.
    */
   readonly failWith?: { status: number; error: string; provisioned: boolean } | undefined;
+  /**
+   * Makes every termination fail, for exercising the reclaimer's refusal to
+   * record a machine as given back when it is still running.
+   */
+  readonly terminateFails?: boolean;
 }
 
 const DEFAULT_PROVISION_MS = 30_000;
@@ -102,6 +113,9 @@ export class SimulatedGpuProvider implements GpuProvider {
   readonly #sleep: (ms: number) => Promise<void>;
   readonly #now: () => number;
   readonly #failWith: SimulatedProviderOptions["failWith"];
+  readonly #terminateFails: boolean;
+  /** Handle -> hard expiry, so a test can see what was never given back. */
+  readonly #running = new Map<string, number>();
 
   constructor(options: SimulatedProviderOptions = {}) {
     this.#provisionMs = options.provisionMs ?? DEFAULT_PROVISION_MS;
@@ -109,6 +123,7 @@ export class SimulatedGpuProvider implements GpuProvider {
     this.#sleep = options.sleep ?? ((ms) => new Promise((done) => setTimeout(done, ms)));
     this.#now = options.now ?? Date.now;
     this.#failWith = options.failWith;
+    this.#terminateFails = options.terminateFails ?? false;
   }
 
   async runJob(request: JobRequest): Promise<JobResult> {
@@ -150,5 +165,64 @@ export class SimulatedGpuProvider implements GpuProvider {
       // which is the same thing it does for a real provider that stays quiet.
       reportedCostAtomic: undefined,
     };
+  }
+
+  /**
+   * Allocates a machine and leaves it running.
+   *
+   * The endpoint is an origin and carries no secret. A signed URL would be a
+   * credential wearing a location's clothes, and plan §5.3 names exactly that
+   * as the thing a trace must not end up holding — so the secret stays in the
+   * credential field where `redactable()` can see it and drop it.
+   *
+   * `hardExpirySet` is true here because a stand-in can honour anything it is
+   * told. A real adapter reports what the provider actually supports, and an
+   * adapter that answers false is telling the operator they are the backstop.
+   */
+  async provisionLease(request: LeaseRequest): Promise<LeaseProvisionResult> {
+    const started = this.#now();
+
+    if (this.#failWith && !this.#failWith.provisioned) {
+      return { ok: false, ...this.#failWith };
+    }
+
+    await this.#sleep(this.#provisionMs);
+
+    if (this.#failWith) {
+      return { ok: false, ...this.#failWith };
+    }
+
+    const handle = `sim-box-${request.idempotencyKey.replace(/^0x/, "").slice(0, 16)}`;
+    this.#running.set(handle, request.hardExpiryAt);
+
+    return {
+      ok: true,
+      providerHandle: handle,
+      endpoint: `https://${handle}.gpu.invalid`,
+      provider: this.name,
+      simulated: true,
+      provisionMs: this.#now() - started,
+      hardExpirySet: true,
+    };
+  }
+
+  /**
+   * Gives a machine back, and says ok for one that was already gone.
+   *
+   * Idempotent because the reclaimer retries what it could not finish: a sweep
+   * that failed on a network blip and succeeded on the next pass must not then
+   * see a permanent error and keep the record alive forever.
+   */
+  async terminateLease(providerHandle: string): Promise<{ ok: boolean; error?: string }> {
+    if (this.#terminateFails) {
+      return { ok: false, error: "provider unreachable" };
+    }
+    this.#running.delete(providerHandle);
+    return { ok: true };
+  }
+
+  /** Test-only view of what this adapter still believes is running. */
+  get running(): readonly string[] {
+    return [...this.#running.keys()];
   }
 }

@@ -97,7 +97,8 @@ provisioning latency, because §5.4 shows that number lands directly on the paym
 ```
 services/vendor-gpu/                     the x402 resource server
   src/handler.ts                         request -> quote -> provision -> settle
-  src/lease.ts                           lease lifecycle and the lease store (phase 2)
+  src/lease.ts                           lease lifecycle, the store, and redaction
+  src/payer-check.ts                     proves a retry came from the payer
   src/providers/types.ts                 the adapter seam
   src/providers/simulated.ts             the stand-in, until §8 q1 is answered
 packages/shared/src/demo/gpu-skus.ts     SKU table: the tier table's successor
@@ -269,9 +270,30 @@ consumed nonce at `/verify`, which is a check and not a lock.
 Still to wire: the orchestrator does not know this vendor exists. That needs a payee and a URL
 the way `VENDOR_SEARCH_PAYEE` does, and it is the next increment.
 
-**Phase 2 — leases.** Lease store keyed on the spend nonce, expiry and reclamation, credential
-issue and revoke, renewal through `seq + 1`. This is where §5.1 through §5.5 get built and where
-most of the risk lives.
+**Phase 2 — leases.** Vendor side landed 19 September 2026. `GET /resource/gpu/lease` sells a
+block and hands back a credential, an expiry and a `renewBy`; `&renew=<leaseId>` buys the next
+block on the same machine. `LeaseStore` is keyed on the spend nonce, sweeps expired leases on a
+timer and once at boot, and persists everything except the credential.
+
+§5.1 is built. A lease ends on its own, the credential is scoped to it, and reclamation does not
+rest on this process: `provisionLease` hands the provider a hard expiry past the block's own, so
+the machine a crash orphaned still stops. §5.2 is closed — the nonce lock is unconditional, so a
+retry never provisions twice, which is what phase 1's reliance on `/verify` could not promise.
+§5.3 is built on both sides: the vendor reduces a lease to a hash and an expiry before it leaves,
+and `services/trace` does it again on the way in, hashing the credential itself rather than
+trusting the hash it was handed. §5.4 keeps the ordering and terminates on a failed settlement.
+
+One thing this work found that the plan had not. The spend nonce is public — two integers hashed,
+emitted in an event, written into every trace — so keying the lease store on it means knowing a
+nonce is knowing where a live credential lives. The lock stays keyed on the nonce because that is
+what makes a retry idempotent, but re-issuing the credential now requires a valid payer signature
+over the EIP-3009 authorization, checked locally in `payer-check.ts`. Locally because `/verify` is
+the wrong instrument here: the retry path exists exactly when a nonce has been consumed, which is
+what `/verify` is supposed to decline.
+
+What is left of phase 2 is §5.5, which is not vendor side. The vendor states the deadline and the
+lead time; deciding to renew, and doing it at `seq + 1` without colliding with `pendingSeq`,
+belongs to the orchestrator along with the wiring phase 1 left open.
 
 **Phase 3 — agent and console.** The agent's decision becomes "renew or stop" rather than a
 single proceed or skip. The console shows a running lease, a block countdown, and the encrypted

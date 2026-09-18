@@ -4,6 +4,8 @@ export * from "./handler.js";
 export * from "./server.js";
 export * from "./gateway.js";
 export * from "./request.js";
+export * from "./lease.js";
+export * from "./payer-check.js";
 export * from "./providers/index.js";
 
 import { loadDotEnv, optional, required, requiredAddress, SpendLedger } from "@ntux402/shared/node";
@@ -19,6 +21,8 @@ import {
 } from "@ntux402/shared";
 
 import { HttpFacilitatorGateway } from "./gateway.js";
+import { LeaseStore } from "./lease.js";
+import { Eip3009PayerCheck } from "./payer-check.js";
 import { SimulatedGpuProvider } from "./providers/index.js";
 import { startVendorApi } from "./server.js";
 
@@ -74,6 +78,30 @@ if (process.argv[1] && import.meta.url.endsWith(process.argv[1].replace(/\\/g, "
     timeScale: Number(optional("VENDOR_GPU_TIME_SCALE") ?? 0),
   });
 
+  /*
+   * The lease store, and the reclaimer that ends leases nobody cancelled.
+   *
+   * Persisted for a reason the spend ledger does not share: a forgotten ledger
+   * costs a wrong total, and a forgotten lease is a machine nobody is going to
+   * switch off. `onStoreUnreadable` is loud because the answer to it is a human
+   * reconciling against the provider by hand.
+   */
+  const leases = new LeaseStore({
+    path: optional("VENDOR_GPU_LEASE_PATH") ?? ".vendor-gpu/leases.json",
+    onReclaimFailed: (record, error) =>
+      console.error(
+        `RECLAIM FAILED for ${record.id} (${record.providerHandle}): ${error}. ` +
+          "The provider-side hard expiry is the backstop; check it stopped.",
+      ),
+    onStoreUnreadable: (detail) =>
+      console.error(
+        `LEASE STORE UNREADABLE (${detail}). Starting empty. Any machine provisioned ` +
+          "before now is orphaned and must be reconciled at the provider by hand.",
+      ),
+  });
+
+  const chainId = Number(optional("CHAIN_ID") ?? 84532);
+
   const started = await startVendorApi(port, {
     provider,
     payTo: assertPayoutAddress("VENDOR_GPU_PAYEE", requiredAddress("VENDOR_GPU_PAYEE")),
@@ -81,7 +109,25 @@ if (process.argv[1] && import.meta.url.endsWith(process.argv[1].replace(/\\/g, "
     baseUrl: optional("VENDOR_GPU_PUBLIC_URL") ?? `http://127.0.0.1:${port}`,
     ...(gateway ? { gateway } : {}),
     ledger,
+    leases,
+    payerCheck: new Eip3009PayerCheck({ chainId }),
   });
+
+  /*
+   * Swept on a timer, and swept once at boot.
+   *
+   * At boot because a process that was down through an expiry comes back owing
+   * the provider a termination, and waiting a full interval to notice would
+   * bill the difference. The interval is short relative to the shortest block
+   * on offer; a lease that ends a minute late costs a minute.
+   */
+  const sweepMs = Number(optional("VENDOR_GPU_RECLAIM_MS") ?? 60_000);
+  const sweep = async () => {
+    const reclaimed = await leases.reclaimExpired(provider);
+    for (const lease of reclaimed) console.log(`  reclaimed ${lease.id} (${lease.sku})`);
+  };
+  await sweep();
+  setInterval(() => void sweep(), sweepMs).unref();
 
   console.log(`vendor-gpu (x402 v1) listening on ${started.url}`);
   console.log(
@@ -99,9 +145,13 @@ if (process.argv[1] && import.meta.url.endsWith(process.argv[1].replace(/\\/g, "
     ).join("  ");
     console.log(`  ${sku.name.padEnd(10)} ${sku.label.padEnd(11)} ${prices}`);
   }
+  console.log(`  leases    : ${leases.active().length} active, swept every ${sweepMs / 1000}s`);
   console.log(`  GET ${started.url}/catalog   prices, unpaid`);
   console.log(
     `  GET ${started.url}/resource/gpu?sku=rtx4090&minutes=15&workload=gpu-burn`,
+  );
+  console.log(
+    `  GET ${started.url}/resource/gpu/lease?sku=rtx4090&minutes=15&workload=gpu-burn`,
   );
   // Said out loud because "simulated provider" reads like "safe to point at
   // anything", and the settlement half of that is not simulated at all.

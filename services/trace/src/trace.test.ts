@@ -14,7 +14,9 @@
 import { describe, expect, it, beforeEach } from "vitest";
 import {
   encodeFunctionResult,
+  sha256,
   toFunctionSelector,
+  toHex,
   type AbiFunction,
   type Address,
   type Hex,
@@ -530,5 +532,117 @@ describe("vendor-attested steps", () => {
     const result = await verifyTrace(rebuilt);
     expect(result.valid).toBe(false);
     expect(result.findings.some((f) => f.check === "chain.vendor-attested")).toBe(true);
+  });
+});
+
+/*
+ * Plan §5.3. A prepaid job's 200 is the product and the transaction ends when
+ * it lands. A lease's 200 is a credential that stays valuable afterwards, and a
+ * trace is a run record meant to be handed to an auditor — so the one thing
+ * that must never reach the file is the secret itself.
+ */
+describe("lease redaction", () => {
+  const CREDENTIAL = "lease-abc123.SsWkrcCvOXPDEAdpMMlfqrjMy1bE0cnP2mA2EYc5Nnk";
+
+  const build = (lease: unknown) => {
+    const builder = new TraceBuilder({ goalId: 7n, vault: VAULT, chainId: 84532, now: () => 1 });
+    builder.record({
+      type: "vendor-upstream",
+      capability: "gpu-lease",
+      tier: "rtx4090",
+      quotedAtomic: "120000",
+      lease,
+    });
+    return builder.build();
+  };
+
+  it("never writes the credential into the trace", () => {
+    const trace = build({
+      id: "lease-abc123",
+      credential: CREDENTIAL,
+      credentialSha256: "0xdeadbeef",
+      expiresAt: 1_700_000_000_000,
+      blocks: 1,
+      endpoint: "https://box.gpu.invalid",
+    });
+
+    // The whole serialised trace, not just the field we expect it in.
+    expect(JSON.stringify(trace)).not.toContain(CREDENTIAL);
+    expect(JSON.stringify(trace)).not.toContain("SsWkrcCvOXPDEAdpMMlfqrjMy1bE0cnP2mA2EYc5Nnk");
+  });
+
+  /*
+   * Hashed here rather than trusted from the caller. The orchestrator sits
+   * between the vendor and this builder and is the component the architecture
+   * assumes is compromised, so a `credentialSha256` it supplies alongside a raw
+   * credential is not evidence of anything.
+   */
+  it("hashes the credential itself rather than believing the caller", () => {
+    const trace = build({
+      id: "lease-abc123",
+      credential: CREDENTIAL,
+      credentialSha256: "0xdeadbeef",
+    });
+    const lease = (trace.steps[0]?.outputs as { lease: Record<string, unknown> }).lease;
+
+    expect(lease["credentialSha256"]).toBe(sha256(toHex(CREDENTIAL)));
+    expect(lease["credentialSha256"]).not.toBe("0xdeadbeef");
+  });
+
+  it("keeps the hash a vendor supplied when no secret came with it", () => {
+    const trace = build({ leaseId: "lease-abc123", credentialSha256: "0xabc", expiresAt: 42 });
+    const lease = (trace.steps[0]?.outputs as { lease: Record<string, unknown> }).lease;
+
+    expect(lease).toEqual({
+      leaseId: "lease-abc123",
+      credentialSha256: "0xabc",
+      expiresAt: 42,
+      credential: "[redacted]",
+    });
+  });
+
+  /*
+   * An allowlist, not a scrub. A field nobody anticipated is dropped rather
+   * than copied through, because the two failure modes are not symmetric: a
+   * scrub that misses a name leaks, and an allowlist that misses one omits.
+   */
+  it("drops fields it was never told to keep", () => {
+    const trace = build({
+      id: "lease-abc123",
+      sshPrivateKey: "-----BEGIN OPENSSH PRIVATE KEY-----",
+      signedEndpoint: "https://box.gpu.invalid/?token=supersecret",
+      somethingNew: "invented after this code was written",
+    });
+
+    const serialised = JSON.stringify(trace);
+    expect(serialised).not.toContain("BEGIN OPENSSH PRIVATE KEY");
+    expect(serialised).not.toContain("supersecret");
+    expect(serialised).not.toContain("invented after this code was written");
+  });
+
+  it("says the omission is a rule, not an oversight", () => {
+    const trace = build({ id: "lease-abc123", credential: CREDENTIAL });
+    const lease = (trace.steps[0]?.outputs as { lease: Record<string, unknown> }).lease;
+    expect(lease["credential"]).toBe("[redacted]");
+  });
+
+  it("leaves a non-lease vendor step exactly as it was", () => {
+    const builder = new TraceBuilder({ goalId: 7n, vault: VAULT, chainId: 84532, now: () => 1 });
+    builder.record({
+      type: "vendor-upstream",
+      capability: "search",
+      tier: "basic",
+      quotedAtomic: "10000",
+      costAtomic: "8000",
+    });
+    const outputs = builder.build().steps[0]?.outputs as Record<string, unknown>;
+    expect(outputs["lease"]).toBeUndefined();
+    expect(outputs["costAtomic"]).toBe("8000");
+  });
+
+  it("survives a lease field that is not an object", () => {
+    for (const junk of ["nonsense", 42, true, null]) {
+      expect(() => build(junk)).not.toThrow();
+    }
   });
 });
