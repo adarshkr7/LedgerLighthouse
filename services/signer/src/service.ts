@@ -24,7 +24,13 @@
  *     so an attacker holding the signer cannot reach an open goal at all;
  *   - the amount is the payer's balance, not a caller's number.
  *
- * Both bounds only hold while the checks below do.
+ * Both bounds only hold while the checks below do, and the first of them also
+ * depends on something outside this file: that `goal.owner` for a given payer
+ * is the party who funded it. That is a property of `PolicyVault.openGoal`,
+ * which binds a payer to one goal permanently and refuses a second. Without
+ * that binding "the destination is the owner" reads as a bound and is not one —
+ * an attacker opens a goal of their own naming somebody else's payer, closes
+ * it, and is the owner. `payerGoal` is what makes the sentence above true.
  *
  * Read `refuse()` as the specification. Every branch is a way the signature must
  * not happen.

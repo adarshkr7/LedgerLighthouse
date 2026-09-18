@@ -91,7 +91,17 @@ The orchestrator has exactly one power: calling `requestSpend` with public terms
 - **alter the budget** — only the vault's own logic writes it; [CHAIN]
 - **forge an approval** — the attestation is handle-bound and verified on chain; [CHAIN]
 - **obtain a signature** — the signer reads the chain, never the caller; [BUILD]
-- **reach the payer key** — it lives in an enclave the orchestrator cannot address. [OASIS]
+- **reach the payer key** — it lives in an enclave the orchestrator cannot address; [OASIS]
+- **point a goal it controls at somebody else's payer** — `openGoal` binds a payer to one goal
+  and refuses a second. [CHAIN]
+
+The last of those was missing until 19 September 2026, and its absence made the one above it
+false. "The signer reads the chain, never the caller" bounds the caller only while the caller
+cannot choose what the chain says. Payer addresses are public in `GoalOpened`, so anyone could
+open their own goal naming one, supply their own budget ciphertext, cap, relay and allowlist,
+and collect a signature spending a payer they did not fund. `closeGoal` plus a sweep reached the
+same balance with no relay and no attestation at all. `payerGoal` in the vault is the fix, and
+`PolicyVaultTest` pins all four variants of it.
 
 ### 3.3 The residual risk
 
@@ -107,6 +117,9 @@ the 402. The bound is the conjunction of `perCallCap`, the allowlist and `callsR
 ```text
 loss ceiling = perCallCap × callsRemaining, paid only to an allowlisted payee
 ```
+
+Every term there is scoped to one goal, so the ceiling holds only while a payer belongs to one
+goal. That is now enforced rather than assumed: see the last bullet in §3.2.
 
 Closing that gap entirely would require the vault to parse the 402 itself — putting
 attacker-controlled text back inside the trusted component, which is the exact thing this design
@@ -214,6 +227,15 @@ signer derives key → returns address → user sends openGoal including it → 
 The other order forces either a second registration transaction or a mutable payer field — and a
 mutable payer field lets whoever can write it redirect every future signature.
 
+The cost of this ordering is that the vault sees a payer address it cannot verify: the signer
+minted the key, and `openGoal` has no way to check that the sender is the party who asked for it.
+So the vault enforces the weaker property it *can* check, that the address is unused, and records
+the binding in `payerGoal`. First writer wins, and the residual is a griefing one: the mint is an
+HTTP call to the signer and invisible on chain, but the `openGoal` naming it is not, so someone
+watching the mempool can front-run it and burn the payer before its owner uses it. The victim
+mints another. The attacker pays an Inco fee and gains nothing, because the payer holds no funds
+until after the goal exists.
+
 ### 5.4 Handle lifecycle
 
 - `allowThis` on the budget handle at `openGoal`, and again on the new handle after **every** debit.
@@ -305,7 +327,8 @@ nonce = keccak256(abi.encode(goalId, seq))
 ```
 
 `abi.encode`, not `encodePacked`, so no two distinct pairs can collide through concatenation.
-Uniqueness holds because the payer key is per goal and `seq` is per goal and monotonic.
+Uniqueness holds because the payer key is per goal — enforced at `openGoal`, see §3.2 — and `seq`
+is per goal and monotonic.
 
 **The nonce alone is not the idempotency unit.** The token contract marks the whole *authorization*
 used. A retry must reuse the entire tuple byte-for-byte — `from`, `to`, `value`, `validAfter`,
@@ -437,13 +460,18 @@ Recorded on Base Sepolia against the deployed vault.
 | Operation | Cost |
 |---|---|
 | Client-side encryption | 28–52 ms |
-| `openGoal` | ~336,600 gas + `1e12` wei Inco fee |
+| `openGoal` | ~336,600 gas + `1e12` wei Inco fee — stale, see below |
 | `requestSpend` | ~296,600 gas |
 | `finalizeDecision` | ~101,400–106,800 gas |
 | `closeGoal` | ~30,000 gas |
 | `attestedReveal` after commit | 7–12 s, 1–2 poll attempts, 2 signatures |
 
 A rejected decision resolves consistently faster than an approved one.
+
+The `openGoal` figure predates the `payerGoal` write added on 19 September 2026, which costs one
+cold `SSTORE` plus one cold `SLOAD`, so roughly 22,100 gas more. It has not been re-measured on
+chain and the number above is not adjusted, because a measured figure and an arithmetic guess
+should not sit in the same column. Re-record it on the next deployment.
 
 ---
 

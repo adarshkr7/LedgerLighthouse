@@ -327,6 +327,25 @@ export const policyVaultAbi = [
   },
   {
     "type": "function",
+    "name": "payerGoal",
+    "inputs": [
+      {
+        "name": "payer",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "goalId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "pendingSeq",
     "inputs": [
       {
@@ -731,6 +750,11 @@ export const policyVaultAbi = [
   {
     "type": "error",
     "name": "PayeeNotAllowlisted",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "PayerAlreadyBound",
     "inputs": []
   },
   {

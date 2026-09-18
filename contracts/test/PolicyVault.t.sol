@@ -24,6 +24,8 @@ contract PolicyVaultTest is IncoTest {
     address constant OTHER_VENDOR = address(0x3333333333333333333333333333333333333333);
     address constant ASSET = address(0x036CbD53842c5426634e7929541eC2318f3dCF7e); // Base Sepolia USDC
     address constant PAYER = address(0x4444444444444444444444444444444444444444);
+    /// A second ephemeral payer, for the goals that cannot reuse the first.
+    address constant OTHER_PAYER = address(0x5555555555555555555555555555555555555555);
 
     string constant RESOURCE = "https://api.example.com/resource/honest";
 
@@ -40,33 +42,77 @@ contract PolicyVaultTest is IncoTest {
     // ---------------------------------------------------------------- helpers
 
     function _openGoal(uint256 budget, uint256 cap, uint32 calls) internal returns (uint256 id) {
+        return _openGoalFor(budget, cap, calls, PAYER, alice);
+    }
+
+    /// The arguments for one `openGoal`, built without calling it.
+    ///
+    /// Split out because `vm.expectRevert` binds to the next *call*, and the
+    /// preparation below makes several before `openGoal` is reached. The
+    /// refusal tests need nothing between the cheatcode and the call, so they
+    /// build the struct here and issue the call themselves.
+    function _paramsFor(uint256 budget, uint256 cap, uint32 calls, address payer, address opener)
+        internal
+        returns (PolicyVault.OpenGoalParams memory params)
+    {
         address[] memory allowlist = new address[](1);
         allowlist[0] = VENDOR;
 
-        // The ciphertext is bound to the address that produced it, so the goal
-        // must be opened by the user's own transaction (ARCHITECTURE.md).
-        bytes memory ciphertext = fakePrepareEuint256Ciphertext(budget, alice, address(vault));
+        params = PolicyVault.OpenGoalParams({
+            // The ciphertext is bound to the address that produced it, so the
+            // goal must be opened by the user's own transaction
+            // (ARCHITECTURE.md).
+            budgetCiphertext: fakePrepareEuint256Ciphertext(budget, opener, address(vault)),
+            perCallCap: cap,
+            callsRemaining: calls,
+            payer: payer,
+            relay: address(this),
+            asset: ASSET,
+            expiry: expiry,
+            allowlist: allowlist
+        });
+    }
+
+    /// Same as `_openGoal`, with the payer and the opener spelled out.
+    ///
+    /// The payer-binding tests need both: a second goal cannot reuse `PAYER`,
+    /// and the attack the binding closes is a *different* account naming
+    /// somebody else's payer.
+    ///
+    /// A second *successful* goal also needs a budget the first did not use.
+    /// The fake infra derives a handle from the ciphertext, and an identical
+    /// (value, owner, dapp) triple reproduces it exactly, so the second
+    /// `newEuint256` reverts `HandleAlreadyExists`. That is a property of the
+    /// test double, not of the vault.
+    function _openGoalFor(uint256 budget, uint256 cap, uint32 calls, address payer, address opener)
+        internal
+        returns (uint256 id)
+    {
+        PolicyVault.OpenGoalParams memory params = _paramsFor(budget, cap, calls, payer, opener);
 
         // Hoist the fee: `vm.prank` applies to the very next call, and an
         // `inco.getFee()` sitting inside the `{value: ...}` expression would
         // consume it — leaving `openGoal` to run as the test runner and the
         // ciphertext binding to mismatch.
         uint256 fee = inco.getFee();
-        vm.deal(alice, fee);
-        vm.prank(alice);
-        id = vault.openGoal{value: fee}(
-            PolicyVault.OpenGoalParams({
-                budgetCiphertext: ciphertext,
-                perCallCap: cap,
-                callsRemaining: calls,
-                payer: PAYER,
-                relay: address(this),
-                asset: ASSET,
-                expiry: expiry,
-                allowlist: allowlist
-            })
-        );
+        vm.deal(opener, fee);
+        vm.prank(opener);
+        id = vault.openGoal{value: fee}(params);
         processAllOperations();
+    }
+
+    /// Asserts that opening a goal for `payer` as `opener` is refused.
+    ///
+    /// Every `require` in `openGoal` runs before `newEuint256`, so a refused
+    /// call never reaches the handle conversion and the budget value is free to
+    /// repeat.
+    function _expectOpenRefused(address payer, address opener) internal {
+        PolicyVault.OpenGoalParams memory params = _paramsFor(BUDGET, PER_CALL_CAP, CALLS, payer, opener);
+        uint256 fee = inco.getFee();
+        vm.deal(opener, fee);
+        vm.prank(opener);
+        vm.expectRevert(PolicyVault.PayerAlreadyBound.selector);
+        vault.openGoal{value: fee}(params);
     }
 
     function _requestSpend(uint256 amount) internal returns (uint64 seq) {
@@ -376,6 +422,79 @@ contract PolicyVaultTest is IncoTest {
         assertEq(payer, PAYER);
         // There is deliberately no setter: a mutable payer field would let
         // whoever can write it redirect every future signature.
+    }
+
+    // ------------------------------------------------ one payer, one goal
+
+    function testPayerGoalRecordsTheBinding() public {
+        assertEq(vault.payerGoal(PAYER), goalId, "the payer must point back at its goal");
+
+        // Zero is the "never used" sentinel, and goal ids start at 1, so an
+        // unused address is unambiguously distinguishable from goal zero.
+        assertEq(vault.payerGoal(OTHER_PAYER), 0, "an unused payer must read as unbound");
+
+        // A different budget, so the test double does not hand back the handle
+        // it already minted for the first goal. See `_openGoalFor`.
+        uint256 second = _openGoalFor(BUDGET + 1, PER_CALL_CAP, CALLS, OTHER_PAYER, alice);
+        assertEq(vault.payerGoal(OTHER_PAYER), second, "a fresh payer must open a goal normally");
+    }
+
+    /// The hole this closes, written out as the attacker would run it.
+    ///
+    /// Payer addresses are public: `GoalOpened` indexes the payer, so anybody
+    /// watching the chain has alice's. Before the binding existed, bob could
+    /// open a goal of his own naming it, with a budget ciphertext he encrypted,
+    /// a cap he chose and an allowlist containing himself. The signer would
+    /// then sign a transfer out of alice's payer, because it reads the payer
+    /// off whichever goal it is handed and holds the key either way.
+    ///
+    /// Nothing else in the contract stops this. Bob owns his goal, so he passes
+    /// every owner check; he relays for it, so he passes `NotRelay`; and the
+    /// encrypted budget is his own, so the confidential comparison approves
+    /// whatever he asks for. The refusal has to be at `openGoal` or not at all.
+    function testPayerCannotBeBoundToASecondGoal() public {
+        (, address alicesPayer,,,,,,) = vault.goals(goalId);
+        _expectOpenRefused(alicesPayer, bob);
+    }
+
+    /// Alice herself cannot do it either.
+    ///
+    /// Stated separately because the owner is the most privileged role here and
+    /// a check that only stopped strangers would leave the attack available to
+    /// anyone who compromised one user's wallet. The rule is about the payer,
+    /// not about who is asking.
+    function testOwnerCannotReuseTheirOwnPayer() public {
+        _expectOpenRefused(PAYER, alice);
+    }
+
+    /// Closing a goal must not release its payer.
+    ///
+    /// This is the cheaper form of the same attack and the reason the binding is
+    /// permanent. `AuthorizationSigner.sweep` signs a transfer of a payer's
+    /// whole balance to `goal.owner`, and it requires only that the goal be
+    /// closed — which the goal's own owner controls. So an attacker who could
+    /// rebind a finished payer would need no relay, no attestation and no
+    /// `requestSpend` at all: open, close, sweep.
+    ///
+    /// A closed goal is also exactly when a payer still holds a leftover
+    /// balance, so this is the worst possible moment to let the binding go.
+    function testPayerStaysBoundAfterGoalIsClosed() public {
+        vm.prank(alice);
+        vault.closeGoal(goalId);
+        assertFalse(_isOpen(), "precondition: the goal is closed");
+
+        assertEq(vault.payerGoal(PAYER), goalId, "closing a goal must not unbind its payer");
+        _expectOpenRefused(PAYER, bob);
+    }
+
+    /// An exhausted goal is no different. Spending every call and every unit of
+    /// budget leaves the payer as used as it ever was.
+    function testPayerStaysBoundAfterBudgetIsSpent() public {
+        for (uint256 i = 0; i < CALLS; i++) {
+            _spendAndFinalize(50_000);
+        }
+        assertEq(_callsRemaining(), 0, "precondition: the goal is spent out");
+        _expectOpenRefused(PAYER, bob);
     }
 
     function testNonceIsDerivedFromGoalAndSeq() public {
