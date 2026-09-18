@@ -13,7 +13,7 @@
  * seam.
  */
 
-import type { Hex } from "viem";
+import { sha256, toHex, type Hex } from "viem";
 
 import { hashPayload } from "./canonical.js";
 import { merkleRoot } from "./merkle.js";
@@ -241,6 +241,11 @@ export class TraceBuilder {
             latencyMs: event["latencyMs"],
             quotedAtomic: event["quotedAtomic"],
             costAtomic: event["costAtomic"],
+            // Absent for everything that is not a rental, and never the
+            // credential itself. See `redactLease`.
+            ...(event["lease"] === undefined
+              ? {}
+              : { lease: redactLease(event["lease"]) }),
           },
         );
         break;
@@ -288,4 +293,59 @@ export function traceDigest(trace: Trace): Hex {
     chainId: trace.chainId,
     root: trace.root,
   });
+}
+
+/**
+ * The part of a lease that may be written down.
+ *
+ * Plan §5.3. A trace is a run record meant to be handed to an auditor, and a
+ * lease turns the vendor's 200 into a credential that stays valuable after the
+ * response. A trace carrying a live one is a trace nobody can hand to anyone.
+ *
+ * What is kept is the SHA-256 of the credential and its expiry, which is enough
+ * to prove later which credential was issued for which payment — the only thing
+ * this step was ever evidencing. The hash is computed here rather than trusted
+ * from the caller, so a vendor that forgot to hash, or an orchestrator that
+ * passed the wrong thing along, still cannot get a secret into the file.
+ *
+ * ## An allowlist, applied a second time
+ *
+ * `services/vendor-gpu` already reduces a lease to this shape before it leaves
+ * the vendor. Doing it again here is not redundancy: the orchestrator sits
+ * between the two and is the component this architecture assumes is
+ * compromised, so the trace builder cannot take its word for what a lease
+ * contains. An allowlist and not a scrub, because the two fail in opposite
+ * directions: a scrub that misses a field name leaks, and an allowlist that
+ * misses one merely omits.
+ */
+export function redactLease(raw: unknown): Record<string, unknown> {
+  const lease = (typeof raw === "object" && raw !== null ? raw : {}) as Record<string, unknown>;
+
+  /*
+   * Hashed here when the raw secret is present, which it should not be, and
+   * preferred over any hash the caller supplied. A caller that sends both a
+   * credential and a `credentialSha256` that do not match is either confused or
+   * lying, and the hash of what was actually issued is the useful one.
+   */
+  const credential = lease["credential"];
+  const hashed =
+    typeof credential === "string" && credential !== ""
+      ? sha256(toHex(credential))
+      : typeof lease["credentialSha256"] === "string"
+        ? (lease["credentialSha256"] as string)
+        : undefined;
+
+  const expiresAt = typeof lease["expiresAt"] === "number" ? lease["expiresAt"] : undefined;
+  const blocks = typeof lease["blocks"] === "number" ? lease["blocks"] : undefined;
+  const leaseId = typeof lease["id"] === "string" ? lease["id"] : lease["leaseId"];
+
+  return {
+    ...(typeof leaseId === "string" ? { leaseId } : {}),
+    ...(hashed === undefined ? {} : { credentialSha256: hashed }),
+    ...(expiresAt === undefined ? {} : { expiresAt }),
+    ...(blocks === undefined ? {} : { blocks }),
+    // Said out loud, so a reader of the trace knows the omission is a rule and
+    // not an oversight.
+    credential: "[redacted]",
+  };
 }
