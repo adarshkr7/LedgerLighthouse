@@ -246,10 +246,15 @@ it is today.
 
 ## 7. Phases
 
-**Phase 0 — close the two findings.** Done: the payer binding and the trace guard both landed on
-19 September 2026, with tests. What is still open from that work is an adversary strategy in
-`tools/e2e/src/adversary.ts` that runs the payer-capture attempt against a *deployed* vault
-rather than a Foundry double, which is the only version of it that exercises the signer.
+**Phase 0 — close the two findings.** Done. The payer binding and the trace guard landed on
+19 September 2026 with tests, and the adversary campaign now carries the deployed-vault version
+of the attack: C11 opens a second goal naming an existing payer and expects `PayerAlreadyBound`,
+C12 reads `payerGoal` back to confirm the binding still points where it should.
+
+The refusal lands at `openGoal`, before the signer is ever asked, which is the part worth
+recording. A control that let the goal open and refused at the signer would be weaker and a much
+longer argument, since the signer holds no `goalId -> key` map and `keystore.ts` says why it must
+not grow one.
 
 **Phase 1 — prepaid job.** Landed 19 September 2026. `services/vendor-gpu` serves one bounded
 job per payment: `GET /resource/gpu?sku=&minutes=&workload=`, priced from `gpu-skus.ts`, with
