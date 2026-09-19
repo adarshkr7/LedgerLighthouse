@@ -25,11 +25,15 @@ import { TraceBuilder } from "@ntux402/trace";
 import {
   DEMO_GOAL_KEYS,
   findDemoGoal,
+  isGpuUpstream,
+  isSearchUpstream,
   validateQuery,
   vendorUpstreamOf,
 } from "@ntux402/shared";
 import { RateLimiter, corsHeaders, exposedWithoutToken, rejected } from "@ntux402/shared/node";
 import type { Address } from "viem";
+
+import type { DemoGoal } from "@ntux402/shared";
 
 import type { PaymentEvent, PaymentLoop, PaymentResult } from "./pay/payment-loop.js";
 import type { VaultRelay } from "./pay/relay.js";
@@ -56,6 +60,16 @@ export interface OrchestratorServerOptions {
    * the shared catalog: it is the operator's own address.
    */
   readonly vendorSearchPayee: Address | undefined;
+  /** Base URL of `services/vendor-gpu`. Absent when rentals are not configured. */
+  readonly vendorGpuUrl: string | undefined;
+  /**
+   * `VENDOR_GPU_PAYEE`, republished so the console can allowlist it.
+   *
+   * The same arrangement as the search payee, and public for the same reason:
+   * the vendor's *provider key* is fenced off from this service by
+   * `scripts/check-boundary.mjs`, and this is an address, not a credential.
+   */
+  readonly vendorGpuPayee: Address | undefined;
   readonly signerUrl: string;
   /**
    * The signer, already carrying its bearer token.
@@ -217,6 +231,8 @@ export function createOrchestratorServer(options: OrchestratorServerOptions): Se
             // button that 500s when the shim is not running.
             vendorSearchUrl: options.vendorSearchUrl,
             vendorSearchPayee: options.vendorSearchPayee,
+            vendorGpuUrl: options.vendorGpuUrl,
+            vendorGpuPayee: options.vendorGpuPayee,
             // Rendered in the UI so a stubbed run can never be mistaken for a real one.
             settlement: options.facilitatorUrl ? "live" : "stub",
             agent: options.agentSource,
@@ -374,18 +390,9 @@ export function createOrchestratorServer(options: OrchestratorServerOptions): Se
         // here, at the request, rather than as a fetch failure twenty seconds
         // in with a goal already debited.
         const selectedGoal = findDemoGoal(mode);
-        if (selectedGoal?.upstream !== undefined && options.vendorSearchUrl === undefined) {
-          send(
-            res,
-            503,
-            {
-              error:
-                `mode ${mode} is served by the live search vendor, which is not configured. ` +
-                `Fill in the live-search section of .env (see .env.example) and start ` +
-                `@ntux402/vendor-search.`,
-            },
-            cors,
-          );
+        const missingVendor = missingVendorFor(selectedGoal, options);
+        if (missingVendor) {
+          send(res, 503, { error: missingVendor }, cors);
           return;
         }
 
@@ -470,12 +477,13 @@ export function resourceUrlFor(ctx: {
   mode: string;
   mockApiUrl: string;
   vendorSearchUrl?: string | undefined;
+  vendorGpuUrl?: string | undefined;
   priceAtomic?: string | undefined;
   query?: string | undefined;
 }): string {
   const goal = findDemoGoal(ctx.mode);
 
-  if (goal?.upstream !== undefined) {
+  if (goal?.upstream !== undefined && isSearchUpstream(goal.upstream)) {
     const params = new URLSearchParams({
       q: ctx.query ?? goal.upstream.defaultQuery,
       tier: goal.upstream.tier,
@@ -483,11 +491,74 @@ export function resourceUrlFor(ctx: {
     return `${ctx.vendorSearchUrl}/resource/${goal.upstream.capability}?${params.toString()}`;
   }
 
+  /*
+   * A rental names a card, a duration and a workload, and never a price. The
+   * same rule the search tier enforces: a request that could dial the amount
+   * could dial what the vault is asked to approve, so the catalog supplies all
+   * three and the viewer supplies none of them.
+   *
+   * The query string is sorted by construction here — `URLSearchParams` emits
+   * insertion order — and this string becomes the x402 `resource` the vault
+   * hashes into `termsHash`, so the 402 and the paid retry both derive it from
+   * this one call and cannot disagree.
+   */
+  if (goal?.upstream !== undefined && isGpuUpstream(goal.upstream)) {
+    const params = new URLSearchParams({
+      sku: goal.upstream.sku,
+      minutes: String(goal.upstream.minutes),
+      workload: goal.upstream.workload,
+    });
+    return `${ctx.vendorGpuUrl}/resource/${goal.upstream.capability}?${params.toString()}`;
+  }
+
   // `?price=` is honoured by the mock vendor alone, and only for its overcharge
   // resource. It never reaches the policy: the amount the vault sees is
   // re-derived from the 402 that comes back.
   const query = ctx.priceAtomic ? `?price=${ctx.priceAtomic}` : "";
   return `${ctx.mockApiUrl}/resource/${ctx.mode}${query}`;
+}
+
+/**
+ * Which vendor a goal needs, and whether it is configured.
+ *
+ * Returns the sentence to send, or undefined when the run can proceed. Said at
+ * the request rather than discovered as a fetch failure twenty seconds in with
+ * a goal already opened and debited.
+ */
+function missingVendorFor(
+  goal: DemoGoal | undefined,
+  options: { vendorSearchUrl: string | undefined; vendorGpuUrl: string | undefined },
+): string | undefined {
+  if (goal?.upstream === undefined) return undefined;
+
+  if (isSearchUpstream(goal.upstream) && options.vendorSearchUrl === undefined) {
+    return (
+      `mode ${goal.key} is served by the live search vendor, which is not configured. ` +
+      `Fill in the live-search section of .env (see .env.example) and start ` +
+      `@ntux402/vendor-search.`
+    );
+  }
+
+  if (isGpuUpstream(goal.upstream) && options.vendorGpuUrl === undefined) {
+    return (
+      `mode ${goal.key} is served by the GPU vendor, which is not configured. ` +
+      `Fill in the GPU section of .env (see .env.example) and start @ntux402/vendor-gpu.`
+    );
+  }
+
+  return undefined;
+}
+
+/**
+ * What was bought, in one word, for the trace's vendor step.
+ *
+ * A search has a tier and a rental has a card, and the trace has one field. It
+ * carries whichever applies instead of inventing a shared vocabulary for two
+ * things that have nothing in common.
+ */
+function upstreamVariantOf(goal: DemoGoal | undefined): string | undefined {
+  if (goal?.upstream === undefined) return undefined;
+  return isSearchUpstream(goal.upstream) ? goal.upstream.tier : goal.upstream.sku;
 }
 
 async function streamRun(
@@ -576,7 +647,9 @@ async function streamRun(
       builder.record({
         type: "vendor-upstream",
         capability: goal?.upstream?.capability ?? "unknown",
-        tier: goal?.upstream?.tier ?? "unknown",
+        // "tier" is the search vendor's word. A rental has a card instead, and
+        // the field carries whichever of the two names what was bought.
+        tier: upstreamVariantOf(goal) ?? "unknown",
         ...upstream,
       });
       if (

@@ -5,7 +5,14 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { DEMO_GOALS, MOCK_GOALS, SEARCH_TIERS, findDemoGoal, isMockGoal } from "@ntux402/shared";
+import {
+  DEMO_GOALS,
+  MOCK_GOALS,
+  SEARCH_TIERS,
+  findDemoGoal,
+  isMockGoal,
+  isSearchUpstream,
+} from "@ntux402/shared";
 import type { Address } from "viem";
 
 import { createOrchestratorServer, resourceUrlFor } from "./server.js";
@@ -15,9 +22,16 @@ import type { VaultRelay } from "./pay/relay.js";
 
 const MOCK = "http://mock.test";
 const VENDOR = "http://vendor.test";
+const GPU = "http://gpu.test";
 
 const urlFor = (mode: string, extra: Record<string, string | undefined> = {}) =>
-  resourceUrlFor({ mode, mockApiUrl: MOCK, vendorSearchUrl: VENDOR, ...extra });
+  resourceUrlFor({
+    mode,
+    mockApiUrl: MOCK,
+    vendorSearchUrl: VENDOR,
+    vendorGpuUrl: GPU,
+    ...extra,
+  });
 
 describe("resourceUrlFor", () => {
   it("sends mock-served goals to the mock vendor", () => {
@@ -26,14 +40,65 @@ describe("resourceUrlFor", () => {
     }
   });
 
-  it("sends upstream goals to the search vendor, never the mock", () => {
+  it("sends each upstream goal to its own vendor, never the mock", () => {
     const live = DEMO_GOALS.filter((g) => g.upstream !== undefined);
     expect(live.length).toBeGreaterThan(0);
 
     for (const goal of live) {
       const url = urlFor(goal.key);
-      expect(url, goal.key).toContain(`${VENDOR}/resource/search`);
+      const upstream = goal.upstream as NonNullable<typeof goal.upstream>;
+      const expected = isSearchUpstream(upstream) ? VENDOR : GPU;
+      expect(url, goal.key).toContain(`${expected}/resource/${upstream.capability}`);
       expect(url, goal.key).not.toContain(MOCK);
+    }
+  });
+
+  /*
+   * Two vendors, two base URLs, and nothing in a goal key says which. Sending a
+   * rental to the search vendor would 404, which is the harmless version; the
+   * dangerous one is the reverse of the mock bug below, where a request reaches
+   * a server that answers it at a price meant for something else.
+   */
+  it("never sends a rental to the search vendor or the other way round", () => {
+    for (const goal of DEMO_GOALS) {
+      if (goal.upstream === undefined) continue;
+      const url = urlFor(goal.key);
+      if (isSearchUpstream(goal.upstream)) expect(url, goal.key).not.toContain(GPU);
+      else expect(url, goal.key).not.toContain(VENDOR);
+    }
+  });
+
+  /*
+   * A rental names a card, a duration and a workload, and never a price. The
+   * same rule the search tier enforces: a request that could dial the amount
+   * could dial what the vault is asked to approve.
+   */
+  it("carries the card, the duration and the workload for a rental", () => {
+    const goal = findDemoGoal("gpu-block");
+    const url = new URL(urlFor("gpu-block"));
+
+    expect(url.origin + url.pathname).toBe(`${GPU}/resource/gpu`);
+    expect(url.searchParams.get("sku")).toBe("rtx4090");
+    expect(url.searchParams.get("minutes")).toBe("15");
+    expect(url.searchParams.get("workload")).toBe("gpu-burn");
+    expect(url.searchParams.get("price")).toBeNull();
+    expect(goal?.priceAtomic).toBe("120000");
+  });
+
+  it("sends a lease to the lease route and a job to the job route", () => {
+    expect(new URL(urlFor("gpu-lease")).pathname).toBe("/resource/gpu/lease");
+    expect(new URL(urlFor("gpu-block")).pathname).toBe("/resource/gpu");
+  });
+
+  /*
+   * The resource string is what the vault freezes into `termsHash`, so the 402
+   * and the paid retry have to derive the same bytes. Both come from this one
+   * function, and this is the assertion that it is a function of the goal
+   * alone.
+   */
+  it("builds the same resource string every time", () => {
+    for (const goal of DEMO_GOALS) {
+      expect(urlFor(goal.key), goal.key).toBe(urlFor(goal.key));
     }
   });
 
@@ -44,8 +109,9 @@ describe("resourceUrlFor", () => {
    */
   it("routes on the upstream field rather than the key's name", () => {
     for (const goal of DEMO_GOALS) {
-      const wentToVendor = urlFor(goal.key).startsWith(VENDOR);
-      expect(wentToVendor, goal.key).toBe(!isMockGoal(goal));
+      const url = urlFor(goal.key);
+      const wentToAVendor = url.startsWith(VENDOR) || url.startsWith(GPU);
+      expect(wentToAVendor, goal.key).toBe(!isMockGoal(goal));
     }
   });
 
@@ -53,7 +119,10 @@ describe("resourceUrlFor", () => {
     const goal = findDemoGoal("search-deep");
     const url = new URL(urlFor("search-deep"));
     expect(url.searchParams.get("tier")).toBe("deep");
-    expect(url.searchParams.get("q")).toBe(goal?.upstream?.defaultQuery);
+    const upstream = goal?.upstream;
+    expect(upstream && isSearchUpstream(upstream) && upstream.defaultQuery).toBe(
+      url.searchParams.get("q"),
+    );
   });
 
   it("prefers an explicit query over the default", () => {
@@ -118,6 +187,8 @@ describe("the orchestrator server", () => {
       mockApiUrl: "http://mock.test",
       vendorSearchUrl: undefined,
       vendorSearchPayee: undefined,
+      vendorGpuUrl: undefined,
+      vendorGpuPayee: undefined,
       signerUrl: "http://signer.test",
       anchors: undefined,
       facilitatorUrl: undefined,

@@ -66,6 +66,24 @@ const vendorSearchUrl = vendorSearchPayee
   : undefined;
 
 /*
+ * The GPU vendor, gated the same way and for the same reason: the *payee*, not
+ * the URL. Without an address to pay, a goal opened by the console would not
+ * allowlist the vendor and every spend would revert with `PayeeNotAllowlisted`.
+ *
+ * And the same thing is absent here that is absent above — the vendor's
+ * provider key. `scripts/check-boundary.mjs` fails CI if that credential's name
+ * appears anywhere in this source tree, comments included, which is why this
+ * one does not spell it out either.
+ */
+const vendorGpuPayeeRaw = optionalAddress("VENDOR_GPU_PAYEE");
+const vendorGpuPayee = vendorGpuPayeeRaw
+  ? assertPayoutAddress("VENDOR_GPU_PAYEE", vendorGpuPayeeRaw)
+  : undefined;
+const vendorGpuUrl = vendorGpuPayee
+  ? (optional("VENDOR_GPU_URL") ?? `http://127.0.0.1:${process.env["VENDOR_GPU_PORT"] ?? 4023}`)
+  : undefined;
+
+/*
  * Anchoring is opt-in on the address being set. Absent, traces stay
  * tamper-evident but carry no proof of when they said it — see pay/anchor.ts.
  */
@@ -180,6 +198,8 @@ const server = createOrchestratorServer({
   mockApiUrl,
   vendorSearchUrl,
   vendorSearchPayee,
+  vendorGpuUrl,
+  vendorGpuPayee,
   signerUrl,
   signer,
   anchors,
@@ -226,6 +246,13 @@ server.listen(port, bindHost(), () => {
     log.warn(
       "live search is unavailable — set VENDOR_SEARCH_PAYEE (and run @ntux402/vendor-search)",
     );
+  }
+  log.info("gpu rental", {
+    vendor: vendorGpuUrl ?? "not configured",
+    ...(vendorGpuPayee ? { payee: vendorGpuPayee } : {}),
+  });
+  if (!vendorGpuPayee) {
+    log.warn("gpu rental is unavailable — set VENDOR_GPU_PAYEE (and run @ntux402/vendor-gpu)");
   }
 
   /*
