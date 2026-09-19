@@ -26,7 +26,67 @@ export type RunEvent =
         | { kind: "skipped"; reason: string }
         | { kind: "failed"; reason: string };
     }
+  /**
+   * The lease narrative, threaded between the ordinary payment events.
+   *
+   * A rental run issues several purchases, so the nine stages arrive once per
+   * block on the `payment` channel and these say what the blocks meant.
+   */
+  | { readonly channel: "lease"; readonly data: LeaseEvent }
+  /**
+   * How the sequence ended, which is the thing worth reporting about a rental.
+   *
+   * Separate from `result` because an ordinary run ends in one purchase and a
+   * rental ends in several; flattening it would have to pick one of them to
+   * stand for the run.
+   */
+  | { readonly channel: "lease-done"; readonly data: LeaseDone }
   | { readonly channel: "error"; readonly data: { message: string } };
+
+/** Mirrors the orchestrator's `LeaseSummary`. No credential, by construction. */
+export interface LeaseView {
+  readonly id: string;
+  readonly expiresAt: number;
+  readonly renewBy: number;
+  readonly blocks: number;
+  readonly credentialSha256?: string;
+  readonly rotated?: boolean;
+}
+
+/** Mirrors the orchestrator's `LeaseEvent`, with bigints already stringified. */
+export type LeaseEvent =
+  | { type: "lease-opened"; lease: LeaseView }
+  | { type: "renewal-due"; lease: LeaseView; remainingMs: number }
+  | { type: "renewal-waiting"; lease: LeaseView; pendingSeq: string }
+  | { type: "renewed"; lease: LeaseView }
+  | {
+      type: "renewal-refused";
+      lease: LeaseView;
+      goalId: string;
+      seq: string;
+      decisionHandle: string;
+      commitTx: string;
+      remainingMs: number;
+    }
+  | {
+      type: "renewal-abandoned";
+      lease: LeaseView;
+      reason: "chain-busy" | "decision-unavailable" | "vendor-failed";
+      detail: string;
+    }
+  | {
+      type: "lease-ended";
+      lease: LeaseView;
+      blocks: number;
+      reason: "refused" | "abandoned" | "block-limit";
+    };
+
+export interface LeaseDone {
+  readonly kind: "refused" | "abandoned" | "block-limit" | "not-a-lease" | "failed";
+  readonly blocks: number;
+  readonly lease?: LeaseView;
+  readonly detail?: string;
+}
 
 /** Mirrors the orchestrator's `PaymentEvent`, with bigints already stringified. */
 export type PaymentEvent =

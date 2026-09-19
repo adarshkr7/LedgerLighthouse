@@ -571,6 +571,40 @@ function upstreamVariantOf(goal: DemoGoal | undefined): string | undefined {
 }
 
 /**
+ * Commits a finished trace's root on chain, when anchoring is configured.
+ *
+ * Shared by both kinds of run because a rental's trace is a trace: it wants the
+ * same timestamp for the same reason, and a second copy of this block would be
+ * the place the two drifted.
+ */
+async function anchorTrace(
+  ctx: {
+    anchors: TraceAnchorClient | undefined;
+    vaultAddress: Address;
+    goalId: bigint;
+    log: (line: string) => void;
+  },
+  trace: { root: `0x${string}`; steps: readonly unknown[] },
+  emit: (event: string, data: unknown) => void,
+): Promise<void> {
+  if (ctx.anchors === undefined) return;
+
+  const outcome = await ctx.anchors.anchor(
+    ctx.vaultAddress,
+    ctx.goalId,
+    trace.root,
+    trace.steps.length,
+  );
+  emit("anchor", outcome);
+  ctx.log(
+    outcome.kind === "anchored"
+      ? `anchored goal=${ctx.goalId} root=${trace.root} tx=${outcome.txHash}`
+      : `anchor goal=${ctx.goalId} -> ${outcome.kind}` +
+        ("reason" in outcome ? `: ${outcome.reason}` : ""),
+  );
+}
+
+/**
  * A rental run: buy a block, then keep deciding whether to keep it.
  *
  * Shares the trace builder and the SSE stream with an ordinary run, so a viewer
@@ -631,12 +665,22 @@ async function streamLeaseRun(
 
   const trace = builder.build();
   ctx.traces.save(ctx.goalId.toString(), trace);
-  emit("trace", { root: trace.root, steps: trace.steps.length });
-  emit("done", {
+  await anchorTrace(ctx, trace, emit);
+
+  /*
+   * `lease-done` rather than `result`, and the distinction is not cosmetic. An
+   * ordinary run ends in one `PaymentResult`; a rental ends in a sequence of
+   * them, and the thing worth reporting is how the sequence ended. Flattening
+   * it into the single-purchase shape would have to pick one of several
+   * purchases to stand for the run.
+   */
+  emit("lease-done", {
     kind: outcome.ended,
     blocks: outcome.blocks,
+    ...(outcome.lease ? { lease: outcome.lease } : {}),
     ...(outcome.detail ? { detail: outcome.detail } : {}),
   });
+  emit("trace", trace);
   res.end();
 }
 
@@ -776,21 +820,7 @@ async function streamRun(
    * the run. The money has moved and the record exists; losing the commitment
    * is not a reason to report the run as broken.
    */
-  if (ctx.anchors) {
-    const outcome = await ctx.anchors.anchor(
-      ctx.vaultAddress,
-      ctx.goalId,
-      trace.root,
-      trace.steps.length,
-    );
-    emit("anchor", outcome);
-    ctx.log(
-      outcome.kind === "anchored"
-        ? `anchored goal=${ctx.goalId} root=${trace.root} tx=${outcome.txHash}`
-        : `anchor goal=${ctx.goalId} -> ${outcome.kind}` +
-          ("reason" in outcome ? `: ${outcome.reason}` : ""),
-    );
-  }
+  await anchorTrace(ctx, trace, emit);
 
   emit("result", result);
   emit("trace", trace);

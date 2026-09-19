@@ -85,3 +85,104 @@ export function remainingMs(lease: LeaseSummary, now: number): number {
 export function untilRenewMs(lease: LeaseSummary, now: number): number {
   return Math.max(0, lease.renewBy - now);
 }
+
+/** How a rental run ended. Mirrors `LeaseRunOutcome.ended`. */
+export type LeaseEnding =
+  | "refused"
+  | "abandoned"
+  | "block-limit"
+  | "not-a-lease"
+  | "failed";
+
+export interface LeaseEndingView {
+  readonly tone: "ok" | "no" | "wait";
+  readonly head: string;
+  readonly body: string;
+}
+
+/**
+ * What to tell a viewer about how a rental ended.
+ *
+ * Here rather than in the component for the reason `search-result.ts` gives
+ * about the `javascript:` filter: `apps/web` has no test runner, and this is
+ * the part of the panel that can be wrong in a way nobody notices. Plan §5.5
+ * asks for two losses to read differently, and a component that quietly called
+ * both of them "refused" would hand a viewer the wrong conclusion about what
+ * they had just watched — which is a defect in the argument, not in the CSS.
+ *
+ * `blocks` and `detail` come from the run. `detail` is the orchestrator's own
+ * sentence about why a renewal was lost; it is never the vendor's prose and
+ * never a model's, so it is rendered as the console's own voice.
+ */
+export function describeLeaseEnding(done: {
+  kind: LeaseEnding;
+  blocks: number;
+  detail?: string | undefined;
+}): LeaseEndingView {
+  switch (done.kind) {
+    case "refused":
+      return {
+        tone: "no",
+        head: "Renewal refused by the confidential policy",
+        body:
+          "The budget would not cover another block, so the lease ends when its current block " +
+          "does. Nothing public refused this: the price was the same as the block before it and " +
+          "well under the per-call cap. The encrypted balance is the only thing that said no, " +
+          "and the agent was told while the machine was still up.",
+      };
+    case "abandoned":
+      return {
+        tone: "wait",
+        head: "Renewal lost, not refused",
+        body:
+          `${done.detail ?? "The renewal did not complete."} This is a different outcome from a ` +
+          "policy refusal and is reported as one: the budget never got to decide.",
+      };
+    case "block-limit":
+      return {
+        tone: "ok",
+        head: `Stopped after ${done.blocks} ${done.blocks === 1 ? "block" : "blocks"}`,
+        body:
+          "The run hit its own block limit rather than the budget's. Raise MAX_LEASE_BLOCKS to " +
+          "let a rental run until the encrypted balance refuses it.",
+      };
+    case "not-a-lease":
+      return {
+        tone: "ok",
+        head: "Bought a bounded job",
+        body:
+          "This resource sells one job rather than a renewable block, so there was nothing to " +
+          "renew.",
+      };
+    case "failed":
+      return {
+        tone: "no",
+        head: "Rental failed",
+        body: done.detail ?? "The first purchase never completed.",
+      };
+  }
+}
+
+/**
+ * A block countdown as mm:ss, floored at zero.
+ *
+ * Floored rather than signed, because a negative countdown is a lease that has
+ * already ended and "-0:04" reads as though something is still running.
+ */
+export function formatBlockClock(ms: number): string {
+  const whole = Math.max(0, Math.round(ms / 1000));
+  return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, "0")}`;
+}
+
+/**
+ * True when a block is close enough to its end that the panel should say so.
+ *
+ * Two minutes, because the renewal lead is ninety seconds: below that, the
+ * decision that would save this lease is either already in flight or already
+ * lost, and the number on screen has stopped being something a viewer can act
+ * on. Tied to `RENEW_LEAD_SECONDS`' own reasoning rather than picked for looks.
+ */
+export function blockRunningOut(remainingMs: number): boolean {
+  return remainingMs < 120_000;
+}
+

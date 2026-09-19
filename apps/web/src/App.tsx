@@ -41,6 +41,7 @@ import { Modal } from "./dashboard/Modal.js";
 import { ModelInput } from "./dashboard/ModelInput.js";
 import { SearchResults, asSearchPayload } from "./dashboard/SearchResults.js";
 import { GoalPicker } from "./dashboard/GoalPicker.js";
+import { LeasePanel } from "./dashboard/LeasePanel.js";
 import "./dashboard/dashboard.css";
 import {
   CHAIN,
@@ -53,7 +54,13 @@ import {
   formatUsdc,
   type OrchestratorConfig,
 } from "./lib/config.js";
-import { streamRun, type PaymentEvent, type RunResult } from "./lib/run.js";
+import {
+  streamRun,
+  type LeaseDone,
+  type LeaseEvent,
+  type PaymentEvent,
+  type RunResult,
+} from "./lib/run.js";
 
 /**
  * Budget bounds, and why they are these numbers.
@@ -330,6 +337,13 @@ export default function App() {
   const [approvedCalls, setApprovedCalls] = useState(0);
   const [events, setEvents] = useState<PaymentEvent[]>([]);
   const [result, setResult] = useState<RunResult>();
+  /*
+   * A rental's own narrative, kept beside the payment events rather than mixed
+   * into them. The nine stages arrive once per block on `events`; these say
+   * what the blocks meant, and only a lease goal produces any.
+   */
+  const [leaseEvents, setLeaseEvents] = useState<LeaseEvent[]>([]);
+  const [leaseDone, setLeaseDone] = useState<LeaseDone>();
   /** Live-search text. Blank falls through to the catalog goal's own default. */
   const [searchQuery, setSearchQuery] = useState("");
   const [busy, setBusy] = useState<string>();
@@ -680,6 +694,8 @@ export default function App() {
       if (!goalId) throw new Error("no goal");
       setEvents([]);
       setResult(undefined);
+      setLeaseEvents([]);
+      setLeaseDone(undefined);
 
       /*
        * Only upstream goals take a query, and only when the viewer typed one —
@@ -710,6 +726,9 @@ export default function App() {
           collected.push(event.data);
           setEvents((prior) => [...prior, event.data]);
         } else if (event.channel === "result") setResult(event.data);
+        else if (event.channel === "lease") {
+          setLeaseEvents((prior) => [...prior, event.data]);
+        } else if (event.channel === "lease-done") setLeaseDone(event.data);
         else if (event.channel === "error") setError(event.data.message);
       }
 
@@ -783,6 +802,8 @@ export default function App() {
   const resetDemo = () => {
     setEvents([]);
     setResult(undefined);
+    setLeaseEvents([]);
+    setLeaseDone(undefined);
     setError(undefined);
   };
 
@@ -1134,6 +1155,13 @@ export default function App() {
                 </p>
               ) : null}
             </div>
+
+            {/*
+              A rental's own state, above the single-purchase outcome. Only a
+              lease goal produces any of it, and the panel renders nothing
+              otherwise.
+            */}
+            <LeasePanel events={leaseEvents} done={leaseDone} />
 
             <Outcome result={result} events={events} />
 
