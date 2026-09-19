@@ -26,6 +26,8 @@ import {
   DEMO_GOALS,
   DEMO_PAYEES,
   MAX_QUERY_LENGTH,
+  isGpuUpstream,
+  isSearchUpstream,
   policyVaultAbi,
   usdcAbi,
   validateQuery,
@@ -556,6 +558,10 @@ export default function App() {
             allowlist: [
               ...DEMO_PAYEES,
               ...(config.vendorSearchPayee ? [config.vendorSearchPayee] : []),
+              // Same reasoning as the search payee: operator-configured, so it
+              // cannot live in the shared catalog, and a rental opened without it
+              // reverts with `PayeeNotAllowlisted`.
+              ...(config.vendorGpuPayee ? [config.vendorGpuPayee] : []),
             ],
           },
         ],
@@ -682,7 +688,8 @@ export default function App() {
        * third time by the vendor; this pass exists so the field can go red
        * without a round trip.
        */
-      const typed = which.upstream ? searchQuery.trim() : "";
+      const typed =
+        which.upstream && isSearchUpstream(which.upstream) ? searchQuery.trim() : "";
       if (typed !== "") {
         const checked = validateQuery(typed);
         if (!checked.ok) throw new Error(checked.error);
@@ -781,6 +788,17 @@ export default function App() {
 
   const closeModal = () => setModal(null);
   const evidence = evidenceCount(events);
+
+  /*
+   * A goal whose vendor is not running cannot be bought, and the orchestrator
+   * says so with a 503. Computed once here so the hint and the button agree:
+   * a warning above a live button is a warning nobody reads.
+   */
+  const vendorMissing =
+    resource.upstream !== undefined &&
+    (isSearchUpstream(resource.upstream)
+      ? !config?.vendorSearchUrl
+      : !config?.vendorGpuUrl);
 
   return (
     <div className="dash">
@@ -1024,7 +1042,7 @@ export default function App() {
                 box for one. The four mock resources serve a fixture; offering
                 to search them would be a control that quietly does nothing.
               */}
-              {resource.upstream ? (
+              {resource.upstream && isSearchUpstream(resource.upstream) ? (
                 config?.vendorSearchUrl ? (
                   <label className="d-search">
                     <span className="d-search-label">Search for</span>
@@ -1049,11 +1067,23 @@ export default function App() {
                   </p>
                 )
               ) : null}
+              {/*
+                The same statement for rentals, and the same reason to make it
+                before the click: the orchestrator answers 503 for a goal whose
+                vendor is not running, and finding that out from a failed run is
+                worse than finding it out from a greyed-out button.
+              */}
+              {resource.upstream && isGpuUpstream(resource.upstream) && !config?.vendorGpuUrl ? (
+                <p className="d-hint" data-tone="warn">
+                  GPU rental is not configured on this orchestrator, so this resource cannot run.
+                  It needs the vendor service started and its payee set.
+                </p>
+              ) : null}
               <div className="d-controls">
                 <button
                   type="button"
                   className="d-btn"
-                  disabled={!goalId || closed || !!busy}
+                  disabled={!goalId || closed || !!busy || vendorMissing}
                   onClick={() => run(resource)}
                 >
                   Buy {resource.label} · {formatUsdc(requestedPrice)} USDC

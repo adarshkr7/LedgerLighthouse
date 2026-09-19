@@ -64,6 +64,10 @@ export interface OrchestratorConfig {
    * thoroughly confusing one to watch.
    */
   readonly vendorSearchPayee?: `0x${string}` | undefined;
+  /** GPU vendor. Absent when rentals are not configured; the picker greys them out. */
+  readonly vendorGpuUrl?: string | undefined;
+  /** The GPU vendor's payee. Operator-configured, for the reason above. */
+  readonly vendorGpuPayee?: `0x${string}` | undefined;
   /** "stub" means payloads are validated but no money moves. Shown, never hidden. */
   readonly settlement: "live" | "stub";
   readonly agent: "llm" | "scripted";
