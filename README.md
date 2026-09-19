@@ -282,11 +282,17 @@ a trace file and a public RPC, and depends on no service in this repository.
 The import boundary is enforced in CI: `pnpm check:boundary` asserts that the orchestrator can reach
 neither the signer nor either vendor's credential.
 
-`services/vendor-gpu/` is phases 1 and 2 of [the GPU rental plan](docs/GPU_RENTAL_PLAN.md). It sells
-a bounded job (`/resource/gpu`) or a lease (`/resource/gpu/lease`) that expires on its own and can
-be renewed on the same machine. The 402s, the prices and the settlement are real; the machine behind
-them is a stand-in, because no provider has been chosen yet — so every result says `simulated: true`
-and the service refuses to start if `GPU_PROVIDER_KEY` is set.
+`services/vendor-gpu/` is [the GPU rental plan](docs/GPU_RENTAL_PLAN.md), phases 1 through 3. It
+sells a bounded job (`/resource/gpu`) or a lease (`/resource/gpu/lease`) that expires on its own and
+can be renewed on the same machine. The 402s, the prices and the settlement are real; the machine
+behind them is a stand-in, because no provider has been chosen yet — so every result says
+`simulated: true` and the service refuses to start if `GPU_PROVIDER_KEY` is set.
+
+A rental is the run this architecture was built for. One purchase is a single decision: buy this or
+do not. A lease is a sequence of them against a running total nobody in the orchestrator can read,
+renewed at `seq + 1` on the same goal, and it ends when the encrypted budget refuses a block rather
+than when the agent decides it has had enough. The console shows the block counting down and says
+which of the two ways it was lost — the policy refusing, or a renewal that never got that far.
 
 Leases never write a credential to disk. The store keeps a SHA-256 and the provider's own handle,
 which is all revocation needs, and `services/trace` redacts a lease again on the way into a trace —

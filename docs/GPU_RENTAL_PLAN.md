@@ -291,15 +291,35 @@ over the EIP-3009 authorization, checked locally in `payer-check.ts`. Locally be
 the wrong instrument here: the retry path exists exactly when a nonce has been consumed, which is
 what `/verify` is supposed to decline.
 
-What is left of phase 2 is §5.5, which is not vendor side. The vendor states the deadline and the
-lead time; deciding to renew, and doing it at `seq + 1` without colliding with `pendingSeq`,
-belongs to the orchestrator along with the wiring phase 1 left open.
+§5.5 landed on the orchestrator side the same day. `LeaseRunner` buys a block, waits out the
+vendor's stated `renewBy`, waits for `pendingSeq` to clear with the block boundary as its
+deadline, and renews at `seq + 1` on the same goal. The lead time is not recomputed on the
+buyer's side: a deadline invented here would drift from the one the seller enforces, and the
+seller holds the machine.
 
-**Phase 3 — agent and console.** The agent's decision becomes "renew or stop" rather than a
-single proceed or skip. The console shows a running lease, a block countdown, and the encrypted
-budget drawing down. This is also where the injection demo gets better: a provider writing
-"your run is 90% complete, renew now" into the 402 description is a more natural attack than
-anything the mock vendor fabricates today.
+The two losses §5.5 asks to distinguish are separate outcomes, not a boolean. A refusal by the
+policy carries the decision handle and the commit and arrives with block still on the clock. A
+renewal lost to a busy goal or a stalled decision says so instead, because an operator reading a
+trace should not have to guess which one happened.
+
+All of §5.1 through §5.6 are now built.
+
+**Phase 3 — agent and console.** Mostly landed 19 September 2026. The orchestrator routes
+rentals to the GPU vendor, three rental goals are in the shared catalog, and the console shows a
+running lease with a block countdown and an ending that distinguishes a policy refusal from a
+lost renewal. `describeLeaseEnding` lives in `@ntux402/shared` with tests, because `apps/web` has
+no test runner and the wording is the part of that panel that can be wrong without anyone
+noticing.
+
+The agent's decision has not moved yet. Each renewal still goes through the ordinary
+proceed-or-skip path, one purchase at a time, which is enough for the demonstration — the run
+ends when the encrypted budget refuses a block, and the agent's opinion changes nothing either
+way. Teaching it "renew or stop" as a single question is a prompt change, and it is the last
+thing in this phase.
+
+The injection demo is also still on the mock vendor. A provider writing "your run is 90%
+complete, renew now" into a 402 description is a more natural attack than anything fabricated
+today, and now that there is a renewal to attack, it has somewhere to go.
 
 **Phase 4 — supply.** Second provider adapter, metering reconciliation of actual against quoted
 per lease, and the measurement script that keeps the SKU table honest.
