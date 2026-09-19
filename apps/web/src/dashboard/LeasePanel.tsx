@@ -29,6 +29,7 @@ import {
   blockRunningOut,
   describeLeaseEnding,
   formatBlockClock,
+  remainingMs,
 } from "@ntux402/shared";
 
 import type { LeaseDone, LeaseEvent, LeaseView } from "../lib/run.js";
@@ -60,7 +61,7 @@ export function LeasePanel({
 
   const waiting = events.at(-1)?.type === "renewal-waiting";
   const due = events.at(-1)?.type === "renewal-due";
-  const remaining = lease ? lease.expiresAt - now : 0;
+  const remaining = lease ? remainingMs(lease, now) : 0;
 
   return (
     <section className="d-lease" aria-label="Lease">

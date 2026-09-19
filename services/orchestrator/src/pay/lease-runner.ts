@@ -47,6 +47,7 @@
 
 import {
   leaseSummaryOf,
+  remainingMs,
   untilRenewMs,
   type LeaseSummary,
 } from "@ntux402/shared";
@@ -192,11 +193,7 @@ export class LeaseRunner {
     while (blocks < maxBlocks) {
       // --- wait out the block, less the vendor's lead time ------------------
       await this.#sleep(untilRenewMs(lease, this.#now()));
-      this.#emit({
-        type: "renewal-due",
-        lease,
-        remainingMs: Math.max(0, lease.expiresAt - this.#now()),
-      });
+      this.#emit({ type: "renewal-due", lease, remainingMs: remainingMs(lease, this.#now()) });
 
       // --- the goal has to be clear before requestSpend will take it --------
       const clear = await this.#waitForClearGoal(goalId, lease);
@@ -252,7 +249,7 @@ export class LeaseRunner {
           seq: result.seq.toString(),
           decisionHandle: result.decisionHandle,
           commitTx: result.commitTx,
-          remainingMs: Math.max(0, lease.expiresAt - this.#now()),
+          remainingMs: remainingMs(lease, this.#now()),
         });
         this.#emit({ type: "lease-ended", lease, blocks, reason: "refused" });
         return { lease, blocks, ended: "refused" };
