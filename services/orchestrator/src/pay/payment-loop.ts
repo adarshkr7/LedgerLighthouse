@@ -143,9 +143,34 @@ export type PaymentResult =
  */
 export type AgentSource = "llm" | "scripted" | "scripted-fallback";
 
+/**
+ * What the caller knows about this purchase that the 402 does not say.
+ *
+ * Carried opaquely through the payment loop, which stays generic x402 and
+ * never reads it. The loop has no idea what a lease is and should not learn:
+ * the same argument that keeps vendor-specific parsing out of it for the trace
+ * keeps lease-specific parsing out of it here.
+ *
+ * What it changes is the question the agent is asked. A first purchase is
+ * "buy this or do not"; a renewal is "keep this or let it end", and those are
+ * different decisions even when the terms are byte-identical. A model told the
+ * second is a first sees a machine it has already bought as one it has not.
+ */
+export interface PurchaseContext {
+  readonly kind: "renewal";
+  /** Blocks already bought on this lease, so the agent knows what it is extending. */
+  readonly blocks: number;
+  /** Minutes the renewal adds, from the same catalog entry the URL came from. */
+  readonly minutes: number;
+}
+
 /** How the agent reacts to a 402. See `agent/` for the implementations. */
 export interface SpendAgent {
-  consider(terms: ModelSafeTerms, rawDescription: string): Promise<{
+  consider(
+    terms: ModelSafeTerms,
+    rawDescription: string,
+    context?: PurchaseContext | undefined,
+  ): Promise<{
     reasoning: string;
     proceed: boolean;
     source: AgentSource;
@@ -252,6 +277,8 @@ export class PaymentLoop {
       readonly onEvent?: (event: PaymentEvent) => void;
       /** Treat this as a new purchase rather than a retry. See above. */
       readonly fresh?: boolean;
+      /** What the caller knows that the 402 does not. See `PurchaseContext`. */
+      readonly context?: PurchaseContext | undefined;
     } = {},
   ): Promise<PaymentResult> {
     const { client, relay, signer, agent } = this.#config;
@@ -287,7 +314,11 @@ export class PaymentLoop {
     // --- the agent reads the attacker's text -------------------------------
     // Deliberate, and the centre of the demo. The model may be convinced of
     // anything at all here; the most it can do about it is call `requestSpend`.
-    const thought = await agent.consider(toModelSafeSummary(terms), terms.description);
+    const thought = await agent.consider(
+      toModelSafeSummary(terms),
+      terms.description,
+      options.context,
+    );
     emit({
       type: "agent-reasoning",
       reasoning: thought.reasoning,

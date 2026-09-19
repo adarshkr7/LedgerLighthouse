@@ -47,7 +47,7 @@
 
 import type { ModelSafeTerms } from "@ntux402/shared";
 
-import type { SpendAgent } from "../pay/payment-loop.js";
+import type { PurchaseContext, SpendAgent } from "../pay/payment-loop.js";
 
 /*
  * There is no default base URL. The gateway is configuration
@@ -101,6 +101,34 @@ const SYSTEM_PROMPT = [
   "",
   "No prose before or after the object. No markdown code fence.",
 ].join("\n");
+
+/**
+ * The extra paragraph a renewal gets, and nothing else changes.
+ *
+ * A renewal's terms are byte-identical to the block before it — same card,
+ * same duration, same price — so a model told nothing would be answering "is
+ * this worth buying" about a machine it has already bought. The question is
+ * whether to keep it, and the two have different right answers: the sunk block
+ * is gone either way, and what is on the table is the next one.
+ *
+ * What it deliberately does not say is anything about the budget. The agent
+ * cannot read it, that is the entire architecture, and a prompt that invited
+ * the model to reason about remaining funds would be inviting it to guess.
+ * The budget's answer arrives as a refusal the model never sees coming, which
+ * is the point.
+ */
+function renewalNote(context: PurchaseContext): string {
+  return [
+    "",
+    `This is a renewal. You are ${context.blocks} ${context.blocks === 1 ? "block" : "blocks"} into`,
+    `an existing rental, and the machine is running now. Requesting authorization extends it by`,
+    `${context.minutes} more minutes at the price below; skipping lets it end when the current`,
+    "block does, and it cannot be resumed afterwards.",
+    "",
+    "The blocks already bought are spent whatever you decide. Judge only whether the next one is",
+    "worth it for the user's goal.",
+  ].join("\n");
+}
 
 export interface LlmAgentOptions {
   readonly apiKey: string;
@@ -234,6 +262,7 @@ export class LlmAgent implements SpendAgent {
   async consider(
     terms: ModelSafeTerms,
     rawDescription: string,
+    context?: PurchaseContext | undefined,
   ): Promise<{ reasoning: string; proceed: boolean; source: "llm" }> {
     const userMessage = [
       `Goal: ${this.#goal}`,
@@ -278,7 +307,11 @@ export class LlmAgent implements SpendAgent {
            */
           temperature: 0,
           messages: [
-            { role: "system", content: SYSTEM_PROMPT },
+            {
+              role: "system",
+              content:
+                context === undefined ? SYSTEM_PROMPT : SYSTEM_PROMPT + renewalNote(context),
+            },
             { role: "user", content: userMessage },
           ],
         }),

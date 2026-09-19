@@ -627,6 +627,11 @@ async function streamLeaseRun(
   emit: (event: string, data: unknown) => void,
   forward: (event: PaymentEvent) => void,
 ): Promise<void> {
+  // Re-read here rather than threaded in: `streamRun` looked it up to decide
+  // which run this is, and a second parameter carrying the same lookup is a
+  // second thing that can be passed wrong.
+  const goalSpec = findDemoGoal(ctx.mode);
+
   const onLease = (event: LeaseEvent) => {
     // One shape on the wire and one in the trace: the console renders the
     // event, and the builder redacts whatever lease rode along with it.
@@ -645,6 +650,11 @@ async function streamLeaseRun(
         ? resourceUrlFor(ctx)
         : `${resourceUrlFor(ctx)}&renew=${encodeURIComponent(renewOf)}`,
     ...(ctx.maxLeaseBlocks === undefined ? {} : { maxBlocks: ctx.maxLeaseBlocks }),
+    // From the catalog entry the URL was built from, so the agent's renewal
+    // question names the same duration the 402 is about to charge for.
+    ...(goalSpec?.upstream !== undefined && isGpuUpstream(goalSpec.upstream)
+      ? { blockMinutes: goalSpec.upstream.minutes }
+      : {}),
     onEvent: onLease,
     onPaymentEvent: forward,
   });

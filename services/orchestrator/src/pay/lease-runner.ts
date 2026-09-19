@@ -121,6 +121,15 @@ export interface LeaseRunnerConfig {
   readonly onEvent?: (event: LeaseEvent) => void;
   /** Forwarded to the payment loop, so a run's own events still stream. */
   readonly onPaymentEvent?: (event: PaymentEvent) => void;
+  /**
+   * Minutes one block buys, for the question the agent is asked on a renewal.
+   *
+   * Comes from the catalog entry the URL was built from. The runner does not
+   * parse it back out of the URL: that string is what the vault hashes, and
+   * reading it for a second purpose is how two readings of one string end up
+   * disagreeing.
+   */
+  readonly blockMinutes?: number;
 }
 
 export interface LeaseRunOutcome {
@@ -204,6 +213,16 @@ export class LeaseRunner {
       const result = await this.#config.loop.fetchPaid(this.#config.urlFor(lease.id), goalId, {
         ...(this.#config.onPaymentEvent ? { onEvent: this.#config.onPaymentEvent } : {}),
         fresh: true,
+        /*
+         * A renewal's terms are byte-identical to the block before it, so an
+         * agent told nothing would be answering "is this worth buying" about a
+         * machine it has already bought. The question is whether to keep it.
+         */
+        context: {
+          kind: "renewal",
+          blocks: lease.blocks,
+          minutes: this.#config.blockMinutes ?? 0,
+        },
       });
 
       if (result.kind === "paid") {

@@ -31,7 +31,7 @@
 
 import type { ModelSafeTerms } from "@ntux402/shared";
 
-import type { AgentSource, SpendAgent } from "../pay/payment-loop.js";
+import type { AgentSource, PurchaseContext, SpendAgent } from "../pay/payment-loop.js";
 
 export interface FallbackAgentOptions {
   /** Tried first. Expected to throw when it cannot produce a decision. */
@@ -56,9 +56,10 @@ export class FallbackAgent implements SpendAgent {
   async consider(
     terms: ModelSafeTerms,
     rawDescription: string,
+    context?: PurchaseContext | undefined,
   ): Promise<{ reasoning: string; proceed: boolean; source: AgentSource }> {
     try {
-      return await this.#primary.consider(terms, rawDescription);
+      return await this.#primary.consider(terms, rawDescription, context);
     } catch (e) {
       /*
        * Deliberately catching everything, not only GatewayUnavailableError.
