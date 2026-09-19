@@ -43,6 +43,13 @@
  */
 
 import { SEARCH_TIERS, type SearchTierName } from "./search-tiers.js";
+import {
+  GPU_SKUS,
+  quoteAtomic,
+  type GpuBlockMinutes,
+  type GpuSkuName,
+  type GpuWorkloadName,
+} from "./gpu-skus.js";
 
 export type GoalKind = "honest" | "malicious";
 
@@ -60,8 +67,17 @@ export type GoalTactic = "none" | "overcharge" | "injection";
  *
  * Its presence is what makes a goal upstream-served; `isMockGoal` is the guard
  * every consumer should route on rather than matching key names.
+ *
+ * ## Why this is a union and not one interface with optional fields
+ *
+ * Two vendors, and what they need in a request has nothing in common: a search
+ * takes a query and a depth, a rental takes a card, a duration and a workload.
+ * One shape with everything optional would compile for a GPU goal carrying a
+ * `defaultQuery` and no `sku`, and the failure would arrive as a 400 from the
+ * vendor at run time. Discriminating on `vendor` makes that unrepresentable,
+ * and `isSearchUpstream` / `isGpuUpstream` are what consumers route on.
  */
-export interface UpstreamRef {
+export interface SearchUpstream {
   readonly vendor: "search";
   readonly capability: "search";
   readonly tier: SearchTierName;
@@ -72,6 +88,30 @@ export interface UpstreamRef {
    * row in the picker that fails when clicked.
    */
   readonly defaultQuery: string;
+}
+
+export interface GpuUpstream {
+  readonly vendor: "gpu";
+  /**
+   * `gpu` buys one bounded job; `gpu/lease` buys a block that can be renewed.
+   *
+   * It doubles as the path segment, the way the search capability does, so the
+   * catalog and the vendor's routes cannot drift apart without a 404 saying so.
+   */
+  readonly capability: "gpu" | "gpu/lease";
+  readonly sku: GpuSkuName;
+  readonly minutes: GpuBlockMinutes;
+  readonly workload: GpuWorkloadName;
+}
+
+export type UpstreamRef = SearchUpstream | GpuUpstream;
+
+export function isSearchUpstream(ref: UpstreamRef): ref is SearchUpstream {
+  return ref.vendor === "search";
+}
+
+export function isGpuUpstream(ref: UpstreamRef): ref is GpuUpstream {
+  return ref.vendor === "gpu";
 }
 
 export interface DemoGoal {
@@ -226,6 +266,69 @@ export const DEMO_GOALS: readonly DemoGoal[] = [
     },
     expectation:
       "Also approved, at twice the price and about three times the wait — the upstream call alone takes ~10 seconds. Worth running once to see the payment path hold while a real API takes its time.",
+  },
+
+  /*
+   * The rentals. Prices come from `quoteAtomic` for the same reason the search
+   * prices come from `SEARCH_TIERS`: this file is what the console displays,
+   * and a second copy is how a displayed price and a charged price drift.
+   *
+   * The trio is chosen so one budget produces three different outcomes. A
+   * fifteen-minute 4090 costs 0.12 and settles inside the 0.20 demo budget; a
+   * second one does not fit; and fifteen minutes of an H100 is refused on the
+   * first try at 0.90. All three are far below the public 6.00 per-call cap,
+   * so nothing public can refuse any of them — which is the `compliance-audit`
+   * argument again, made against a bill people recognise.
+   *
+   * `gpu-lease` is the one the architecture was waiting for. It buys a block
+   * that expires on its own and can be renewed at `seq + 1` on the same goal,
+   * so the agent's decision stops being a single proceed-or-skip and becomes
+   * "renew or stop" against a running total it cannot read.
+   */
+  {
+    key: "gpu-block",
+    label: `${GPU_SKUS.rtx4090.label} — 15 minutes`,
+    blurb: "One bounded job on a consumer card — the ordinary rental",
+    kind: "honest",
+    tactic: "none",
+    priceAtomic: quoteAtomic(GPU_SKUS.rtx4090, 15),
+    upstream: { vendor: "gpu", capability: "gpu", sku: "rtx4090", minutes: 15, workload: "gpu-burn" },
+    expectation:
+      "Approved and settled. Fifteen minutes of a 4090 for 0.12 — it fits the budget once, and a second one does not. Run it twice to watch the encrypted balance stop being enough.",
+  },
+  {
+    key: "gpu-lease",
+    label: `${GPU_SKUS.rtx4090.label} — renewable block`,
+    blurb: "A lease that expires on its own, renewed under a budget nobody can read",
+    kind: "honest",
+    tactic: "none",
+    priceAtomic: quoteAtomic(GPU_SKUS.rtx4090, 15),
+    upstream: {
+      vendor: "gpu",
+      capability: "gpu/lease",
+      sku: "rtx4090",
+      minutes: 15,
+      workload: "model-warmup",
+    },
+    expectation:
+      "Approved, and what comes back is a credential with an expiry rather than a result. The lease ends on its own unless it is renewed, and each renewal is another spend against the same encrypted budget — so the run ends when the budget says so, not when the agent decides.",
+  },
+  {
+    key: "gpu-h100",
+    label: `${GPU_SKUS["h100-80gb"].label} — 15 minutes`,
+    blurb: "The card that runs up a bill — 0.90, quietly over the budget",
+    kind: "honest",
+    tactic: "none",
+    priceAtomic: quoteAtomic(GPU_SKUS["h100-80gb"], 15),
+    upstream: {
+      vendor: "gpu",
+      capability: "gpu",
+      sku: "h100-80gb",
+      minutes: 15,
+      workload: "matmul-bench",
+    },
+    expectation:
+      "Refused, and honestly so — there is no overcharge and no injection here, just a card that costs what an H100 costs. It clears the public 6.00 cap with room to spare and the encrypted budget still says no, which is the whole argument in one click.",
   },
 ] as const;
 

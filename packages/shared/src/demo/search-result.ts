@@ -68,28 +68,50 @@ export function hostOf(href: string): string {
   }
 }
 
-/** What a vendor reports about the upstream call it made on the buyer's behalf. */
+/** What a vendor reports about the work it did on the buyer's behalf. */
 export interface VendorUpstream {
   readonly requestId?: string;
   readonly latencyMs?: number;
   readonly costAtomic?: string;
   readonly quotedAtomic?: string;
+  /**
+   * The rental, when there was one, exactly as the vendor sent it.
+   *
+   * Passed through untouched, credential and all, because the buyer needs the
+   * credential and this is the body it arrived in. `services/trace` reduces it
+   * to a hash and an expiry on the way into the file — the redaction belongs
+   * at the recording boundary, not here, since a trace builder that trusts its
+   * caller to have stripped the secret is trusting the component this
+   * architecture assumes is compromised.
+   */
+  readonly lease?: unknown;
 }
 
 /**
- * Pulls the vendor's account of its upstream call out of a paid payload.
+ * Pulls the vendor's account of what it did out of a paid payload.
  *
  * Every field is optional and none is trusted: this is a third party
- * describing an HTTP request the buyer cannot observe. It is recorded in the
- * trace as evidence of *what the vendor claimed*, never as a verified fact —
- * see the `vendor-upstream` step type.
+ * describing work the buyer cannot observe. It is recorded in the trace as
+ * evidence of *what the vendor claimed*, never as a verified fact — see the
+ * `vendor-upstream` step type.
  *
- * Returns nothing for the mock vendor's body, which carries no such block.
+ * ## Two shapes, one step
+ *
+ * The search vendor reports an `upstream` block: an API it called, what that
+ * call cost and how long it took. The GPU vendor has no upstream call to
+ * report — it allocated a machine — so it reports `pricing` and either a `job`
+ * or a `lease`. Both are the same claim in the end, which is what the vendor
+ * says it did with the money, so both land in the same step rather than
+ * growing a second step type that would have to be verified the same way.
+ *
+ * Returns nothing for the mock vendor's body, which carries neither block.
  */
 export function vendorUpstreamOf(data: unknown): VendorUpstream | undefined {
   if (typeof data !== "object" || data === null) return undefined;
-  const upstream = (data as { upstream?: unknown }).upstream;
-  if (typeof upstream !== "object" || upstream === null) return undefined;
+  const body = data as Record<string, unknown>;
+
+  const upstream = body["upstream"];
+  if (typeof upstream !== "object" || upstream === null) return rentalUpstreamOf(body);
 
   const raw = upstream as Record<string, unknown>;
   const str = (key: string) => (typeof raw[key] === "string" ? (raw[key] as string) : undefined);
@@ -104,6 +126,52 @@ export function vendorUpstreamOf(data: unknown): VendorUpstream | undefined {
     ...(/^[0-9]+$/.test(str("costAtomic") ?? "") ? { costAtomic: str("costAtomic") as string } : {}),
     ...(/^[0-9]+$/.test(str("quotedAtomic") ?? "")
       ? { quotedAtomic: str("quotedAtomic") as string }
+      : {}),
+  };
+
+  return Object.keys(result).length === 0 ? undefined : result;
+}
+
+/**
+ * The GPU vendor's version of the same claim.
+ *
+ * `latencyMs` is provisioning plus runtime, which is the number that matters
+ * to a buyer for the same reason the search vendor's latency does: it is how
+ * long the money was committed before anything came back. For a lease the run
+ * has not finished when the response is written, so only provisioning counts,
+ * and that is the honest figure rather than a projection of the block.
+ *
+ * `costAtomic` comes from `reportedCostAtomic` and is absent when the provider
+ * reported nothing — which is every run against the stand-in adapter. Absent
+ * is the right answer there; a zero would read as a free machine.
+ */
+function rentalUpstreamOf(body: Record<string, unknown>): VendorUpstream | undefined {
+  const pricing = body["pricing"];
+  if (typeof pricing !== "object" || pricing === null) return undefined;
+  const priced = pricing as Record<string, unknown>;
+
+  const job = (typeof body["job"] === "object" && body["job"] !== null ? body["job"] : {}) as Record<
+    string,
+    unknown
+  >;
+  const num = (value: unknown) =>
+    typeof value === "number" && Number.isFinite(value) ? value : 0;
+  const elapsed = num(job["provisionMs"]) + num(job["runMs"]);
+
+  const digits = (value: unknown) =>
+    typeof value === "string" && /^[0-9]+$/.test(value) ? value : undefined;
+
+  const result: VendorUpstream = {
+    ...(typeof job["id"] === "string" ? { requestId: job["id"] } : {}),
+    ...(elapsed > 0 ? { latencyMs: elapsed } : {}),
+    ...(digits(priced["reportedCostAtomic"]) === undefined
+      ? {}
+      : { costAtomic: digits(priced["reportedCostAtomic"]) as string }),
+    ...(digits(priced["quotedAtomic"]) === undefined
+      ? {}
+      : { quotedAtomic: digits(priced["quotedAtomic"]) as string }),
+    ...(typeof body["lease"] === "object" && body["lease"] !== null
+      ? { lease: body["lease"] }
       : {}),
   };
 
