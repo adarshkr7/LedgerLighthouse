@@ -208,6 +208,8 @@ const server = createOrchestratorServer({
   // Only when it is real. The scripted stand-in has no model name, and the
   // console draws the distinction rather than printing a placeholder.
   ...(agentIsLive && model ? { agentModel: model } : {}),
+  // A stop that is not the budget's, for a rental left running unattended.
+  maxLeaseBlocks: Number(optional("MAX_LEASE_BLOCKS") ?? 4),
   traceDir: optional("TRACE_STORE_PATH") ?? ".traces",
   log: (line) => log.info(line),
 });

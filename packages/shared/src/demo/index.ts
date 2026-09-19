@@ -17,3 +17,6 @@ export * from "./gpu-skus.js";
 // Validation for a rental request, shared for the reason the search validation
 // is: the vendor's pass is load-bearing and the limit must not exist twice.
 export * from "./gpu-request.js";
+// The buyer's read-only view of a lease: no credential, because the renewal
+// loop names a lease by id and never needs the secret.
+export * from "./gpu-lease.js";

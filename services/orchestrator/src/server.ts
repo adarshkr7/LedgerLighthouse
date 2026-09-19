@@ -40,6 +40,7 @@ import type { VaultRelay } from "./pay/relay.js";
 import { TraceStore } from "./trace-store.js";
 import type { TraceAnchorClient } from "./pay/anchor.js";
 import type { SignerClient } from "./pay/signer-client.js";
+import { LeaseRunner, type LeaseEvent } from "./pay/lease-runner.js";
 import { sweepGoal } from "./pay/sweep.js";
 
 export interface OrchestratorServerOptions {
@@ -98,6 +99,14 @@ export interface OrchestratorServerOptions {
    * placeholder: "scripted" is not a model name.
    */
   readonly agentModel?: string | undefined;
+  /**
+   * How many blocks one rental run may buy, first one included.
+   *
+   * A stop that is not the budget's. Without it a rental left open renews until
+   * the goal is empty, which is a long wait and a real bill; the budget is
+   * still the interesting limit and this keeps an unattended tab bounded.
+   */
+  readonly maxLeaseBlocks?: number | undefined;
   /** Where completed traces are written. Defaults to `.traces`. */
   readonly traceDir?: string | undefined;
   readonly log?: (line: string) => void;
@@ -561,6 +570,76 @@ function upstreamVariantOf(goal: DemoGoal | undefined): string | undefined {
   return isSearchUpstream(goal.upstream) ? goal.upstream.tier : goal.upstream.sku;
 }
 
+/**
+ * A rental run: buy a block, then keep deciding whether to keep it.
+ *
+ * Shares the trace builder and the SSE stream with an ordinary run, so a viewer
+ * sees the same nine stages for each purchase and the lease narrative threaded
+ * between them. The renewal's own `spend-requested` and `decision-finalized`
+ * steps arrive through `forward` exactly as a first purchase's do — a renewal
+ * is a spend like any other, and nothing about it is special to the vault.
+ */
+async function streamLeaseRun(
+  res: ServerResponse,
+  ctx: OrchestratorServerOptions & {
+    goalId: bigint;
+    mode: string;
+    query?: string | undefined;
+    priceAtomic?: string | undefined;
+    traces: TraceStore;
+    log: (line: string) => void;
+  },
+  builder: TraceBuilder,
+  emit: (event: string, data: unknown) => void,
+  forward: (event: PaymentEvent) => void,
+): Promise<void> {
+  const onLease = (event: LeaseEvent) => {
+    // One shape on the wire and one in the trace: the console renders the
+    // event, and the builder redacts whatever lease rode along with it.
+    const { type: _leaseEventType, ...rest } = event;
+    builder.record({ type: "lease", event: event.type, ...rest });
+    emit("lease", event);
+  };
+
+  const runner = new LeaseRunner({
+    loop: ctx.loop,
+    pending: ctx.relay,
+    // Both the first purchase and every renewal come out of the same builder,
+    // so the `resource` string the vault hashes is derived one way only.
+    urlFor: (renewOf) =>
+      renewOf === undefined
+        ? resourceUrlFor(ctx)
+        : `${resourceUrlFor(ctx)}&renew=${encodeURIComponent(renewOf)}`,
+    ...(ctx.maxLeaseBlocks === undefined ? {} : { maxBlocks: ctx.maxLeaseBlocks }),
+    onEvent: onLease,
+    onPaymentEvent: forward,
+  });
+
+  let outcome: Awaited<ReturnType<LeaseRunner["run"]>>;
+  try {
+    outcome = await runner.run(ctx.goalId);
+  } catch (e) {
+    emit("error", { message: e instanceof Error ? e.message : String(e) });
+    res.end();
+    return;
+  }
+
+  ctx.log(
+    `lease run goal=${ctx.goalId} blocks=${outcome.blocks} ended=${outcome.ended}` +
+      (outcome.detail ? ` (${outcome.detail})` : ""),
+  );
+
+  const trace = builder.build();
+  ctx.traces.save(ctx.goalId.toString(), trace);
+  emit("trace", { root: trace.root, steps: trace.steps.length });
+  emit("done", {
+    kind: outcome.ended,
+    blocks: outcome.blocks,
+    ...(outcome.detail ? { detail: outcome.detail } : {}),
+  });
+  res.end();
+}
+
 async function streamRun(
   res: ServerResponse,
   ctx: OrchestratorServerOptions & {
@@ -606,6 +685,20 @@ async function streamRun(
 
   const url = resourceUrlFor(ctx);
   ctx.log(`POST /runs goal=${ctx.goalId} mode=${ctx.mode} -> ${url}`);
+
+  /*
+   * A rentable lease takes the renewal loop instead of one purchase.
+   *
+   * This is the run the architecture was built for. One `fetchPaid` is a single
+   * decision — buy this or do not. A lease is a sequence of them against a
+   * running total nobody in this process can read, and it ends when the budget
+   * says so rather than when the agent decides it has had enough.
+   */
+  const goalSpec = findDemoGoal(ctx.mode);
+  if (goalSpec?.upstream !== undefined && goalSpec.upstream.capability === "gpu/lease") {
+    await streamLeaseRun(res, ctx, builder, emit, forward);
+    return;
+  }
 
   // Scoped to this run, not registered on the shared loop. `subscribe()` is
   // process-wide, so two concurrent runs would each receive the other's events

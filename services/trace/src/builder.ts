@@ -250,6 +250,30 @@ export class TraceBuilder {
         );
         break;
 
+      /*
+       * The lease lifecycle, as the orchestrator watched it happen.
+       *
+       * `lease` goes through `redactLease` like every other mention of one:
+       * the runner's summaries carry no credential by construction, and that
+       * is not a reason to rely on it here. The redaction is at the recording
+       * boundary because the component between the vendor and this builder is
+       * the one the architecture assumes is compromised.
+       */
+      case "lease":
+        this.append(
+          "lease",
+          { event: event["event"] },
+          {
+            attestedBy: "vendor",
+            ...(event["lease"] === undefined ? {} : { lease: redactLease(event["lease"]) }),
+            ...(event["reason"] === undefined ? {} : { reason: event["reason"] }),
+            ...(event["detail"] === undefined ? {} : { detail: event["detail"] }),
+            ...(event["remainingMs"] === undefined ? {} : { remainingMs: event["remainingMs"] }),
+            ...(event["blocks"] === undefined ? {} : { blocks: event["blocks"] }),
+          },
+        );
+        break;
+
       case "failed":
         this.append("failed", null, { reason: event["reason"] });
         break;
