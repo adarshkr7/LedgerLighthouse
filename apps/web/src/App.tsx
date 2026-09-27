@@ -24,10 +24,8 @@ import { handleTypes } from "@inco/lightning-js";
 import {
   DEMO_GOALS,
   DEMO_PAYEES,
-  MAX_QUERY_LENGTH,
   policyVaultAbi,
   usdcAbi,
-  validateQuery,
   type DemoGoal,
 } from "@ntux402/shared";
 
@@ -37,7 +35,6 @@ import { EvidenceBody, GuaranteeList, Outcome, evidenceCount } from "./dashboard
 import { Modal } from "./dashboard/Modal.js";
 import { ConnectGate } from "./dashboard/ConnectGate.js";
 import { ModelInput } from "./dashboard/ModelInput.js";
-import { SearchResults, asSearchPayload } from "./dashboard/SearchResults.js";
 import { GoalPicker } from "./dashboard/GoalPicker.js";
 import "./dashboard/dashboard.css";
 import {
@@ -192,7 +189,11 @@ function useConnectorChainId(connector: Connector | undefined): number | undefin
     }
     let cancelled = false;
     const read = () => {
-      void connector.getChainId().then(
+      // Called through `then` so a connector that throws outright lands in the
+      // rejection branch below. A throw here would unmount the whole console.
+      void Promise.resolve()
+        .then(() => connector.getChainId())
+        .then(
         (id) => {
           if (!cancelled) setChainId(id);
         },
@@ -213,8 +214,8 @@ function useConnectorChainId(connector: Connector | undefined): number | undefin
     let provider: Eip1193 | undefined;
     const onChainChanged = (value: unknown) => setChainId(Number(value));
 
-    void connector
-      .getProvider()
+    void Promise.resolve()
+      .then(() => connector.getProvider())
       .then((p) => {
         if (cancelled) return;
         provider = p as Eip1193;
@@ -282,7 +283,13 @@ function OrphanNotice({ events }: { events: readonly PaymentEvent[] }) {
 }
 
 export default function App() {
-  const { address, isConnected, chainId: connectionChainId, connector } = useAccount();
+  const {
+    address,
+    isConnected,
+    chainId: connectionChainId,
+    connector,
+    status: accountStatus,
+  } = useAccount();
   const { disconnect } = useDisconnect();
   const { switchChain } = useSwitchChain();
   /*
@@ -299,8 +306,13 @@ export default function App() {
 
   /* Live, from the connector — see `useConnectorChainId` for why neither of
      wagmi's own answers will do. Falls back to the stored connection only
-     until that first read lands, so the network line is never blank. */
-  const liveChainId = useConnectorChainId(connector);
+     until that first read lands, so the network line is never blank.
+
+     Only once connected. On a reload wagmi restores the connection from
+     storage before it reconnects, and until then `connector` is a saved
+     record with no methods. The console now mounts on load, behind the
+     wallet gate, so it sees that record. */
+  const liveChainId = useConnectorChainId(accountStatus === "connected" ? connector : undefined);
   const chainId = liveChainId ?? connectionChainId;
 
   const [config, setConfig] = useState<OrchestratorConfig>();
@@ -327,8 +339,6 @@ export default function App() {
   const [approvedCalls, setApprovedCalls] = useState(0);
   const [events, setEvents] = useState<PaymentEvent[]>([]);
   const [result, setResult] = useState<RunResult>();
-  /** Live-search text. Blank falls through to the catalog goal's own default. */
-  const [searchQuery, setSearchQuery] = useState("");
   const [busy, setBusy] = useState<string>();
   const [error, setError] = useState<string>();
   /** Undefined until read. Checked so the UI never offers a transaction that must revert. */
@@ -544,18 +554,7 @@ export default function App() {
             // hostile ones must fail the *confidential* check, not a public
             // precondition. An unallowlisted payee would revert in `require`,
             // which proves nothing about Inco.
-            /*
-             * Plus the live vendor's payee, which cannot be in DEMO_PAYEES:
-             * it is the operator's own address, configured as an env var and
-             * unknowable to a bundle compiled ahead of time. Omitting it does
-             * not fail here — it fails much later, when a live search reverts
-             * `PayeeNotAllowlisted` and looks for all the world like the
-             * confidential budget refusing a spend it never saw.
-             */
-            allowlist: [
-              ...DEMO_PAYEES,
-              ...(config.vendorSearchPayee ? [config.vendorSearchPayee] : []),
-            ],
+            allowlist: [...DEMO_PAYEES],
           },
         ],
         chain: CHAIN,
@@ -674,19 +673,6 @@ export default function App() {
       setEvents([]);
       setResult(undefined);
 
-      /*
-       * Only upstream goals take a query, and only when the viewer typed one —
-       * blank falls through to the catalog's default so the row is runnable the
-       * moment it is clicked. Validated here, again at `POST /runs`, and a
-       * third time by the vendor; this pass exists so the field can go red
-       * without a round trip.
-       */
-      const typed = which.upstream ? searchQuery.trim() : "";
-      if (typed !== "") {
-        const checked = validateQuery(typed);
-        if (!checked.ok) throw new Error(checked.error);
-      }
-
       // Also collected locally: `events` is state, so it is not readable at its
       // final value inside this closure, and the accounting below needs the
       // whole run rather than whatever React has committed so far.
@@ -696,7 +682,6 @@ export default function App() {
         goalId,
         which.key,
         priceFor(which, budget),
-        typed === "" ? undefined : typed,
       )) {
         if (event.channel === "payment") {
           collected.push(event.data);
@@ -1018,36 +1003,6 @@ export default function App() {
                 {resource.expectation}
               </p>
 
-              {/*
-                Only upstream goals take a query, and only they should show a
-                box for one. The four mock resources serve a fixture; offering
-                to search them would be a control that quietly does nothing.
-              */}
-              {resource.upstream ? (
-                config?.vendorSearchUrl ? (
-                  <label className="d-search">
-                    <span className="d-search-label">Search for</span>
-                    <input
-                      type="text"
-                      value={searchQuery}
-                      maxLength={MAX_QUERY_LENGTH}
-                      placeholder={resource.upstream.defaultQuery}
-                      disabled={!!busy}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      aria-describedby="search-note"
-                    />
-                    <span id="search-note" className="d-search-note">
-                      Real query, real API, real money — {formatUsdc(BigInt(resource.priceAtomic))}{" "}
-                      USDC a call. Leave it blank to use the suggestion.
-                    </span>
-                  </label>
-                ) : (
-                  <p className="d-hint" data-tone="warn">
-                    Live search is not configured on this orchestrator, so this resource cannot
-                    run. It needs the vendor service started and its payee set.
-                  </p>
-                )
-              ) : null}
               <div className="d-controls">
                 <button
                   type="button"
@@ -1105,17 +1060,6 @@ export default function App() {
             </div>
 
             <Outcome result={result} events={events} />
-
-            {/*
-              What the money bought, when there is something to show. Every
-              other panel argues about the mechanism; this one is the product.
-            */}
-            {result?.kind === "paid"
-              ? (() => {
-                  const payload = asSearchPayload(result.data);
-                  return payload ? <SearchResults payload={payload} /> : null;
-                })()
-              : null}
 
             {/* Above the stages, because it explains something that happened
                 *before* them: a spend this run inherited rather than made. The

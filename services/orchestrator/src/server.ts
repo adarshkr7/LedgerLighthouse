@@ -22,12 +22,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 
 import { TraceBuilder } from "@ntux402/trace";
-import {
-  DEMO_GOAL_KEYS,
-  findDemoGoal,
-  validateQuery,
-  vendorUpstreamOf,
-} from "@ntux402/shared";
+import { DEMO_GOAL_KEYS, findDemoGoal } from "@ntux402/shared";
 import { RateLimiter, corsHeaders, exposedWithoutToken, rejected } from "@ntux402/shared/node";
 import type { Address } from "viem";
 
@@ -45,17 +40,6 @@ export interface OrchestratorServerOptions {
   readonly usdcAddress: Address;
   readonly chainId: number;
   readonly mockApiUrl: string;
-  /** Base URL of `services/vendor-search`. Absent when live search is not configured. */
-  readonly vendorSearchUrl: string | undefined;
-  /**
-   * `VENDOR_SEARCH_PAYEE`, republished so the console can allowlist it.
-   *
-   * A public address, not a credential — the vendor's *key* is fenced off from
-   * this service by `scripts/check-boundary.mjs`, and this is deliberately not
-   * that. The console needs it because an upstream goal's payee cannot live in
-   * the shared catalog: it is the operator's own address.
-   */
-  readonly vendorSearchPayee: Address | undefined;
   readonly signerUrl: string;
   /**
    * The signer, already carrying its bearer token.
@@ -133,7 +117,7 @@ function send(
  * the facilitator both capped theirs and this one did not, which made it the
  * cheapest process in the set to push over. Generous for what the routes
  * actually accept: the largest legitimate body is a goal id, a catalog key and
- * a query that `validateQuery` caps at 256 characters.
+ * a price override.
  */
 const MAX_BODY_BYTES = 8 * 1024;
 
@@ -212,11 +196,6 @@ export function createOrchestratorServer(options: OrchestratorServerOptions): Se
             relayAddress: options.relay.relayAddress,
             signerUrl: options.signerUrl,
             mockApiUrl: options.mockApiUrl,
-            // Both vendors are reported: one field cannot describe two servers,
-            // and the console disables live search rather than offering a
-            // button that 500s when the shim is not running.
-            vendorSearchUrl: options.vendorSearchUrl,
-            vendorSearchPayee: options.vendorSearchPayee,
             // Rendered in the UI so a stubbed run can never be mistaken for a real one.
             settlement: options.facilitatorUrl ? "live" : "stub",
             agent: options.agentSource,
@@ -352,11 +331,10 @@ export function createOrchestratorServer(options: OrchestratorServerOptions): Se
           return;
         }
 
-        const { goalId, mode, priceAtomic, query } = (body ?? {}) as {
+        const { goalId, mode, priceAtomic } = (body ?? {}) as {
           goalId?: unknown;
           mode?: unknown;
           priceAtomic?: unknown;
-          query?: unknown;
         };
         if (typeof goalId !== "string" || !/^[0-9]+$/.test(goalId)) {
           send(res, 400, { error: "goalId: expected a decimal string" }, cors);
@@ -370,25 +348,6 @@ export function createOrchestratorServer(options: OrchestratorServerOptions): Se
           return;
         }
 
-        // An upstream goal cannot run without the vendor that serves it. Said
-        // here, at the request, rather than as a fetch failure twenty seconds
-        // in with a goal already debited.
-        const selectedGoal = findDemoGoal(mode);
-        if (selectedGoal?.upstream !== undefined && options.vendorSearchUrl === undefined) {
-          send(
-            res,
-            503,
-            {
-              error:
-                `mode ${mode} is served by the live search vendor, which is not configured. ` +
-                `Fill in the live-search section of .env (see .env.example) and start ` +
-                `@ntux402/vendor-search.`,
-            },
-            cors,
-          );
-          return;
-        }
-
         // A demo control, forwarded verbatim to the mock vendor and used by
         // nothing else. It never reaches the policy: the amount the vault sees
         // comes from the 402 the vendor returns, parsed and re-derived there.
@@ -397,45 +356,12 @@ export function createOrchestratorServer(options: OrchestratorServerOptions): Se
           return;
         }
 
-        /*
-         * The viewer's search text — the first input that travels *outward*
-         * through this system. Everything else untrusted here arrives from a
-         * vendor and flows toward the model; this goes browser -> orchestrator
-         * -> vendor -> a paid API, so it is both an injection surface and a way
-         * to spend money.
-         *
-         * Checked here so a bad one costs nothing: no chain write, no goal
-         * debited, and a message the browser can show against the input. The
-         * vendor checks it again on arrival, because it is the component
-         * holding the key and this one is the component assumed compromised.
-         * Same function, from the shared package, so the two cannot disagree.
-         */
-        let validatedQuery: string | undefined;
-        if (query !== undefined && query !== null && query !== "") {
-          if (selectedGoal?.upstream === undefined) {
-            send(
-              res,
-              400,
-              { error: `query: mode ${mode} does not take one — it is served from a fixture` },
-              cors,
-            );
-            return;
-          }
-          const checked = validateQuery(query);
-          if (!checked.ok) {
-            send(res, 400, { error: checked.error }, cors);
-            return;
-          }
-          validatedQuery = checked.value;
-        }
-
         await streamRun(res, {
           ...options,
           cors,
           goalId: BigInt(goalId),
           mode,
           ...(priceAtomic === undefined ? {} : { priceAtomic: String(priceAtomic) }),
-          ...(validatedQuery === undefined ? {} : { query: validatedQuery }),
           traces,
           log,
         });
@@ -453,36 +379,14 @@ export function createOrchestratorServer(options: OrchestratorServerOptions): Se
 }
 
 /**
- * Which vendor serves this run, and at what URL.
- *
- * Routing is on the catalog entry's `upstream` field, never on the shape of the
- * key. A name-prefix rule (`mode.startsWith("search-")`) would send a renamed
- * goal to the wrong server, and the failure would be a 200 carrying the wrong
- * product at the right price — which is the one bug this catalog exists to
- * prevent.
- *
- * The query is URL-encoded into the path because it becomes the x402 `resource`
- * field, which `requireResource` demands be URL-shaped and which the vault
- * hashes into `termsHash`. A raw space would fail parsing; anything cleverer
- * would be smuggling path segments into what gets signed.
+ * The resource URL for a run, which becomes the x402 `resource` field the vault
+ * hashes into `termsHash`. Both the 402 and the paid retry derive it here.
  */
 export function resourceUrlFor(ctx: {
   mode: string;
   mockApiUrl: string;
-  vendorSearchUrl?: string | undefined;
   priceAtomic?: string | undefined;
-  query?: string | undefined;
 }): string {
-  const goal = findDemoGoal(ctx.mode);
-
-  if (goal?.upstream !== undefined) {
-    const params = new URLSearchParams({
-      q: ctx.query ?? goal.upstream.defaultQuery,
-      tier: goal.upstream.tier,
-    });
-    return `${ctx.vendorSearchUrl}/resource/${goal.upstream.capability}?${params.toString()}`;
-  }
-
   // `?price=` is honoured by the mock vendor alone, and only for its overcharge
   // resource. It never reaches the policy: the amount the vault sees is
   // re-derived from the 402 that comes back.
@@ -499,8 +403,6 @@ async function streamRun(
     mode: string;
     /** Demo-only price override, forwarded to the mock vendor. */
     priceAtomic?: string;
-    /** Validated search text. Absent means the goal's own default query is used. */
-    query?: string;
     traces: TraceStore;
     log: (line: string) => void;
   },
@@ -554,45 +456,6 @@ async function streamRun(
     emit("error", { message: e instanceof Error ? e.message : String(e) });
     res.end();
     return;
-  }
-
-  /*
-   * The vendor's account of what it did with the money, recorded last.
-   *
-   * Last because that is when we learn it: the block arrives inside the final
-   * 200 body, so the orchestrator cannot place it at the moment the upstream
-   * call actually happened. Its timestamp is honestly "when this was learned",
-   * and the only duration available is the vendor's own `latencyMs`.
-   *
-   * Recorded here rather than inside `PaymentLoop` on purpose. The loop is
-   * generic x402 and knows nothing about which vendor served a resource or what
-   * a `tier` is; teaching it would put vendor-specific parsing on the payment
-   * path for the sake of a log line.
-   */
-  if (result.kind === "paid") {
-    const upstream = vendorUpstreamOf(result.data);
-    if (upstream) {
-      const goal = findDemoGoal(ctx.mode);
-      builder.record({
-        type: "vendor-upstream",
-        capability: goal?.upstream?.capability ?? "unknown",
-        tier: goal?.upstream?.tier ?? "unknown",
-        ...upstream,
-      });
-      if (
-        upstream.costAtomic !== undefined &&
-        upstream.quotedAtomic !== undefined &&
-        BigInt(upstream.costAtomic) > BigInt(upstream.quotedAtomic)
-      ) {
-        // The shim absorbs the difference — a fixed-price offer that re-bills
-        // after the fact is not one — but an overrun means the tier table is
-        // stale, and that belongs somewhere a human reads.
-        ctx.log(
-          `vendor sold below cost on goal ${ctx.goalId}: quoted ${upstream.quotedAtomic}, ` +
-            `cost ${upstream.costAtomic} (atomic). Re-run scripts/search-measure-tiers.mjs.`,
-        );
-      }
-    }
   }
 
   const trace = builder.build();

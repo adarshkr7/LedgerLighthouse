@@ -1,12 +1,13 @@
 /*
  * LedgerLighthouse — console surface.
  *
- * One neo-grotesque and one monospace, brand orange as the only accent, flat
- * borders, no shadows, and a full radius on pills and nothing else.
+ * Warm paper and white panels, one blue accent, and green and red kept for
+ * the two verdicts a run can reach, so a refusal never reads as a highlight.
+ * Instrument Sans for the interface, a serif for titles, and a monospace only
+ * for what a person might copy: addresses, hashes, amounts.
  *
- * Ink, not bone. The console is one frame that never scrolls and is watched
- * in a dim room while something is running, and a full screen of #eee is a
- * lamp pointed at the viewer.
+ * Soft rather than boxed. Panels are separated by shadow and space instead of
+ * rules, corners are rounded, and labels are sentence case.
  *
  * The tokens are scoped to `.dash` and not to `:root`, so everything that
  * reads them, the dialogs included, is rendered inside the console's root.
@@ -26,28 +27,37 @@
  */
 
 .dash {
-  /* ---- palette: ink ------------------------------------------------------ */
-  --d-bg: #141314;
-  --d-fg: #eeeeee;
-  /* Panes sit a step *above* the page rather than below it: on a dark surface
-     the raised plane is the lighter one, and the frame gutters then read as
-     the ground between the panes. */
-  --d-bg-muted: #1b1a1b;
-  --d-fg-muted: #818081;
-  --d-brand: #fd551d;
-  --d-border: rgba(238, 238, 238, 0.16);
-  --d-border-muted: rgba(238, 238, 238, 0.08);
-  --d-surface: #333333;
+  /* ---- palette: warm paper --------------------------------------------- */
+  --d-bg: #faf9f6;
+  --d-panel: #ffffff;
+  /* Inputs, code and quoted vendor text sit one step below the panel. */
+  --d-sunken: #f4f2ee;
+  --d-fg: #1c1b19;
+  --d-fg-muted: #6b6862;
+  --d-fg-faint: #a29e96;
+  --d-line: rgba(28, 27, 25, 0.08);
+  --d-line-strong: rgba(28, 27, 25, 0.15);
 
-  /* The topbar, one step darker again so it reads as chrome, not content. */
-  --d-ink: #0e0d0e;
-  --d-ink-fg: #eeeeee;
-  --d-ink-muted: #818081;
-  --d-ink-border: rgba(238, 238, 238, 0.14);
+  /* Blue means live or actionable. The verdicts have their own colours. */
+  --d-accent: #3b5bdb;
+  --d-accent-hover: #2f4ac0;
+  --d-accent-soft: rgba(59, 91, 219, 0.1);
+  --d-ok: #2f855a;
+  --d-ok-soft: rgba(47, 133, 90, 0.09);
+  --d-danger: #c53030;
+  --d-danger-soft: rgba(197, 48, 48, 0.08);
+  --d-warn: #9c6a12;
+
+  --d-shadow: 0 1px 2px rgba(28, 27, 25, 0.04), 0 6px 24px rgba(28, 27, 25, 0.05);
+  --d-shadow-lift: 0 2px 6px rgba(28, 27, 25, 0.06), 0 18px 48px rgba(28, 27, 25, 0.14);
+  --d-radius: 14px;
+  --d-radius-sm: 9px;
 
   /* ---- type ------------------------------------------------------------ */
-  --d-sans: "Geist", "Inter", ui-sans-serif, system-ui, Helvetica, Arial, sans-serif;
-  --d-mono: "Geist Mono", "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --d-sans: "Instrument Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Helvetica,
+    Arial, sans-serif;
+  --d-serif: "Source Serif 4", Georgia, "Times New Roman", serif;
+  --d-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 
   /*
    * A flat scale on purpose. The console is scanned repeatedly at a glance
@@ -55,17 +65,17 @@
    * and none of them is fluid. A headline that resized with the window would
    * move the timeline under the reader's eye.
    */
-  --d-t-title: 15px;
-  --d-t-body: 13px;
-  --d-t-label: 11px;
-  --d-t-figure: 34px;
+  --d-t-title: 16px;
+  --d-t-body: 14px;
+  --d-t-label: 12px;
+  --d-t-figure: 36px;
 
   /* ---- motion ---------------------------------------------------------- */
   --d-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --d-ease-quart: cubic-bezier(0.25, 1, 0.5, 1);
 
-  --d-gutter: 10px;
-  --d-top-h: 52px;
+  --d-gutter: 14px;
+  --d-top-h: 60px;
 
   height: 100svh;
   display: grid;
@@ -75,23 +85,30 @@
   color: var(--d-fg);
   font-family: var(--d-sans);
   font-size: var(--d-t-body);
-  line-height: 1.45;
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   /* Native form controls, scrollbars and the dialog backdrop all read this. */
-  color-scheme: dark;
+  color-scheme: light;
 }
 
 .dash * {
   box-sizing: border-box;
 }
 
-.dash ::selection {
-  background: var(--d-brand);
-  color: #eeeeee;
+/* Form controls take the console's type instead of the browser's. `:where`
+   keeps this at zero weight, so any class that sets a font still wins. */
+.dash :where(button, input, textarea, select) {
+  font-family: inherit;
+  font-size: inherit;
 }
 
-.dash :is(button, a, input):focus-visible {
-  outline: 2px solid var(--d-brand);
+.dash ::selection {
+  background: var(--d-accent-soft);
+  color: var(--d-fg);
+}
+
+.dash :is(button, a):focus-visible {
+  outline: 2px solid var(--d-accent);
   outline-offset: 2px;
 }
 
@@ -108,35 +125,33 @@
 }
 
 /* ==========================================================================
- * Topbar — ink, so the frame below reads as the working surface
+ * Topbar — on the page ground, so the panels below read as the working surface
  * ========================================================================== */
 
 .d-top {
   display: flex;
   align-items: center;
-  gap: 20px;
+  gap: 24px;
   height: var(--d-top-h);
-  padding-inline: var(--d-gutter);
-  background: var(--d-ink);
-  color: var(--d-ink-fg);
-  font-family: var(--d-mono);
+  padding-inline: calc(var(--d-gutter) + 6px);
+  color: var(--d-fg);
   font-size: var(--d-t-label);
-  letter-spacing: -0.01em;
-  text-transform: uppercase;
   white-space: nowrap;
   overflow: hidden;
 }
 
 .d-top-brand {
-  font-weight: 500;
-  letter-spacing: -0.03em;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  font-family: var(--d-serif);
+  font-size: 19px;
 }
 
 .d-top-live {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  color: var(--d-ink-muted);
+  color: var(--d-fg-muted);
 }
 
 .d-top-meta {
@@ -150,12 +165,12 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  color: var(--d-ink-fg);
+  color: var(--d-fg);
 }
 
 .d-top-item i {
   font-style: normal;
-  color: var(--d-ink-muted);
+  color: var(--d-fg-muted);
 }
 
 .d-top-actions {
@@ -163,33 +178,18 @@
   gap: 6px;
 }
 
-/* Ink-tone buttons, only inside the topbar. */
-.d-top .d-btn {
-  border-color: var(--d-ink-border);
-  background: transparent;
-  color: var(--d-ink-fg);
-}
 
-.d-top .d-btn:hover:not(:disabled) {
-  background: var(--d-ink-fg);
-  border-color: var(--d-ink-fg);
-  color: var(--d-ink);
-}
 
-.d-top .d-btn:disabled {
-  color: var(--d-ink-muted);
-  opacity: 1;
-}
 
 .d-dot {
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
-  background: var(--d-ink-muted);
+  background: var(--d-fg-faint);
 }
 
 .d-dot[data-tone="live"] {
-  background: var(--d-brand);
+  background: var(--d-ok);
   animation: d-pulse 2s var(--d-ease-out) infinite;
 }
 
@@ -231,8 +231,8 @@
   flex: 1;
   min-width: 0;
   display: grid;
-  gap: 4px;
-  color: var(--d-ink-muted);
+  gap: 5px;
+  color: var(--d-fg-faint);
   transition: color 0.4s var(--d-ease-out);
 }
 
@@ -240,15 +240,17 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 9px;
+  font-size: 11px;
+  font-weight: 500;
 }
 
 .d-rail-bar {
   position: relative;
   display: block;
-  height: 2px;
-  background: var(--d-ink-border);
+  height: 3px;
+  background: var(--d-line);
   overflow: hidden;
+  border-radius: 9999px;
 }
 
 .d-rail-bar i {
@@ -258,10 +260,11 @@
   width: 0;
   background: currentColor;
   transition: width 0.7s var(--d-ease-quart);
+  border-radius: inherit;
 }
 
 .d-rail-step[data-state="ready"] {
-  color: var(--d-ink-fg);
+  color: var(--d-fg);
 }
 
 /* Indeterminate: a short segment crossing the track, looping. The width is
@@ -272,7 +275,7 @@
 }
 
 .d-rail-step[data-state="done"] {
-  color: var(--d-brand);
+  color: var(--d-accent);
 }
 
 .d-rail-step[data-state="done"] .d-rail-bar i {
@@ -309,8 +312,9 @@
      the pane pushes the frame taller than the viewport instead of scrolling
      its own body. It is the single line the whole layout depends on. */
   min-height: 0;
-  border: 1px solid var(--d-border);
-  background: var(--d-bg-muted);
+  background: var(--d-panel);
+  border-radius: var(--d-radius);
+  box-shadow: var(--d-shadow);
 }
 
 .d-pane-main {
@@ -323,17 +327,14 @@
   justify-content: space-between;
   gap: 12px;
   flex: none;
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--d-border);
+  padding: 14px 16px 4px;
 }
 
 .d-pane-head h2 {
   margin: 0;
-  font-family: var(--d-mono);
-  font-size: var(--d-t-label);
-  font-weight: 500;
+  font-size: var(--d-t-title);
+  font-weight: 600;
   letter-spacing: -0.01em;
-  text-transform: uppercase;
 }
 
 .d-pane-body {
@@ -341,20 +342,19 @@
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 12px;
+  padding: 10px 16px 16px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 
 .d-running {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-family: var(--d-mono);
   font-size: var(--d-t-label);
-  text-transform: uppercase;
-  color: var(--d-brand);
+  color: var(--d-accent);
+  font-weight: 500;
 }
 
 /* ==========================================================================
@@ -362,11 +362,9 @@
  * ========================================================================== */
 
 .d-label {
-  font-family: var(--d-mono);
   font-size: var(--d-t-label);
-  letter-spacing: -0.01em;
-  text-transform: uppercase;
   color: var(--d-fg-muted);
+  font-weight: 500;
 }
 
 .d-value {
@@ -386,10 +384,9 @@
 
 .d-hint {
   margin: 0;
-  font-family: var(--d-mono);
   font-size: var(--d-t-label);
-  text-transform: uppercase;
   color: var(--d-fg-muted);
+  line-height: 1.5;
 }
 
 .d-muted {
@@ -398,7 +395,7 @@
 
 /* A hint that is a caution rather than an instruction. */
 .d-hint[data-tone="warn"] {
-  color: var(--d-brand);
+  color: var(--d-warn);
 }
 
 .d-mono {
@@ -409,8 +406,7 @@
 .d-cipher {
   font-family: var(--d-mono);
   font-size: var(--d-t-label);
-  text-transform: uppercase;
-  color: var(--d-brand);
+  color: var(--d-accent);
 }
 
 .d-field {
@@ -418,8 +414,8 @@
   align-items: baseline;
   justify-content: space-between;
   gap: 12px;
-  padding-block: 7px;
-  border-bottom: 1px solid var(--d-border-muted);
+  padding-block: 8px;
+  border-bottom: 1px solid var(--d-line);
 }
 
 .d-field:last-child {
@@ -428,36 +424,36 @@
 
 .d-code {
   margin: 6px 0 0;
-  padding: 8px 10px;
-  border: 1px solid var(--d-border-muted);
-  background: var(--d-bg);
+  padding: 10px 12px;
+  background: var(--d-sunken);
   font-family: var(--d-mono);
   font-size: var(--d-t-label);
   line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-word;
   overflow-x: auto;
+  border-radius: var(--d-radius-sm);
 }
 
 .d-notice {
   margin: 0;
-  padding: 8px 10px;
-  border: 1px solid var(--d-border);
-  background: var(--d-bg);
+  padding: 10px 12px;
+  border: 1px solid var(--d-line);
+  background: var(--d-sunken);
   font-size: var(--d-t-label);
   line-height: 1.5;
+  border-radius: var(--d-radius-sm);
 }
 
 .d-notice[data-tone="error"] {
-  border-color: var(--d-brand);
-  color: var(--d-brand);
+  border-color: transparent;
+  color: var(--d-danger);
+  background: var(--d-danger-soft);
 }
 
 .d-notice strong {
   display: block;
-  font-family: var(--d-mono);
-  font-weight: 500;
-  text-transform: uppercase;
+  font-weight: 600;
 }
 
 .d-notice p {
@@ -474,23 +470,25 @@
    whoever is just trying to start the demo. */
 .d-notice-detail {
   font-family: var(--d-mono);
-  font-size: 10px;
-  opacity: 0.7;
+  font-size: 11px;
+  opacity: 0.75;
 }
 
 /* The confirmation that money came back. Stated, not celebrated. */
 .d-returned {
   display: grid;
   gap: 4px;
-  padding: 10px;
-  border: 1px solid var(--d-brand);
-  background: rgba(253, 85, 29, 0.08);
+  padding: 12px 14px;
+  background: var(--d-ok-soft);
+  border-radius: var(--d-radius-sm);
 }
 
 .d-returned strong {
   font-size: 18px;
-  font-weight: 500;
+  font-weight: 600;
   letter-spacing: -0.02em;
+  font-family: var(--d-serif);
+  color: var(--d-ok);
 }
 
 .d-empty {
@@ -503,9 +501,10 @@
 
 .d-empty-lead {
   margin: 0;
-  font-size: var(--d-t-title);
+  font-size: 20px;
   font-weight: 500;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.01em;
+  font-family: var(--d-serif);
 }
 
 /* ==========================================================================
@@ -517,40 +516,47 @@
   align-items: center;
   justify-content: center;
   gap: 6px;
-  padding: 7px 14px;
-  border: 1px solid var(--d-fg);
+  padding: 8px 16px;
+  border: 1px solid var(--d-accent);
   border-radius: 9999px;
-  background: var(--d-fg);
-  color: var(--d-bg);
-  font-family: var(--d-mono);
-  font-size: var(--d-t-label);
-  letter-spacing: -0.01em;
-  text-transform: uppercase;
+  background: var(--d-accent);
+  color: #ffffff;
+  font-family: var(--d-sans);
+  font-size: 13px;
   white-space: nowrap;
   cursor: pointer;
   transition:
     background 0.3s var(--d-ease-out),
     border-color 0.3s var(--d-ease-out),
     color 0.3s var(--d-ease-out);
+  font-weight: 500;
 }
 
 .d-btn:hover:not(:disabled) {
-  background: var(--d-brand);
-  border-color: var(--d-brand);
-  color: #eeeeee;
+  background: var(--d-accent-hover);
+  border-color: var(--d-accent-hover);
+  color: #ffffff;
 }
 
 .d-btn:disabled {
   cursor: not-allowed;
-  opacity: 0.4;
+  opacity: 0.45;
 }
 
 .d-btn-ghost,
 .d-btn[data-kind="ghost"],
 .d-btn[data-kind="outline"] {
-  background: transparent;
+  background: var(--d-panel);
   color: var(--d-fg);
-  border-color: var(--d-border);
+  border-color: var(--d-line-strong);
+}
+
+.d-btn-ghost:hover:not(:disabled),
+.d-btn[data-kind="ghost"]:hover:not(:disabled),
+.d-btn[data-kind="outline"]:hover:not(:disabled) {
+  background: var(--d-sunken);
+  border-color: var(--d-line-strong);
+  color: var(--d-fg);
 }
 
 .d-btn-block {
@@ -569,28 +575,36 @@
   border: 0;
   background: none;
   color: var(--d-fg-muted);
-  font-family: var(--d-mono);
   font-size: var(--d-t-label);
-  text-transform: uppercase;
   text-decoration: underline;
   text-underline-offset: 3px;
-  text-decoration-color: var(--d-border);
+  text-decoration-color: var(--d-line-strong);
   cursor: pointer;
   transition: color 0.3s var(--d-ease-out);
 }
 
 .d-link:hover {
-  color: var(--d-brand);
+  color: var(--d-accent);
 }
 
 .d-input {
   width: 100%;
-  padding: 7px 10px;
-  border: 1px solid var(--d-border);
-  background: var(--d-bg);
+  padding: 8px 12px;
+  border: 1px solid var(--d-line-strong);
+  background: var(--d-panel);
   color: var(--d-fg);
-  font-family: var(--d-mono);
+  font-family: var(--d-sans);
   font-size: var(--d-t-body);
+  border-radius: var(--d-radius-sm);
+  font-variant-numeric: tabular-nums;
+  transition: border-color 0.3s var(--d-ease-out),
+    box-shadow 0.3s var(--d-ease-out);
+}
+
+.d-input:focus-visible {
+  outline: none;
+  border-color: var(--d-accent);
+  box-shadow: 0 0 0 3px var(--d-accent-soft);
 }
 
 .d-input::placeholder {
@@ -605,7 +619,6 @@
 }
 
 .d-budget-unit {
-  font-family: var(--d-mono);
   font-size: var(--d-t-label);
   color: var(--d-fg-muted);
 }
@@ -623,22 +636,22 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--d-border);
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--d-line);
 }
 
 .d-expectation {
   margin: 0;
   padding-left: 10px;
-  border-left: 2px solid var(--d-border);
+  border-left: 2px solid var(--d-line-strong);
   font-size: var(--d-t-label);
   line-height: 1.5;
   color: var(--d-fg-muted);
 }
 
 .d-expectation[data-kind="malicious"] {
-  border-left-color: var(--d-brand);
-  color: var(--d-brand);
+  border-left-color: var(--d-danger);
+  color: var(--d-danger);
 }
 
 .d-copyable {
@@ -653,22 +666,22 @@
 }
 
 .d-copy-btn {
-  padding: 1px 5px;
-  border: 1px solid var(--d-border-muted);
+  padding: 1px 7px;
+  border: 1px solid var(--d-line-strong);
   background: transparent;
   color: var(--d-fg-muted);
-  font-family: var(--d-mono);
-  font-size: 9px;
-  text-transform: uppercase;
+  font-family: var(--d-sans);
+  font-size: 11px;
   cursor: pointer;
   transition:
     color 0.25s var(--d-ease-out),
     border-color 0.25s var(--d-ease-out);
+  border-radius: 6px;
 }
 
 .d-copy-btn:hover {
-  color: var(--d-brand);
-  border-color: var(--d-brand);
+  color: var(--d-accent);
+  border-color: var(--d-accent);
 }
 
 .d-setup,
@@ -679,8 +692,8 @@
 }
 
 .d-advanced {
-  padding-top: 12px;
-  border-top: 1px solid var(--d-border);
+  padding-top: 14px;
+  border-top: 1px solid var(--d-line);
 }
 
 .d-spin {
@@ -710,15 +723,15 @@
 
 .d-ring-track {
   fill: none;
-  stroke: var(--d-surface);
+  stroke: #ece9e3;
   stroke-width: 6;
 }
 
 .d-ring-value {
   fill: none;
-  stroke: var(--d-brand);
+  stroke: var(--d-accent);
   stroke-width: 6;
-  stroke-linecap: butt;
+  stroke-linecap: round;
   transition: stroke-dashoffset 0.9s var(--d-ease-quart);
 }
 
@@ -733,14 +746,13 @@
   font-size: var(--d-t-figure);
   font-weight: 500;
   line-height: 1;
-  letter-spacing: -0.04em;
+  letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
+  font-family: var(--d-serif);
 }
 
 .d-ring-unit {
-  font-family: var(--d-mono);
-  font-size: 9px;
-  text-transform: uppercase;
+  font-size: 11px;
   color: var(--d-fg-muted);
 }
 
@@ -750,32 +762,36 @@
 
 .d-outcome {
   flex: none;
-  padding: 12px;
-  border: 1px solid var(--d-fg);
-  background: var(--d-fg);
-  color: var(--d-bg);
+  padding: 14px 16px;
+  background: var(--d-ok-soft);
+  color: var(--d-fg);
   animation: d-rise 0.5s var(--d-ease-quart) both;
+  border-radius: var(--d-radius-sm);
 }
 
 .d-outcome[data-tone="no"] {
-  border-color: var(--d-brand);
-  background: rgba(253, 85, 29, 0.1);
-  color: var(--d-brand);
+  background: var(--d-danger-soft);
+  color: var(--d-fg);
 }
 
 .d-outcome[data-tone="wait"] {
-  border-color: var(--d-border);
-  background: transparent;
+  background: var(--d-sunken);
   color: var(--d-fg);
 }
 
 .d-outcome-head {
   display: block;
-  font-family: var(--d-mono);
-  font-size: var(--d-t-label);
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
+  font-size: var(--d-t-body);
+  font-weight: 600;
+  color: var(--d-ok);
+}
+
+.d-outcome[data-tone="no"] .d-outcome-head {
+  color: var(--d-danger);
+}
+
+.d-outcome[data-tone="wait"] .d-outcome-head {
+  color: var(--d-fg-muted);
 }
 
 .d-outcome-body {
@@ -825,11 +841,13 @@
 .d-tl-item::before {
   content: "";
   position: absolute;
+  /* Centre of this marker to centre of the next. The markers sit above the
+     line with the panel colour behind them, so it never shows through. */
   left: 6px;
-  top: 16px;
-  bottom: -6px;
+  top: 16.5px;
+  bottom: -16.5px;
   width: 1px;
-  background: var(--d-border-muted);
+  background: var(--d-line-strong);
 }
 
 .d-tl-item:last-child::before {
@@ -837,30 +855,35 @@
 }
 
 .d-tl-marker {
-  width: 7px;
-  height: 7px;
+  /* 9px from x=2 puts the centre at 6.5, the centre of the 1px line at 6. */
+  width: 9px;
+  height: 9px;
   margin-left: 2px;
   align-self: center;
-  border: 1px solid var(--d-fg-muted);
-  background: transparent;
+  border: 1.5px solid var(--d-fg-faint);
+  background: var(--d-panel);
   transition:
     background 0.35s var(--d-ease-out),
     border-color 0.35s var(--d-ease-out);
+  border-radius: 50%;
+  position: relative;
+  z-index: 1;
 }
 
 .d-tl-item[data-status="done"] .d-tl-marker {
-  background: var(--d-fg);
-  border-color: var(--d-fg);
+  background: var(--d-accent);
+  border-color: var(--d-accent);
 }
 
 .d-tl-item[data-status="active"] .d-tl-marker {
-  background: var(--d-brand);
-  border-color: var(--d-brand);
+  background: var(--d-accent);
+  border-color: var(--d-accent);
+  box-shadow: 0 0 0 4px var(--d-accent-soft);
 }
 
 .d-tl-item[data-status="failed"] .d-tl-marker {
-  background: transparent;
-  border-color: var(--d-brand);
+  background: var(--d-danger);
+  border-color: var(--d-danger);
 }
 
 .d-tl-item[data-status="pending"] {
@@ -872,18 +895,17 @@
 }
 
 .d-tl-item[data-status="failed"] .d-tl-label {
-  color: var(--d-brand);
+  color: var(--d-danger);
 }
 
 .d-tl-detail {
   grid-column: 2;
-  font-family: var(--d-mono);
   font-size: var(--d-t-label);
   color: var(--d-fg-muted);
 }
 
 .d-tl-time {
-  font-family: var(--d-mono);
+  font-family: var(--d-sans);
   font-size: var(--d-t-label);
   color: var(--d-fg-muted);
   font-variant-numeric: tabular-nums;
@@ -903,27 +925,24 @@
 .d-guarantees {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 1px;
+  gap: 10px;
   margin: 0;
   padding: 0;
   list-style: none;
-  background: var(--d-border-muted);
-  border: 1px solid var(--d-border-muted);
 }
 
 .d-guarantee {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 12px;
-  background: var(--d-bg);
+  padding: 14px;
+  background: var(--d-sunken);
+  border-radius: var(--d-radius-sm);
 }
 
 .d-guarantee-title {
-  font-family: var(--d-mono);
-  font-size: var(--d-t-label);
-  font-weight: 500;
-  text-transform: uppercase;
+  font-size: var(--d-t-body);
+  font-weight: 600;
 }
 
 /* ==========================================================================
@@ -939,8 +958,8 @@
   width: min(560px, calc(100vw - 32px));
   max-height: min(680px, calc(100svh - 64px));
   padding: 0;
-  border: 1px solid var(--d-fg);
-  background: var(--d-bg);
+  border: 0;
+  background: var(--d-panel);
   color: var(--d-fg);
   font-family: var(--d-sans);
   font-size: var(--d-t-body);
@@ -953,6 +972,8 @@
     transform 0.4s var(--d-ease-quart),
     overlay 0.4s allow-discrete,
     display 0.4s allow-discrete;
+  border-radius: 18px;
+  box-shadow: var(--d-shadow-lift);
 }
 
 .d-modal-wide {
@@ -972,9 +993,10 @@
 }
 
 .d-modal::backdrop {
-  /* Heavier than it would need to be over a light page: the console behind it
-     is already dark, so a 55% ink veil barely separated the two. */
-  background: rgba(0, 0, 0, 0.72);
+  /* Literal values: a backdrop does not reliably inherit the console's tokens.
+     A light veil and a blur, so the console stays recognisable behind it. */
+  background: rgba(28, 27, 25, 0.28);
+  backdrop-filter: blur(3px);
   opacity: 0;
   transition:
     opacity 0.3s var(--d-ease-out),
@@ -1004,24 +1026,23 @@
   justify-content: space-between;
   gap: 16px;
   flex: none;
-  padding: 14px 16px;
-  border-bottom: 1px solid var(--d-border);
+  padding: 20px 20px 6px;
 }
 
 .d-modal-tag {
-  margin: 0 0 3px;
-  font-family: var(--d-mono);
+  margin: 0 0 4px;
   font-size: var(--d-t-label);
-  text-transform: uppercase;
   color: var(--d-fg-muted);
+  font-weight: 500;
 }
 
 .d-modal-title {
   margin: 0;
-  font-size: 22px;
+  font-size: 24px;
   font-weight: 500;
   line-height: 1.15;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.01em;
+  font-family: var(--d-serif);
 }
 
 .d-modal-x {
@@ -1030,10 +1051,10 @@
   width: 28px;
   height: 28px;
   flex: none;
-  border: 1px solid var(--d-border);
+  border: 0;
   border-radius: 9999px;
-  background: transparent;
-  color: var(--d-fg);
+  background: var(--d-sunken);
+  color: var(--d-fg-muted);
   cursor: pointer;
   transition:
     background 0.3s var(--d-ease-out),
@@ -1042,19 +1063,19 @@
 }
 
 .d-modal-x:hover {
-  background: var(--d-brand);
-  border-color: var(--d-brand);
-  color: #eeeeee;
+  background: rgba(28, 27, 25, 0.1);
+  border-color: transparent;
+  color: var(--d-fg);
 }
 
 .d-modal-body {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 16px;
+  padding: 12px 20px 20px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 
 /* ==========================================================================
@@ -1069,15 +1090,18 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 7px 10px;
-  border: 1px solid var(--d-border);
-  background: var(--d-bg);
-  transition: border-color 0.3s var(--d-ease-out);
+  padding: 8px 12px;
+  border: 1px solid var(--d-line-strong);
+  background: var(--d-panel);
+  transition: border-color 0.3s var(--d-ease-out),
+    box-shadow 0.3s var(--d-ease-out);
+  border-radius: var(--d-radius-sm);
 }
 
 .gp-field[data-open],
 .gp-field:focus-within {
-  border-color: var(--d-fg);
+  border-color: var(--d-accent);
+  box-shadow: 0 0 0 3px var(--d-accent-soft);
 }
 
 .gp-icon {
@@ -1104,9 +1128,11 @@
 }
 
 .gp-price {
-  font-family: var(--d-mono);
+  font-family: var(--d-sans);
   font-size: var(--d-t-label);
   color: var(--d-fg-muted);
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
 }
 
 .gp-chevron {
@@ -1123,12 +1149,14 @@
   position: absolute;
   z-index: 20;
   inset-inline: 0;
-  top: calc(100% + 4px);
+  top: calc(100% + 6px);
   max-height: 320px;
   overflow-y: auto;
-  border: 1px solid var(--d-fg);
-  background: var(--d-bg);
+  border: 1px solid var(--d-line);
+  background: var(--d-panel);
   animation: d-rise 0.28s var(--d-ease-quart) both;
+  border-radius: var(--d-radius-sm);
+  box-shadow: var(--d-shadow-lift);
 }
 
 /* The travelling highlight. Positioned from measured row geometry, so it
@@ -1136,7 +1164,7 @@
 .gp-glide {
   position: absolute;
   inset-inline: 0;
-  background: var(--d-bg-muted);
+  background: var(--d-sunken);
   transition:
     top 0.28s var(--d-ease-quart),
     height 0.28s var(--d-ease-quart),
@@ -1151,9 +1179,9 @@
   align-items: center;
   gap: 10px;
   width: 100%;
-  padding: 9px 10px;
+  padding: 10px 12px;
   border: 0;
-  border-bottom: 1px solid var(--d-border-muted);
+  border-bottom: 1px solid var(--d-line);
   background: transparent;
   color: inherit;
   text-align: left;
@@ -1161,14 +1189,15 @@
 }
 
 .gp-row-dot {
-  width: 6px;
-  height: 6px;
-  border: 1px solid var(--d-fg-muted);
+  width: 7px;
+  height: 7px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--d-ok);
 }
 
 .gp-row[data-kind="malicious"] .gp-row-dot {
-  background: var(--d-brand);
-  border-color: var(--d-brand);
+  background: var(--d-danger);
 }
 
 .gp-row-text {
@@ -1191,20 +1220,20 @@
 }
 
 .gp-row-price {
-  font-family: var(--d-mono);
+  font-family: var(--d-sans);
   font-size: var(--d-t-body);
   font-variant-numeric: tabular-nums;
+  font-weight: 500;
 }
 
 .gp-row-tag {
-  font-family: var(--d-mono);
-  font-size: 9px;
-  text-transform: uppercase;
-  color: var(--d-fg-muted);
+  font-size: 11px;
+  color: var(--d-ok);
+  font-weight: 500;
 }
 
 .gp-row[data-kind="malicious"] .gp-row-tag {
-  color: var(--d-brand);
+  color: var(--d-danger);
 }
 
 .gp-empty,
@@ -1216,7 +1245,7 @@
 }
 
 .gp-foot {
-  border-top: 1px solid var(--d-border-muted);
+  border-top: 1px solid var(--d-line);
 }
 
 /* ==========================================================================
@@ -1243,9 +1272,10 @@
 
 /* The attacker's text, marked as quoted matter rather than as UI copy. */
 .mi-selection {
-  background: rgba(253, 85, 29, 0.16);
-  box-shadow: 0 0 0 1px var(--d-brand);
+  background: var(--d-danger-soft);
+  box-shadow: inset 0 -1.5px 0 var(--d-danger);
   padding: 1px 2px;
+  border-radius: 3px;
 }
 
 .mi-bar {
@@ -1260,49 +1290,48 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 3px 8px;
-  border: 1px solid var(--d-border);
-  font-family: var(--d-mono);
-  font-size: 9px;
-  text-transform: uppercase;
+  padding: 3px 10px;
+  border: 1px solid var(--d-line-strong);
+  font-size: 11px;
+  border-radius: 9999px;
+  font-weight: 500;
 }
 
 .mi-verdict[data-complied="true"] {
-  border-color: var(--d-brand);
-  color: var(--d-brand);
+  border-color: transparent;
+  color: var(--d-danger);
+  background: var(--d-danger-soft);
 }
 
 .mi-sep {
-  color: var(--d-border);
+  color: var(--d-line-strong);
 }
 
 .mi-source {
-  font-family: var(--d-mono);
-  font-size: 9px;
-  text-transform: uppercase;
+  font-size: 11px;
   color: var(--d-fg-muted);
 }
 
 .mi-toggle {
-  padding: 3px 8px;
-  border: 1px solid var(--d-border);
+  padding: 3px 10px;
+  border: 1px solid var(--d-line-strong);
   border-radius: 9999px;
-  background: transparent;
+  background: var(--d-panel);
   color: var(--d-fg);
-  font-family: var(--d-mono);
-  font-size: 9px;
-  text-transform: uppercase;
+  font-family: var(--d-sans);
+  font-size: 11px;
   cursor: pointer;
   transition:
     background 0.3s var(--d-ease-out),
     border-color 0.3s var(--d-ease-out),
     color 0.3s var(--d-ease-out);
+  font-weight: 500;
 }
 
 .mi-toggle:hover {
-  background: var(--d-fg);
-  border-color: var(--d-fg);
-  color: var(--d-bg);
+  background: var(--d-sunken);
+  border-color: var(--d-line-strong);
+  color: var(--d-fg);
 }
 
 .mi-structured {
@@ -1427,183 +1456,4 @@
   .d-modal::backdrop {
     transition: none;
   }
-}
-
-/* ---------------------------------------------------- live search input ---
- * Shown only for upstream goals. The note under it says the price out loud,
- * because this is the one control on the page that spends real money on a
- * third-party API every time it is used.
- */
-.d-search {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.d-search-label {
-  font-family: var(--d-mono);
-  font-size: var(--d-t-label);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--d-fg-muted);
-}
-
-.d-search input {
-  width: 100%;
-  padding: 8px 10px;
-  background: var(--d-bg);
-  border: 1px solid var(--d-border);
-  color: var(--d-fg);
-  font-family: var(--d-sans);
-  font-size: var(--d-t-body);
-}
-
-.d-search input:focus-visible {
-  outline: none;
-  border-color: var(--d-brand);
-}
-
-.d-search input::placeholder {
-  color: var(--d-fg-muted);
-}
-
-.d-search input:disabled {
-  opacity: 0.5;
-}
-
-.d-search-note {
-  font-size: var(--d-t-label);
-  line-height: 1.5;
-  color: var(--d-fg-muted);
-}
-
-/* ------------------------------------------------------- search results ---
- * Third-party text, framed as a quotation. The left rule and the muted footer
- * are doing the same job `attributeVendorText` does for a refusal string: this
- * is what the vendor said, not what the console is telling you.
- */
-.d-results {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 12px;
-  background: var(--d-bg-muted);
-  border: 1px solid var(--d-border-muted);
-  /* Its own scroll region: the console is one frame and never scrolls, so a
-     long result list has to stay inside its own box. */
-  max-height: 340px;
-  overflow-y: auto;
-}
-
-.d-results-head h3 {
-  margin: 0;
-  font-size: var(--d-t-title);
-  font-weight: 500;
-}
-
-.d-results-query {
-  margin: 4px 0 0;
-  font-family: var(--d-mono);
-  font-size: var(--d-t-label);
-  color: var(--d-fg);
-}
-
-.d-results-label {
-  margin-right: 6px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--d-fg-muted);
-}
-
-.d-results-tier {
-  margin-left: 8px;
-  padding: 1px 6px;
-  border: 1px solid var(--d-border);
-  border-radius: 999px;
-  color: var(--d-fg-muted);
-}
-
-.d-results-usage {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
-  margin: 0;
-  padding: 8px 0;
-  border-top: 1px solid var(--d-border-muted);
-  border-bottom: 1px solid var(--d-border-muted);
-}
-
-.d-results-usage dt {
-  font-size: var(--d-t-label);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--d-fg-muted);
-}
-
-.d-results-usage dd {
-  margin: 2px 0 0;
-  font-family: var(--d-mono);
-  font-size: var(--d-t-body);
-}
-
-.d-results-answer {
-  margin: 0;
-  padding-left: 10px;
-  border-left: 2px solid var(--d-brand);
-  font-size: var(--d-t-body);
-  line-height: 1.55;
-}
-
-.d-results-list {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.d-result-title {
-  font-size: var(--d-t-body);
-  line-height: 1.4;
-  /* A hostile title is not allowed to push the layout around. */
-  overflow-wrap: anywhere;
-}
-
-.d-result-title a {
-  color: var(--d-fg);
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-
-.d-result-title a:hover {
-  color: var(--d-brand);
-}
-
-.d-result-host {
-  margin-top: 2px;
-  font-family: var(--d-mono);
-  font-size: var(--d-t-label);
-  color: var(--d-fg-muted);
-  overflow-wrap: anywhere;
-}
-
-.d-result-snippet {
-  margin: 4px 0 0;
-  font-size: var(--d-t-label);
-  line-height: 1.55;
-  color: var(--d-fg-muted);
-  overflow-wrap: anywhere;
-  /* Capped so one verbose result cannot bury the rest, and so a vendor cannot
-     flood the panel to push the settlement details out of view. */
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.d-results-foot {
-  font-size: var(--d-t-label);
-  line-height: 1.5;
-  color: var(--d-fg-muted);
 }

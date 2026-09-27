@@ -6,24 +6,8 @@
 // client for that. What it must never do is import those packages or read from their source
 // trees, however the import is spelled.
 //
-// Two boundaries, one mechanism:
-//
-//   services/signer      holds the payer key. Compromise here is arbitrary USDC spend.
-//   services/vendor-search holds SEARCH_VENDOR_KEY. Compromise here is arbitrary spend against a
-//                        prepaid balance that PolicyVault never sees — no on-chain trace, no
-//                        confidential budget, nothing to bounce off. See
-//                        README.md.
-//
-// The second one also checks for the *credential name*, not just the import. A key does not
-// need an import to leak: reading it straight out of `process.env` in the orchestrator would be
-// enough, and it is the kind of line that arrives in a hurry during a demo.
-//
-// That scan is a plain substring match over the whole file, comments included, and it is meant
-// to be. It means orchestrator source cannot so much as name the variable — a comment explaining
-// the rule will fail the rule — which is mildly annoying and the correct trade: for a guard like
-// this, a false positive costs a reworded sentence and a false negative costs the key. Anything
-// cleverer (stripping comments first) risks skipping real code inside a string that happens to
-// contain `//`, and a security check must not have that shape of hole.
+// The boundary: services/signer holds the payer key, and compromise there is arbitrary USDC
+// spend. The orchestrator talks to it over HTTP and never links against it.
 
 import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
 import { join, relative, dirname, resolve, sep } from "node:path";
@@ -40,16 +24,7 @@ const FORBIDDEN = [
     pkg: "@ntux402/signer",
     reason: "ARCHITECTURE.md trust model — the orchestrator holds no spending authority",
   },
-  {
-    label: "vendor-search",
-    dir: join(repoRoot, "services", "vendor-search") + sep,
-    pkg: "@ntux402/vendor-search",
-    reason: "README.md — the vendor key must not reach the untrusted component",
-  },
 ];
-
-/** Credential names the orchestrator may never mention, by any spelling. */
-const FORBIDDEN_ENV = ["SEARCH_VENDOR_KEY"];
 
 const IMPORT_RE = /(?:import|export)\s+(?:[^'"]*?\sfrom\s*)?['"]([^'"]+)['"]|(?:import|require)\(\s*['"]([^'"]+)['"]\s*\)/g;
 
@@ -95,17 +70,6 @@ for (const file of walk(orchestratorSrc)) {
       }
     }
   }
-
-  for (const name of FORBIDDEN_ENV) {
-    const index = src.indexOf(name);
-    if (index !== -1) {
-      const line = src.slice(0, index).split("\n").length;
-      violations.push(
-        `${relative(repoRoot, file)}:${line} names ${name} — that credential belongs to ` +
-          `services/vendor-search alone (README.md)`,
-      );
-    }
-  }
 }
 
 if (existsSync(orchestratorPkgPath)) {
@@ -120,7 +84,7 @@ if (existsSync(orchestratorPkgPath)) {
 
 if (violations.length > 0) {
   console.error(
-    "Dependency boundary violated: services/orchestrator must not reach the signer or the search vendor.\n",
+    "Dependency boundary violated: services/orchestrator must not reach the signer.\n",
   );
   for (const v of violations) console.error(`  - ${v}`);
   console.error("\nSee the trust model in ARCHITECTURE.md.");
@@ -128,5 +92,5 @@ if (violations.length > 0) {
 }
 
 console.log(
-  `Boundary check passed: services/orchestrator reaches neither ${FORBIDDEN.map((t) => t.label).join(" nor ")}.`,
+  `Boundary check passed: services/orchestrator does not reach ${FORBIDDEN.map((t) => t.label).join(", ")}.`,
 );

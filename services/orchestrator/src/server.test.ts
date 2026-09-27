@@ -5,7 +5,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { DEMO_GOALS, MOCK_GOALS, SEARCH_TIERS, findDemoGoal, isMockGoal } from "@ntux402/shared";
+import { DEMO_GOALS } from "@ntux402/shared";
 import type { Address } from "viem";
 
 import { createOrchestratorServer, resourceUrlFor } from "./server.js";
@@ -14,82 +14,31 @@ import type { SignerClient } from "./pay/signer-client.js";
 import type { VaultRelay } from "./pay/relay.js";
 
 const MOCK = "http://mock.test";
-const VENDOR = "http://vendor.test";
 
 const urlFor = (mode: string, extra: Record<string, string | undefined> = {}) =>
-  resourceUrlFor({ mode, mockApiUrl: MOCK, vendorSearchUrl: VENDOR, ...extra });
+  resourceUrlFor({ mode, mockApiUrl: MOCK, ...extra });
 
 describe("resourceUrlFor", () => {
-  it("sends mock-served goals to the mock vendor", () => {
-    for (const goal of MOCK_GOALS) {
+  it("sends every catalog goal to the mock vendor", () => {
+    for (const goal of DEMO_GOALS) {
       expect(urlFor(goal.key), goal.key).toBe(`${MOCK}/resource/${goal.key}`);
     }
   });
 
-  it("sends upstream goals to the search vendor, never the mock", () => {
-    const live = DEMO_GOALS.filter((g) => g.upstream !== undefined);
-    expect(live.length).toBeGreaterThan(0);
-
-    for (const goal of live) {
-      const url = urlFor(goal.key);
-      expect(url, goal.key).toContain(`${VENDOR}/resource/search`);
-      expect(url, goal.key).not.toContain(MOCK);
-    }
-  });
-
-  /*
-   * Routing is on the `upstream` field, not on the shape of the key. A
-   * name-prefix rule would send a renamed goal to the wrong server, and the
-   * failure mode is a 200 carrying the wrong product at the right price.
-   */
-  it("routes on the upstream field rather than the key's name", () => {
-    for (const goal of DEMO_GOALS) {
-      const wentToVendor = urlFor(goal.key).startsWith(VENDOR);
-      expect(wentToVendor, goal.key).toBe(!isMockGoal(goal));
-    }
-  });
-
-  it("carries the tier and the goal's default query", () => {
-    const goal = findDemoGoal("search-deep");
-    const url = new URL(urlFor("search-deep"));
-    expect(url.searchParams.get("tier")).toBe("deep");
-    expect(url.searchParams.get("q")).toBe(goal?.upstream?.defaultQuery);
-  });
-
-  it("prefers an explicit query over the default", () => {
-    const url = new URL(urlFor("search-basic", { query: "what is x402" }));
-    expect(url.searchParams.get("q")).toBe("what is x402");
-  });
-
-  /*
-   * The query becomes the x402 `resource`, which `requireResource` demands be
-   * URL-shaped and which the vault hashes into `termsHash`. A raw space breaks
-   * parsing; an unescaped `&` or `#` would smuggle structure into what is
-   * signed.
-   */
-  it("encodes a query so it cannot break out of the query string", () => {
-    const nasty = "a b&tier=deep#frag/../../etc";
-    const raw = urlFor("search-basic", { query: nasty });
-
-    // Exactly one `?`, and the tier is still the goal's own.
-    expect(raw.split("?")).toHaveLength(2);
-    const url = new URL(raw);
-    expect(url.searchParams.get("q")).toBe(nasty);
-    expect(url.searchParams.get("tier")).toBe("basic");
-    expect(url.pathname).toBe("/resource/search");
-  });
-
-  it("honours the price override only on the mock path", () => {
+  it("forwards the price override to the mock vendor", () => {
     expect(urlFor("compliance-audit", { priceAtomic: "350000" })).toBe(
       `${MOCK}/resource/compliance-audit?price=350000`,
     );
-    // The live vendor prices from the tier table; a caller cannot retune it.
-    expect(urlFor("search-basic", { priceAtomic: "999" })).not.toContain("999");
   });
 
-  it("quotes each live goal at its measured tier price", () => {
-    expect(findDemoGoal("search-basic")?.priceAtomic).toBe(SEARCH_TIERS.basic.priceAtomic);
-    expect(findDemoGoal("search-deep")?.priceAtomic).toBe(SEARCH_TIERS.deep.priceAtomic);
+  /*
+   * The resource string is what the vault freezes into `termsHash`, so the 402
+   * and the paid retry have to derive the same bytes.
+   */
+  it("builds the same resource string every time", () => {
+    for (const goal of DEMO_GOALS) {
+      expect(urlFor(goal.key), goal.key).toBe(urlFor(goal.key));
+    }
   });
 });
 
@@ -116,8 +65,6 @@ describe("the orchestrator server", () => {
       usdcAddress: `0x${"33".repeat(20)}`,
       chainId: 84532,
       mockApiUrl: "http://mock.test",
-      vendorSearchUrl: undefined,
-      vendorSearchPayee: undefined,
       signerUrl: "http://signer.test",
       anchors: undefined,
       facilitatorUrl: undefined,

@@ -99,19 +99,6 @@ export interface Settlement {
   readonly errorReason?: string;
 }
 
-/**
- * What a live vendor returns once it has been paid.
- *
- * Every string in it is written by a third party — the vendor, and beneath it
- * whatever the search engine scraped. Rendered as quoted evidence, never as the
- * console's own voice, and never as markup.
- *
- * Defined in the shared package next to the href filter the results panel
- * needs, so the vendor producing this shape and the console rendering it cannot
- * drift apart — and so that filter sits somewhere with a test runner.
- */
-export type { SearchPayload } from "@ntux402/shared";
-
 export type RunResult =
   | { kind: "free"; data: unknown }
   | {
@@ -146,13 +133,6 @@ export async function* streamRun(
    * policy acts on is still whatever comes back in the 402.
    */
   priceAtomic?: string,
-  /**
-   * Search text for a live-vendor goal. Omitted, the goal's own default is used.
-   *
-   * Validated again by the orchestrator and a third time by the vendor. This
-   * one is only so the input can go red before a round trip.
-   */
-  query?: string,
   signal?: AbortSignal,
 ): AsyncGenerator<RunEvent> {
   const response = await fetch(`${ORCHESTRATOR_URL}/runs`, {
@@ -162,7 +142,6 @@ export async function* streamRun(
       goalId,
       mode,
       ...(priceAtomic ? { priceAtomic } : {}),
-      ...(query ? { query } : {}),
     }),
     ...(signal ? { signal } : {}),
   });

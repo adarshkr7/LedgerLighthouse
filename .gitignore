@@ -63,11 +63,6 @@ apps/web/.vite/
 # Durable trace store written by the orchestrator (TRACE_STORE_PATH).
 .traces/
 
-# The vendor spend ledger: two numbers, no secret, but a run record all the
-# same. Persisted so restarting the service is not a way past the hourly
-# ceiling — see services/vendor-search/src/upstream.ts.
-.vendor-search/
-
 # ROFL build output. Reproducible from `oasis rofl build`; 84 MB, and the
 # enclave identity it commits to is recorded in rofl.yaml, which IS tracked.
 *.orc

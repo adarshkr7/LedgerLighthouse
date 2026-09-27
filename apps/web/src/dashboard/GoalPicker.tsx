@@ -200,8 +200,7 @@ export function GoalPicker({
           ) : null}
 
           <p className="gp-foot">
-            Four fixtures — two settle, two are refused, for different reasons — plus live
-            search bought from a real paid API.
+            Four resources: two settle, and two are refused for different reasons.
           </p>
         </div>
       ) : null}

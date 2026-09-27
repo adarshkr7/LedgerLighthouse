@@ -8,9 +8,9 @@
  */
 
 :root {
-  /* Read by `.t-shimmer`'s text gradient. */
-  --t-fg: #eef2ff;
-  --t-fg-4: #545e7e;
+  /* Read by `.t-shimmer`'s text gradient: a dark sweep across a muted label. */
+  --t-fg: #1c1b19;
+  --t-fg-4: #a29e96;
 
   /* Read by `code {}` below. */
   --t-mono: "JetBrains Mono", ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
@@ -32,18 +32,18 @@ body {
 }
 
 body {
-  background: #fff;
-  color: #000;
-  font-family: "Inter", "Inter Fallback", ui-sans-serif, system-ui, "Segoe UI", Helvetica, Arial,
-    sans-serif;
+  background: #faf9f6;
+  color: #1c1b19;
+  font-family: "Instrument Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Helvetica,
+    Arial, sans-serif;
   font-size: 14px;
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
 }
 
 ::selection {
-  background: #ff3000;
-  color: #fff;
+  background: rgba(59, 91, 219, 0.18);
+  color: inherit;
 }
 
 /* Images and canvases keep their pixels sharp when scaled. */

@@ -31,7 +31,7 @@ import { buildAgent, llmConfigured, probeAgent } from "./agent/factory.js";
 import { createOrchestratorServer } from "./server.js";
 import { TraceAnchorClient } from "./pay/anchor.js";
 import { renderEvent } from "./render.js";
-import { assertPayoutAddress, rpcUrls } from "@ntux402/shared";
+import { rpcUrls } from "@ntux402/shared";
 
 loadDotEnv();
 
@@ -44,26 +44,6 @@ const vaultAddress = requiredAddress("POLICY_VAULT_ADDRESS");
 const usdcAddress = requiredAddress("USDC_ADDRESS");
 const signerUrl = optional("SIGNER_URL") ?? `http://127.0.0.1:${process.env["SIGNER_PORT"] ?? 8402}`;
 const mockApiUrl = optional("MOCK_API_URL") ?? `http://127.0.0.1:${process.env["MOCK_API_PORT"] ?? 4021}`;
-
-/*
- * Live search is opt-in, and its absence is a first-class state rather than a
- * broken one. The gate is the *payee*, not the URL: without an address to pay,
- * a goal opened by the console would not allowlist the vendor and every spend
- * would revert with `PayeeNotAllowlisted` — correct, and baffling. Better to
- * report live search as unavailable and let the console grey it out.
- *
- * Note what is deliberately absent: the vendor's API key. This service reads
- * the payee and the URL and nothing else. `scripts/check-boundary.mjs` fails CI
- * if that credential's name appears anywhere in this source tree — including in
- * a comment, which is why this one does not spell it out.
- */
-const vendorSearchPayeeRaw = optionalAddress("VENDOR_SEARCH_PAYEE");
-const vendorSearchPayee = vendorSearchPayeeRaw
-  ? assertPayoutAddress("VENDOR_SEARCH_PAYEE", vendorSearchPayeeRaw)
-  : undefined;
-const vendorSearchUrl = vendorSearchPayee
-  ? (optional("VENDOR_SEARCH_URL") ?? `http://127.0.0.1:${process.env["VENDOR_SEARCH_PORT"] ?? 4022}`)
-  : undefined;
 
 /*
  * Anchoring is opt-in on the address being set. Absent, traces stay
@@ -178,8 +158,6 @@ const server = createOrchestratorServer({
   usdcAddress,
   chainId,
   mockApiUrl,
-  vendorSearchUrl,
-  vendorSearchPayee,
   signerUrl,
   signer,
   anchors,
@@ -218,15 +196,6 @@ server.listen(port, bindHost(), () => {
     log.warn("settlement is STUBBED — payloads are validated but no money moves");
   }
   log.info("trace anchoring", { contract: anchorAddress ?? "not configured" });
-  log.info("live search", {
-    vendor: vendorSearchUrl ?? "not configured",
-    ...(vendorSearchPayee ? { payee: vendorSearchPayee } : {}),
-  });
-  if (!vendorSearchPayee) {
-    log.warn(
-      "live search is unavailable — set VENDOR_SEARCH_PAYEE (and run @ntux402/vendor-search)",
-    );
-  }
 
   /*
    * Fire-and-forget on purpose. The answer changes nothing about how the server
