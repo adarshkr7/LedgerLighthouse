@@ -210,3 +210,90 @@ describe("the orchestrator server", () => {
     });
   });
 });
+
+/*
+ * A run needs Inco to reveal its decision. When Inco cannot, the run must be
+ * refused before `requestSpend`, because after it the budget is debited and
+ * the console waits on a decision that never comes.
+ */
+describe("the Inco gate", () => {
+  let server: Server;
+  let base: string;
+  let incoUp = false;
+  let runsStarted = 0;
+
+  beforeAll(async () => {
+    server = createOrchestratorServer({
+      loop: {
+        fetchPaid: async () => {
+          runsStarted++;
+          return { kind: "failed", reason: "stopped after the gate" };
+        },
+      } as unknown as PaymentLoop,
+      relay: { relayAddress: `0x${"11".repeat(20)}` as Address } as unknown as VaultRelay,
+      signer: { mintPayer: async () => `0x${"44".repeat(20)}` } as unknown as SignerClient,
+      vaultAddress: `0x${"22".repeat(20)}`,
+      usdcAddress: `0x${"33".repeat(20)}`,
+      chainId: 84532,
+      mockApiUrl: "http://mock.test",
+      incoHealth: {
+        check: async () =>
+          incoUp
+            ? { status: "ready", latencyMs: 900, checkedAt: 1 }
+            : { status: "unavailable", detail: "HTTP 503", checkedAt: 1 },
+      },
+      signerUrl: "http://signer.test",
+      anchors: undefined,
+      facilitatorUrl: undefined,
+      agentSource: "scripted",
+      traceDir: mkdtempSync(join(tmpdir(), "ll-traces-")),
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  });
+
+  afterAll(async () => {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
+
+  afterEach(() => {
+    incoUp = false;
+    runsStarted = 0;
+  });
+
+  const run = () =>
+    fetch(`${base}/runs`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ goalId: "1", mode: "market-data" }),
+    });
+
+  it("refuses a run while Inco is down, and never starts it", async () => {
+    const res = await run();
+    const body = (await res.json()) as { error: string; inco: { status: string } };
+
+    expect(res.status).toBe(503);
+    expect(body.error).toMatch(/Nothing was committed or charged/);
+    expect(body.error).toMatch(/HTTP 503/);
+    expect(body.inco.status).toBe("unavailable");
+    expect(runsStarted).toBe(0);
+  });
+
+  it("starts the run once Inco answers", async () => {
+    incoUp = true;
+    const res = await run();
+    await res.text();
+
+    expect(res.status).toBe(200);
+    expect(runsStarted).toBe(1);
+  });
+
+  it("reports Inco's state at /health/inco", async () => {
+    expect(await (await fetch(`${base}/health/inco`)).json()).toMatchObject({
+      status: "unavailable",
+      detail: "HTTP 503",
+    });
+    incoUp = true;
+    expect(await (await fetch(`${base}/health/inco`)).json()).toMatchObject({ status: "ready" });
+  });
+});

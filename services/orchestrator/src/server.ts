@@ -26,6 +26,7 @@ import { DEMO_GOAL_KEYS, findDemoGoal } from "@ntux402/shared";
 import { RateLimiter, corsHeaders, exposedWithoutToken, rejected } from "@ntux402/shared/node";
 import type { Address } from "viem";
 
+import type { IncoHealth } from "./inco/health.js";
 import type { PaymentEvent, PaymentLoop, PaymentResult } from "./pay/payment-loop.js";
 import type { VaultRelay } from "./pay/relay.js";
 import { TraceStore } from "./trace-store.js";
@@ -40,6 +41,11 @@ export interface OrchestratorServerOptions {
   readonly usdcAddress: Address;
   readonly chainId: number;
   readonly mockApiUrl: string;
+  /**
+   * Whether Inco can reveal a decision right now. Checked before every run and
+   * served at `/health/inco`. Absent in tests that do not exercise it.
+   */
+  readonly incoHealth?: { check(): Promise<IncoHealth> } | undefined;
   readonly signerUrl: string;
   /**
    * The signer, already carrying its bearer token.
@@ -180,6 +186,17 @@ export function createOrchestratorServer(options: OrchestratorServerOptions): Se
 
       if (req.method === "GET" && path === "/health") {
         send(res, 200, { ok: true, service: "orchestrator" }, cors);
+        return;
+      }
+
+      // Whether a run could finish right now. Open like /health: it reveals a
+      // decision that is already public, and says only whether Inco answered.
+      if (req.method === "GET" && path === "/health/inco") {
+        if (!options.incoHealth) {
+          send(res, 200, { status: "unchecked" }, cors);
+          return;
+        }
+        send(res, 200, await options.incoHealth.check(), cors);
         return;
       }
 
@@ -354,6 +371,32 @@ export function createOrchestratorServer(options: OrchestratorServerOptions): Se
         if (priceAtomic !== undefined && !/^[0-9]{1,18}$/.test(String(priceAtomic))) {
           send(res, 400, { error: "priceAtomic: expected a decimal string" }, cors);
           return;
+        }
+
+        /*
+         * Last check before anything is committed. A run needs Inco to reveal
+         * its decision, and if Inco cannot, `requestSpend` would debit the
+         * budget and leave the run waiting on a decision that never comes.
+         * Refusing here costs nothing and says why.
+         */
+        if (options.incoHealth) {
+          const inco = await options.incoHealth.check();
+          if (inco.status === "unavailable") {
+            log(`POST /runs refused: Inco unavailable (${inco.detail})`);
+            send(
+              res,
+              503,
+              {
+                error:
+                  "Inco cannot reveal decisions right now, so this run would stop at the " +
+                  "confidential evaluation. Nothing was committed or charged. " +
+                  `Inco said: ${inco.detail}`,
+                inco,
+              },
+              cors,
+            );
+            return;
+          }
         }
 
         await streamRun(res, {

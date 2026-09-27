@@ -17,7 +17,7 @@ export function Field({ label, children }: { label: string; children: ReactNode 
   );
 }
 
-export function Dot({ tone = "live" }: { tone?: "live" | "idle" }) {
+export function Dot({ tone = "live" }: { tone?: "live" | "idle" | "down" }) {
   return <span className="d-dot" data-tone={tone} aria-hidden="true" />;
 }
 

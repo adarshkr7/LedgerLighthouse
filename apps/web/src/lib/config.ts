@@ -68,6 +68,23 @@ export async function fetchOrchestratorConfig(): Promise<OrchestratorConfig> {
   return (await response.json()) as OrchestratorConfig;
 }
 
+/**
+ * Whether Inco can reveal a decision right now, as the orchestrator last saw it.
+ *
+ * A run cannot finish without that, so the console pauses Buy while it is
+ * unavailable instead of letting a run commit and then wait on stage.
+ */
+export type IncoHealth =
+  | { readonly status: "ready"; readonly latencyMs: number; readonly checkedAt: number }
+  | { readonly status: "unavailable"; readonly detail: string; readonly checkedAt: number }
+  | { readonly status: "unchecked" };
+
+export async function fetchIncoHealth(): Promise<IncoHealth> {
+  const response = await fetch(`${ORCHESTRATOR_URL}/health/inco`);
+  if (!response.ok) throw new Error(`orchestrator /health/inco returned ${response.status}`);
+  return (await response.json()) as IncoHealth;
+}
+
 /** 6-decimal USDC, for display only. */
 /**
  * Atomic USDC as a decimal string, always with at least two places.

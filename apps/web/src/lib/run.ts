@@ -58,6 +58,7 @@ export type PaymentEvent =
   | { type: "orphan-abandoned"; seq: string; reason: string }
   | { type: "spend-requested"; goalId: string; spend: SpendRequested }
   | { type: "reveal-polled"; attempts: number; latencyMs: number; approved: boolean }
+  | { type: "reveal-waiting"; attempts: number; elapsedMs: number; note?: string }
   | { type: "reveal-timeout"; attempts: number; elapsedMs: number }
   | {
       type: "decision-finalized";

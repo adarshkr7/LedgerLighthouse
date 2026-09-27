@@ -1,6 +1,7 @@
 /**
- * Checks everything M2b needs *before* it sends a transaction: right chain,
- * Inco live, keys valid, wallet funded, artifact built.
+ * Checks everything a run needs *before* it sends a transaction: right chain,
+ * Inco able to reveal decisions, keys valid, wallet funded, artifact built.
+ * Run it before a demo; it sends nothing and costs nothing.
  *
  *   pnpm --filter @ntux402/e2e run preflight
  */
@@ -9,7 +10,10 @@ import { createPublicClient, formatEther } from "viem";
 import { baseSepolia } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
 
+import { Lightning } from "@inco/lightning-js/lite";
 import { rpcTransport } from "@ntux402/shared/viem";
+import { rpcUrls } from "@ntux402/shared";
+import { IncoDecisionReader, IncoHealthProbe } from "@ntux402/orchestrator";
 
 import {
   BASE_SEPOLIA_CHAIN_ID,
@@ -31,7 +35,7 @@ function check(label: string, ok: boolean, detail: string) {
   if (!ok) problems.push(`${label}: ${detail}`);
 }
 
-console.log("\nM2b preflight\n");
+console.log("\npreflight\n");
 
 // --- artifact -------------------------------------------------------------
 try {
@@ -94,6 +98,25 @@ if (rpcUrl) {
       functionName: "getFee",
     });
     check("Inco fee", true, `${fee} wei (${formatEther(fee)} ETH) per encrypted input`);
+
+    /*
+     * The check that matters on the day. Every run needs Inco to reveal its
+     * decision, and that needs all of Inco's covalidators up. This asks for a
+     * decision already revealed on chain, so a failure here is Inco, not us.
+     */
+    try {
+      const zap = await Lightning.baseSepoliaTestnet({ hostChainRpcUrls: [...rpcUrls(rpcUrl)] });
+      const inco = await new IncoHealthProbe(new IncoDecisionReader(zap)).check();
+      check(
+        "Inco can reveal decisions",
+        inco.status === "ready",
+        inco.status === "ready"
+          ? `answered in ${(inco.latencyMs / 1000).toFixed(1)}s`
+          : `${inco.detail} — runs will stop at the confidential evaluation`,
+      );
+    } catch (e) {
+      check("Inco can reveal decisions", false, e instanceof Error ? e.message : String(e));
+    }
 
     const usdcCode = await client.getCode({ address: USDC_BASE_SEPOLIA });
     check("USDC deployed", (usdcCode?.length ?? 0) > 2, USDC_BASE_SEPOLIA);

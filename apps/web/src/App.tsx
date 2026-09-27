@@ -44,7 +44,9 @@ import {
   RPC_URL,
   RPC_URLS,
   explorer,
+  fetchIncoHealth,
   fetchOrchestratorConfig,
+  type IncoHealth,
   formatUsdc,
   type OrchestratorConfig,
 } from "./lib/config.js";
@@ -316,6 +318,8 @@ export default function App() {
   const chainId = liveChainId ?? connectionChainId;
 
   const [config, setConfig] = useState<OrchestratorConfig>();
+  /** Whether Inco can reveal a decision right now. Undefined until first asked. */
+  const [inco, setInco] = useState<IncoHealth>();
   const [configError, setConfigError] = useState<string>();
   const [payer, setPayer] = useState<Address>();
   const [goalId, setGoalId] = useState<string>();
@@ -386,6 +390,28 @@ export default function App() {
       setConfigError(e instanceof Error ? e.message : String(e)),
     );
   }, []);
+
+  /*
+   * Asked on load and every 30 seconds, which is also how long the
+   * orchestrator reuses an answer. A run cannot finish while Inco cannot reveal
+   * its decision, so this is what pauses Buy before a run can get stuck at the
+   * confidential evaluation.
+   */
+  useEffect(() => {
+    let live = true;
+    const ask = () =>
+      void fetchIncoHealth().then(
+        (health) => live && setInco(health),
+        () => live && setInco(undefined),
+      );
+    ask();
+    const timer = setInterval(ask, 30_000);
+    return () => {
+      live = false;
+      clearInterval(timer);
+    };
+  }, []);
+  const incoDown = inco?.status === "unavailable";
 
   /*
    * Re-ask for the wallet client once the wallet reaches the right chain.
@@ -780,6 +806,20 @@ export default function App() {
           {isConnected && !wrongChain ? "Live" : "Idle"}
         </span>
 
+        <span
+          className="d-top-live"
+          title={
+            inco?.status === "unavailable"
+              ? `Inco cannot reveal decisions right now: ${inco.detail}`
+              : inco?.status === "ready"
+                ? `Inco answered in ${(inco.latencyMs / 1000).toFixed(1)}s`
+                : "Checking whether Inco can reveal decisions"
+          }
+        >
+          <Dot tone={inco?.status === "ready" ? "live" : incoDown ? "down" : "idle"} />
+          {inco?.status === "ready" ? "Inco ready" : incoDown ? "Inco unavailable" : "Inco"}
+        </span>
+
         <ol className="d-rail" aria-label="Demo progress">
           {steps.map((step) => (
             <li key={step.key} className="d-rail-step" data-state={step.state}>
@@ -1007,7 +1047,7 @@ export default function App() {
                 <button
                   type="button"
                   className="d-btn"
-                  disabled={!goalId || closed || !!busy}
+                  disabled={!goalId || closed || !!busy || incoDown}
                   onClick={() => run(resource)}
                 >
                   Buy {resource.label} · {formatUsdc(requestedPrice)} USDC
@@ -1023,6 +1063,14 @@ export default function App() {
               </div>
               {!goalId ? (
                 <p className="d-hint">Open a goal first — a run spends against its budget.</p>
+              ) : null}
+
+              {incoDown ? (
+                <p className="d-hint" data-tone="warn">
+                  Buying is paused: Inco cannot reveal decisions right now, so a run would stop at
+                  the confidential evaluation. Nothing has been charged. This clears by itself when
+                  Inco recovers.
+                </p>
               ) : null}
 
               {closed ? (

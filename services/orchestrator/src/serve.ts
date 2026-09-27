@@ -23,6 +23,7 @@ import { Lightning } from "@inco/lightning-js/lite";
 
 import { X402Client } from "./x402/client.js";
 import { IncoDecisionReader } from "./inco/reveal.js";
+import { IncoHealthProbe } from "./inco/health.js";
 import { PaymentLoop } from "./pay/payment-loop.js";
 import { VaultRelay } from "./pay/relay.js";
 import { SignerClient } from "./pay/signer-client.js";
@@ -141,10 +142,13 @@ const signer = new SignerClient(
   optional("SIGNER_SERVICE_TOKEN") ?? optional("SERVICE_TOKEN"),
 );
 
+const decisions = new IncoDecisionReader(zap);
+const incoHealth = new IncoHealthProbe(decisions);
+
 const loop = new PaymentLoop({
   client: new X402Client(),
   relay,
-  decisions: new IncoDecisionReader(zap),
+  decisions,
   signer,
   agent,
   asset: usdcAddress,
@@ -158,6 +162,7 @@ const server = createOrchestratorServer({
   usdcAddress,
   chainId,
   mockApiUrl,
+  incoHealth,
   signerUrl,
   signer,
   anchors,
@@ -172,6 +177,12 @@ const server = createOrchestratorServer({
 
 server.listen(port, bindHost(), () => {
   log.info(`listening on http://${bindHost()}:${port}`, { guard: describeGuard() });
+  // In the terminal at boot, where it is cheapest to act on: minutes before a
+  // demo rather than in the middle of one.
+  void incoHealth.check().then((inco) => {
+    if (inco.status === "ready") log.info("inco", { status: "ready", latencyMs: inco.latencyMs });
+    else log.warn(`inco is UNAVAILABLE, runs will be refused until it recovers: ${inco.detail}`);
+  });
   /*
    * Said at boot rather than discovered at the download button. The trace route
    * refuses in this combination, and an operator who bound the service outward

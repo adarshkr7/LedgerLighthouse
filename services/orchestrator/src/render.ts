@@ -56,6 +56,11 @@ export function renderEvent(event: PaymentEvent): string {
         event.attempts
       } attempts  ->  ${event.approved ? "APPROVE" : "REJECT"}`;
 
+    case "reveal-waiting":
+      return `  inco  still waiting after ${(event.elapsedMs / 1000).toFixed(0)}s${
+        event.note ? `  (${event.note})` : ""
+      }`;
+
     case "reveal-timeout":
       return `  inco  TIMEOUT after ${(event.elapsedMs / 1000).toFixed(1)}s / ${event.attempts} attempts`;
 

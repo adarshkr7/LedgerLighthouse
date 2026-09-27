@@ -193,6 +193,10 @@
   animation: d-pulse 2s var(--d-ease-out) infinite;
 }
 
+.d-dot[data-tone="down"] {
+  background: var(--d-danger);
+}
+
 @keyframes d-pulse {
   0%,
   100% {
