@@ -1,26 +1,15 @@
 /*
  * LedgerLighthouse — console surface.
  *
- * Same design system as the landing page: one neo-grotesque and one monospace,
- * brand orange as the only accent, flat borders, no shadows, and a full radius
- * on pills and nothing else. The eases are the landing page eases, so a control
- * here decelerates exactly like a control there.
+ * One neo-grotesque and one monospace, brand orange as the only accent, flat
+ * borders, no shadows, and a full radius on pills and nothing else.
  *
- * Ink, not bone. The landing page alternates the two by section; a console
- * cannot, because it is one frame that never scrolls, so it has to choose. It
- * chooses the tone the landing page opens and closes on, and the one that suits
- * a surface watched in a dim room while something is running -- a full screen
- * of #eee is a lamp pointed at the viewer.
+ * Ink, not bone. The console is one frame that never scrolls and is watched
+ * in a dim room while something is running, and a full screen of #eee is a
+ * lamp pointed at the viewer.
  *
- * ## Why the tokens are declared again
- *
- * `landing.css` scopes its tokens to `.gf`, and `.dash` is a sibling of that
- * element, never a descendant — the two pages are alternatives, not nested. So
- * inheriting is not available without hoisting the block to `:root`, and the
- * project's stated architecture (see `styles.css`) is that each page surface
- * is a self-contained stylesheet. The values below are therefore duplicated on
- * purpose. If they ever need to move, they move together to `:root` and both
- * files consume them; splitting the difference is what would rot.
+ * The tokens are scoped to `.dash` and not to `:root`, so everything that
+ * reads them, the dialogs included, is rendered inside the console's root.
  *
  * ## One frame
  *
@@ -37,7 +26,7 @@
  */
 
 .dash {
-  /* ---- palette: ink, matching the dark sections of the landing page ----- */
+  /* ---- palette: ink ------------------------------------------------------ */
   --d-bg: #141314;
   --d-fg: #eeeeee;
   /* Panes sit a step *above* the page rather than below it: on a dark surface
@@ -61,18 +50,17 @@
   --d-mono: "Geist Mono", "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
 
   /*
-   * Flatter than the landing page's scale on purpose. That page is read once
-   * at arm's length and its display sizes run to 128px; this one is scanned
-   * repeatedly at a glance while something is happening, so the range is
-   * compressed into four steps and none of them is fluid. A headline that
-   * resized with the window would move the timeline under the reader's eye.
+   * A flat scale on purpose. The console is scanned repeatedly at a glance
+   * while something is happening, so the range is compressed into four steps
+   * and none of them is fluid. A headline that resized with the window would
+   * move the timeline under the reader's eye.
    */
   --d-t-title: 15px;
   --d-t-body: 13px;
   --d-t-label: 11px;
   --d-t-figure: 34px;
 
-  /* ---- motion: the landing page's curves, unchanged --------------------- */
+  /* ---- motion ---------------------------------------------------------- */
   --d-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --d-ease-quart: cubic-bezier(0.25, 1, 0.5, 1);
 
@@ -796,7 +784,7 @@
   line-height: 1.5;
 }
 
-/* The landing page's entrance, at console scale: short, and only on arrival. */
+/* An entrance: short, and only on arrival. */
 @keyframes d-rise {
   from {
     opacity: 0;

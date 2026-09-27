@@ -11,19 +11,8 @@
     <meta name="theme-color" content="#04050a" />
 
     <!--
-      Two pages, two type systems, on purpose.
-
-      The console (App.tsx) is pixel/neon and speaks in Inter and JetBrains
-      Mono. The landing page is an editorial agency layout and speaks in Geist
-      for display and Geist Mono for every label, index and tag — a closed
-      two-family system where scale, weight and position carry the decisions
-      a third face would otherwise be brought in to make.
-
-      All four are loaded here since either page can be the first one a
-      visitor lands on. Geist Mono is also what the landing page's canvases
-      draw their glyph grids in, so it has to be resolved before the ASCII
-      hero paints its first frame — hence `preload` on that one stylesheet
-      rather than plain `stylesheet` for everything.
+      The console speaks in Geist and Geist Mono (dashboard.css). Inter and
+      JetBrains Mono are the fallbacks in styles.css for anything outside it.
     -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />

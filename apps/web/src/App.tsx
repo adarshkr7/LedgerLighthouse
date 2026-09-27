@@ -12,7 +12,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   useAccount,
-  useConnect,
   useDisconnect,
   useSwitchChain,
   useWalletClient,
@@ -36,6 +35,7 @@ import { Copyable, Dot, Field, Ring, truncate } from "./dashboard/primitives.js"
 import { Timeline } from "./dashboard/Timeline.js";
 import { EvidenceBody, GuaranteeList, Outcome, evidenceCount } from "./dashboard/panels.js";
 import { Modal } from "./dashboard/Modal.js";
+import { ConnectGate } from "./dashboard/ConnectGate.js";
 import { ModelInput } from "./dashboard/ModelInput.js";
 import { SearchResults, asSearchPayload } from "./dashboard/SearchResults.js";
 import { GoalPicker } from "./dashboard/GoalPicker.js";
@@ -283,7 +283,6 @@ function OrphanNotice({ events }: { events: readonly PaymentEvent[] }) {
 
 export default function App() {
   const { address, isConnected, chainId: connectionChainId, connector } = useAccount();
-  const { connect, connectors } = useConnect();
   const { disconnect } = useDisconnect();
   const { switchChain } = useSwitchChain();
   /*
@@ -1163,21 +1162,12 @@ export default function App() {
         open={modal === "setup"}
         onClose={closeModal}
         title="Set up a goal"
-        tag="Connect · mint · encrypt · fund"
+        tag="Mint · encrypt · fund"
       >
+        {/* No connect step: `ConnectGate` holds the console until a wallet is
+            connected, so by the time this dialog can open, one is. */}
         <div className="d-setup">
-          {!isConnected ? (
-            connectors.map((connector) => (
-              <button
-                key={connector.uid}
-                type="button"
-                className="d-btn d-btn-block"
-                onClick={() => connect({ connector })}
-              >
-                Connect {connector.name}
-              </button>
-            ))
-          ) : wrongChain ? (
+          {wrongChain ? (
             <>
               <p className="d-notice">This demo writes only to Base Sepolia.</p>
               <button
@@ -1391,6 +1381,10 @@ export default function App() {
       >
         <EvidenceBody events={events} goalId={goalId} />
       </Modal>
+
+      {/* Last, so it opens above anything else that happens to be open when
+          the wallet goes away. */}
+      <ConnectGate />
     </div>
   );
 }

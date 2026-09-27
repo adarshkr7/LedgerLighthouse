@@ -1,27 +1,21 @@
 /*
- * LedgerLighthouse — global design tokens.
+ * LedgerLighthouse — global styles.
  *
- * Both pages this app renders are self-contained stylesheets (`.gf` for the
- * landing page, `.dash` for the console), each declaring its own palette
- * rather than reading a shared theme — a decision recorded in each of those
- * files. What remains here is only what is genuinely shared: the couple
- * of motion utilities (`.t-shimmer`, `.t-eq`, `.t-pixels`) both pages still
- * use, and the monospace stack `code {}` falls back to.
- *
- * The brand mark that used to justify most of this block — and the tokens its
- * inline SVG fills reached for directly — is gone. Removed with it, rather
- * than left as unread dead weight.
+ * The console's own palette and layout live in `dashboard/dashboard.css`,
+ * scoped to `.dash`. What remains here is the page reset, the motion
+ * utilities the console uses (`.t-shimmer`, `.t-caret`, `.t-eq`, `.t-pixels`),
+ * and the monospace stack `code {}` falls back to.
  */
 
 :root {
-  /* Read by `.t-shimmer`'s text gradient, shared by both pages. */
+  /* Read by `.t-shimmer`'s text gradient. */
   --t-fg: #eef2ff;
   --t-fg-4: #545e7e;
 
   /* Read by `code {}` below. */
   --t-mono: "JetBrains Mono", ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
 
-  /* Read by the `.t-eq` / `.t-pixels` keyframed loaders, shared by both pages. */
+  /* Read by the `.t-eq` / `.t-pixels` keyframed loaders. */
   --t-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
 
   color-scheme: light;
@@ -35,22 +29,6 @@ html,
 body {
   margin: 0;
   padding: 0;
-}
-
-/*
- * The console (`.dash`) is a white canvas with black structure and takes the
- * default below untouched.
- *
- * The landing page (`.gf`) is not: it opens on an ink hero and closes on an
- * ink footer, so a white `body` shows through at both ends of an overscroll
- * bounce as a bright flash against the section it is bouncing away from. The
- * `:has()` below paints the body to match the page's own top and bottom
- * rather than the page's midpoint — which is the only reason this rule needs
- * to exist at all. Everything else about the landing page's colour is scoped
- * inside `landing.css`.
- */
-body:has(.gf) {
-  background: #141314;
 }
 
 body {
@@ -89,8 +67,7 @@ code {
  *
  * A 9px grey track down the right edge is a piece of OS chrome sitting inside
  * an otherwise edge-to-edge composition — it dates a screen recording, and it
- * fights a page whose whole visual argument is flat black rule on white. With
- * the wheel smoothed by Lenis, the bar was also lagging its own page.
+ * fights a page whose whole visual argument is flat rules on a flat ground.
  *
  * Nothing about scrolling changes: wheel, trackpad, touch, keyboard, Home/End
  * and programmatic scrolls all behave exactly as before. Only the indicator is
@@ -99,9 +76,9 @@ code {
  * what Chrome and Safari read — and both are needed.
  *
  * The cost, stated plainly: scroll *position* is no longer indicated, and a
- * horizontally scrollable region no longer advertises that it scrolls. Both
- * places this app has one — `.d-rail` and `.deck-track` — already hid their
- * bar for the same reason and carry their own affordance.
+ * horizontally scrollable region no longer advertises that it scrolls. The
+ * one place this app has one, `.d-rail`, already hid its bar for the same
+ * reason and carries its own affordance.
  */
 * {
   scrollbar-width: none;
@@ -115,53 +92,9 @@ code {
  * Motion primitives.
  *
  * Adapted from the Beautiful UI primitive set (beautiful-ui-five.vercel.app),
- * which this interface's motion is modelled on. Nine keyframes, each with one
- * job — entrances are short and small, indeterminate states loop, and nothing
- * springs, bounces or scales past 1.
+ * which this interface's motion is modelled on. Four keyframes, each with one
+ * job: indeterminate states loop, and nothing springs, bounces or scales past 1.
  * ========================================================================== */
-
-@keyframes t-fade-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-@keyframes t-fade-up {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes t-pop-in {
-  from {
-    opacity: 0;
-    transform: scale(0.95);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
-/* Text arriving as if streamed: focus pulls in as opacity rises. */
-@keyframes t-stream-in {
-  from {
-    opacity: 0;
-    filter: blur(4px);
-  }
-  to {
-    opacity: 1;
-    filter: blur(0);
-  }
-}
 
 /* A light sweeping across a label, for work whose duration is unknown. */
 @keyframes t-shimmer {
@@ -180,12 +113,6 @@ code {
   }
   50% {
     opacity: 0;
-  }
-}
-
-@keyframes t-spin {
-  to {
-    transform: rotate(1turn);
   }
 }
 
