@@ -43,6 +43,16 @@
  * signature *is* the spending authority, and counting settlements instead would
  * make the measurement depend on a funded payer and a live facilitator, neither
  * of which the adversary needs.
+ *
+ * ## One strategy that is not about extraction
+ *
+ * C11 and C12 check the payer binding, which the audit of 19 September 2026
+ * added after finding that `openGoal` accepted any `payer` and checked nothing.
+ * They belong here rather than only in Foundry for a reason the contract tests
+ * cannot cover: the binding is per deployment, so a vault redeployed against an
+ * existing keystore starts with an empty mapping while every payer it ever
+ * minted still exists. Only a run against the live address says whether *this*
+ * vault is bound.
  */
 
 import {
@@ -357,6 +367,103 @@ async function openGoal(spec: {
   console.log(`    payer       ${payer}`);
 
   return { goalId, payer, ...spec };
+}
+
+/**
+ * C11 — capture somebody else's payer by opening a second goal for it.
+ *
+ * The attack the payer binding closed, and the only version of it that touches
+ * a deployed vault and a live signer. Until 19 September 2026 `openGoal`
+ * accepted an arbitrary `payer` and checked nothing about it: anyone could open
+ * a goal naming a payer that already held funds, supply their own budget
+ * ciphertext, their own cap and their own allowlist, and then ask the signer
+ * for an authorization spending money they had never put there.
+ *
+ * Everything that looked like a control was scoped to a goal — `perCallCap`,
+ * `callsRemaining`, the encrypted budget, the allowlist — and that scoping only
+ * bounds anything if a payer cannot appear in two goals at once. It could.
+ *
+ * ## What "held" looks like here
+ *
+ * The refusal lands at `openGoal`, before any of it. That is the point worth
+ * recording: the signer is never asked, because there is no second goal to ask
+ * about. A control that let the goal open and then refused at the signer would
+ * be a weaker control and a much longer argument, since the signer has no
+ * `goalId -> key` map to check against and `keystore.ts` says why it must not
+ * grow one.
+ *
+ * The Foundry suite covers this against a test double. What it cannot cover is
+ * a real deployment's state: the binding is per deployment, so a vault
+ * redeployed against an old keystore starts with an empty mapping while every
+ * payer it ever minted still exists. Running this against the live address is
+ * the only thing that says whether *this* vault is bound.
+ */
+async function c11PayerCapture(victim: OpenedGoal): Promise<void> {
+  /*
+   * The same shape a real attacker would send, and cheaper: a budget they
+   * choose, a cap they choose, an allowlist that is theirs. The only field
+   * copied from the victim is the one that matters.
+   */
+  const ownCiphertext = (await zap.encrypt(50_000_000n, {
+    accountAddress: user.address,
+    dappAddress: vaultAddress,
+    handleType: handleTypes.euint256,
+  })) as Hex;
+
+  const incoFee = (await publicClient.readContract({
+    address: INCO_SINGLETON,
+    abi: INCO_FEE_ABI,
+    functionName: "getFee",
+  })) as bigint;
+
+  await expectRefusal(
+    "C11",
+    "second goal opened for somebody else's payer",
+    "PolicyVault.openGoal — the payer binding",
+    "PayerAlreadyBound",
+    () =>
+      userWallet.writeContract({
+        address: vaultAddress,
+        abi,
+        functionName: "openGoal",
+        args: [
+          {
+            budgetCiphertext: ownCiphertext,
+            // Generous, because the attacker sets them and nothing in the
+            // victim's goal constrains a different goal's fields.
+            perCallCap: 50_000_000n,
+            callsRemaining: 255,
+            payer: victim.payer,
+            relay: relayAddress,
+            asset: usdcAddress,
+            expiry: BigInt(Math.floor(Date.now() / 1000) + 24 * 3600),
+            allowlist: [UNALLOWLISTED],
+          },
+        ],
+        value: incoFee,
+      }),
+  );
+
+  /*
+   * And the positive half: the payer is still bound to the goal that minted
+   * it. A refusal for the right reason and a mapping pointing somewhere else
+   * would be two different bugs wearing one error message.
+   */
+  const bound = (await publicClient.readContract({
+    address: vaultAddress,
+    abi,
+    functionName: "payerGoal",
+    args: [victim.payer],
+  })) as bigint;
+
+  record({
+    id: "C12",
+    name: "the payer is still bound to the goal that minted it",
+    targets: "PolicyVault.payerGoal",
+    expected: `payerGoal(${victim.payer.slice(0, 10)}…) == ${victim.goalId}`,
+    observed: `payerGoal returned ${bound}`,
+    verdict: bound === victim.goalId ? "held" : "deviated",
+  });
 }
 
 /**
@@ -714,6 +821,9 @@ const extractedB = await c1MaxExtraction(capBound);
 
 rule("C2, C3, C4, C8, C9, C10 — refusals");
 const replayableSeq = await refusalStrategies(refusals);
+
+rule("C11, C12 — payer capture");
+await c11PayerCapture(budgetBound);
 
 rule("C5 — idempotency");
 if (replayableSeq === undefined) {
