@@ -82,6 +82,6 @@ rofl*.utf8.log
 # repository anyway.
 LedgerLighthouse_Submission.pdf
 
-# Demo recordings: video, per-step stills and the manifest cut against them.
-# Reproducible from `pnpm record:demo`, and a single take is tens of megabytes.
+# Old demo recordings. The recorder that made them is gone, and a single take
+# is tens of megabytes, so a local copy must never reach the repository.
 recordings/

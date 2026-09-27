@@ -6,7 +6,6 @@
   "description": "Operator scripts: run one real goal against Base Sepolia and measure Inco reveal latency. Not part of the trust boundary — plays user, relay and finalizer at once.",
   "scripts": {
     "preflight": "tsx src/preflight.ts",
-    "showtime": "tsx src/showtime.ts",
     "typecheck": "tsc --noEmit",
     "state": "tsx src/vault-state.ts",
     "demo": "tsx src/demo.ts",
@@ -15,8 +14,7 @@
     "balances": "tsx src/balances.ts",
     "keygen": "tsx src/keygen.ts",
     "fund": "tsx src/fund.ts",
-    "whois": "tsx src/whois.ts",
-    "record": "tsx src/record-demo.ts"
+    "whois": "tsx src/whois.ts"
   },
   "dependencies": {
     "@inco/lightning-js": "^1.0.2",
@@ -28,7 +26,6 @@
   "devDependencies": {
     "@types/node": "^26.2.0",
     "tsx": "^4.23.11",
-    "typescript": "^5.9.2",
-    "playwright": "^1.56.0"
+    "typescript": "^5.9.2"
   }
 }
