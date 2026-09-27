@@ -25,22 +25,17 @@ import { TraceBuilder } from "@ntux402/trace";
 import {
   DEMO_GOAL_KEYS,
   findDemoGoal,
-  isGpuUpstream,
-  isSearchUpstream,
   validateQuery,
   vendorUpstreamOf,
 } from "@ntux402/shared";
 import { RateLimiter, corsHeaders, exposedWithoutToken, rejected } from "@ntux402/shared/node";
 import type { Address } from "viem";
 
-import type { DemoGoal } from "@ntux402/shared";
-
 import type { PaymentEvent, PaymentLoop, PaymentResult } from "./pay/payment-loop.js";
 import type { VaultRelay } from "./pay/relay.js";
 import { TraceStore } from "./trace-store.js";
 import type { TraceAnchorClient } from "./pay/anchor.js";
 import type { SignerClient } from "./pay/signer-client.js";
-import { LeaseRunner, type LeaseEvent } from "./pay/lease-runner.js";
 import { sweepGoal } from "./pay/sweep.js";
 
 export interface OrchestratorServerOptions {
@@ -61,16 +56,6 @@ export interface OrchestratorServerOptions {
    * the shared catalog: it is the operator's own address.
    */
   readonly vendorSearchPayee: Address | undefined;
-  /** Base URL of `services/vendor-gpu`. Absent when rentals are not configured. */
-  readonly vendorGpuUrl: string | undefined;
-  /**
-   * `VENDOR_GPU_PAYEE`, republished so the console can allowlist it.
-   *
-   * The same arrangement as the search payee, and public for the same reason:
-   * the vendor's *provider key* is fenced off from this service by
-   * `scripts/check-boundary.mjs`, and this is an address, not a credential.
-   */
-  readonly vendorGpuPayee: Address | undefined;
   readonly signerUrl: string;
   /**
    * The signer, already carrying its bearer token.
@@ -99,14 +84,6 @@ export interface OrchestratorServerOptions {
    * placeholder: "scripted" is not a model name.
    */
   readonly agentModel?: string | undefined;
-  /**
-   * How many blocks one rental run may buy, first one included.
-   *
-   * A stop that is not the budget's. Without it a rental left open renews until
-   * the goal is empty, which is a long wait and a real bill; the budget is
-   * still the interesting limit and this keeps an unattended tab bounded.
-   */
-  readonly maxLeaseBlocks?: number | undefined;
   /** Where completed traces are written. Defaults to `.traces`. */
   readonly traceDir?: string | undefined;
   readonly log?: (line: string) => void;
@@ -240,8 +217,6 @@ export function createOrchestratorServer(options: OrchestratorServerOptions): Se
             // button that 500s when the shim is not running.
             vendorSearchUrl: options.vendorSearchUrl,
             vendorSearchPayee: options.vendorSearchPayee,
-            vendorGpuUrl: options.vendorGpuUrl,
-            vendorGpuPayee: options.vendorGpuPayee,
             // Rendered in the UI so a stubbed run can never be mistaken for a real one.
             settlement: options.facilitatorUrl ? "live" : "stub",
             agent: options.agentSource,
@@ -399,9 +374,18 @@ export function createOrchestratorServer(options: OrchestratorServerOptions): Se
         // here, at the request, rather than as a fetch failure twenty seconds
         // in with a goal already debited.
         const selectedGoal = findDemoGoal(mode);
-        const missingVendor = missingVendorFor(selectedGoal, options);
-        if (missingVendor) {
-          send(res, 503, { error: missingVendor }, cors);
+        if (selectedGoal?.upstream !== undefined && options.vendorSearchUrl === undefined) {
+          send(
+            res,
+            503,
+            {
+              error:
+                `mode ${mode} is served by the live search vendor, which is not configured. ` +
+                `Fill in the live-search section of .env (see .env.example) and start ` +
+                `@ntux402/vendor-search.`,
+            },
+            cors,
+          );
           return;
         }
 
@@ -486,13 +470,12 @@ export function resourceUrlFor(ctx: {
   mode: string;
   mockApiUrl: string;
   vendorSearchUrl?: string | undefined;
-  vendorGpuUrl?: string | undefined;
   priceAtomic?: string | undefined;
   query?: string | undefined;
 }): string {
   const goal = findDemoGoal(ctx.mode);
 
-  if (goal?.upstream !== undefined && isSearchUpstream(goal.upstream)) {
+  if (goal?.upstream !== undefined) {
     const params = new URLSearchParams({
       q: ctx.query ?? goal.upstream.defaultQuery,
       tier: goal.upstream.tier,
@@ -500,198 +483,11 @@ export function resourceUrlFor(ctx: {
     return `${ctx.vendorSearchUrl}/resource/${goal.upstream.capability}?${params.toString()}`;
   }
 
-  /*
-   * A rental names a card, a duration and a workload, and never a price. The
-   * same rule the search tier enforces: a request that could dial the amount
-   * could dial what the vault is asked to approve, so the catalog supplies all
-   * three and the viewer supplies none of them.
-   *
-   * The query string is sorted by construction here — `URLSearchParams` emits
-   * insertion order — and this string becomes the x402 `resource` the vault
-   * hashes into `termsHash`, so the 402 and the paid retry both derive it from
-   * this one call and cannot disagree.
-   */
-  if (goal?.upstream !== undefined && isGpuUpstream(goal.upstream)) {
-    const params = new URLSearchParams({
-      sku: goal.upstream.sku,
-      minutes: String(goal.upstream.minutes),
-      workload: goal.upstream.workload,
-    });
-    return `${ctx.vendorGpuUrl}/resource/${goal.upstream.capability}?${params.toString()}`;
-  }
-
   // `?price=` is honoured by the mock vendor alone, and only for its overcharge
   // resource. It never reaches the policy: the amount the vault sees is
   // re-derived from the 402 that comes back.
   const query = ctx.priceAtomic ? `?price=${ctx.priceAtomic}` : "";
   return `${ctx.mockApiUrl}/resource/${ctx.mode}${query}`;
-}
-
-/**
- * Which vendor a goal needs, and whether it is configured.
- *
- * Returns the sentence to send, or undefined when the run can proceed. Said at
- * the request rather than discovered as a fetch failure twenty seconds in with
- * a goal already opened and debited.
- */
-function missingVendorFor(
-  goal: DemoGoal | undefined,
-  options: { vendorSearchUrl: string | undefined; vendorGpuUrl: string | undefined },
-): string | undefined {
-  if (goal?.upstream === undefined) return undefined;
-
-  if (isSearchUpstream(goal.upstream) && options.vendorSearchUrl === undefined) {
-    return (
-      `mode ${goal.key} is served by the live search vendor, which is not configured. ` +
-      `Fill in the live-search section of .env (see .env.example) and start ` +
-      `@ntux402/vendor-search.`
-    );
-  }
-
-  if (isGpuUpstream(goal.upstream) && options.vendorGpuUrl === undefined) {
-    return (
-      `mode ${goal.key} is served by the GPU vendor, which is not configured. ` +
-      `Fill in the GPU section of .env (see .env.example) and start @ntux402/vendor-gpu.`
-    );
-  }
-
-  return undefined;
-}
-
-/**
- * What was bought, in one word, for the trace's vendor step.
- *
- * A search has a tier and a rental has a card, and the trace has one field. It
- * carries whichever applies instead of inventing a shared vocabulary for two
- * things that have nothing in common.
- */
-function upstreamVariantOf(goal: DemoGoal | undefined): string | undefined {
-  if (goal?.upstream === undefined) return undefined;
-  return isSearchUpstream(goal.upstream) ? goal.upstream.tier : goal.upstream.sku;
-}
-
-/**
- * Commits a finished trace's root on chain, when anchoring is configured.
- *
- * Shared by both kinds of run because a rental's trace is a trace: it wants the
- * same timestamp for the same reason, and a second copy of this block would be
- * the place the two drifted.
- */
-async function anchorTrace(
-  ctx: {
-    anchors: TraceAnchorClient | undefined;
-    vaultAddress: Address;
-    goalId: bigint;
-    log: (line: string) => void;
-  },
-  trace: { root: `0x${string}`; steps: readonly unknown[] },
-  emit: (event: string, data: unknown) => void,
-): Promise<void> {
-  if (ctx.anchors === undefined) return;
-
-  const outcome = await ctx.anchors.anchor(
-    ctx.vaultAddress,
-    ctx.goalId,
-    trace.root,
-    trace.steps.length,
-  );
-  emit("anchor", outcome);
-  ctx.log(
-    outcome.kind === "anchored"
-      ? `anchored goal=${ctx.goalId} root=${trace.root} tx=${outcome.txHash}`
-      : `anchor goal=${ctx.goalId} -> ${outcome.kind}` +
-        ("reason" in outcome ? `: ${outcome.reason}` : ""),
-  );
-}
-
-/**
- * A rental run: buy a block, then keep deciding whether to keep it.
- *
- * Shares the trace builder and the SSE stream with an ordinary run, so a viewer
- * sees the same nine stages for each purchase and the lease narrative threaded
- * between them. The renewal's own `spend-requested` and `decision-finalized`
- * steps arrive through `forward` exactly as a first purchase's do — a renewal
- * is a spend like any other, and nothing about it is special to the vault.
- */
-async function streamLeaseRun(
-  res: ServerResponse,
-  ctx: OrchestratorServerOptions & {
-    goalId: bigint;
-    mode: string;
-    query?: string | undefined;
-    priceAtomic?: string | undefined;
-    traces: TraceStore;
-    log: (line: string) => void;
-  },
-  builder: TraceBuilder,
-  emit: (event: string, data: unknown) => void,
-  forward: (event: PaymentEvent) => void,
-): Promise<void> {
-  // Re-read here rather than threaded in: `streamRun` looked it up to decide
-  // which run this is, and a second parameter carrying the same lookup is a
-  // second thing that can be passed wrong.
-  const goalSpec = findDemoGoal(ctx.mode);
-
-  const onLease = (event: LeaseEvent) => {
-    // One shape on the wire and one in the trace: the console renders the
-    // event, and the builder redacts whatever lease rode along with it.
-    const { type: _leaseEventType, ...rest } = event;
-    builder.record({ type: "lease", event: event.type, ...rest });
-    emit("lease", event);
-  };
-
-  const runner = new LeaseRunner({
-    loop: ctx.loop,
-    pending: ctx.relay,
-    // Both the first purchase and every renewal come out of the same builder,
-    // so the `resource` string the vault hashes is derived one way only.
-    urlFor: (renewOf) =>
-      renewOf === undefined
-        ? resourceUrlFor(ctx)
-        : `${resourceUrlFor(ctx)}&renew=${encodeURIComponent(renewOf)}`,
-    ...(ctx.maxLeaseBlocks === undefined ? {} : { maxBlocks: ctx.maxLeaseBlocks }),
-    // From the catalog entry the URL was built from, so the agent's renewal
-    // question names the same duration the 402 is about to charge for.
-    ...(goalSpec?.upstream !== undefined && isGpuUpstream(goalSpec.upstream)
-      ? { blockMinutes: goalSpec.upstream.minutes }
-      : {}),
-    onEvent: onLease,
-    onPaymentEvent: forward,
-  });
-
-  let outcome: Awaited<ReturnType<LeaseRunner["run"]>>;
-  try {
-    outcome = await runner.run(ctx.goalId);
-  } catch (e) {
-    emit("error", { message: e instanceof Error ? e.message : String(e) });
-    res.end();
-    return;
-  }
-
-  ctx.log(
-    `lease run goal=${ctx.goalId} blocks=${outcome.blocks} ended=${outcome.ended}` +
-      (outcome.detail ? ` (${outcome.detail})` : ""),
-  );
-
-  const trace = builder.build();
-  ctx.traces.save(ctx.goalId.toString(), trace);
-  await anchorTrace(ctx, trace, emit);
-
-  /*
-   * `lease-done` rather than `result`, and the distinction is not cosmetic. An
-   * ordinary run ends in one `PaymentResult`; a rental ends in a sequence of
-   * them, and the thing worth reporting is how the sequence ended. Flattening
-   * it into the single-purchase shape would have to pick one of several
-   * purchases to stand for the run.
-   */
-  emit("lease-done", {
-    kind: outcome.ended,
-    blocks: outcome.blocks,
-    ...(outcome.lease ? { lease: outcome.lease } : {}),
-    ...(outcome.detail ? { detail: outcome.detail } : {}),
-  });
-  emit("trace", trace);
-  res.end();
 }
 
 async function streamRun(
@@ -740,20 +536,6 @@ async function streamRun(
   const url = resourceUrlFor(ctx);
   ctx.log(`POST /runs goal=${ctx.goalId} mode=${ctx.mode} -> ${url}`);
 
-  /*
-   * A rentable lease takes the renewal loop instead of one purchase.
-   *
-   * This is the run the architecture was built for. One `fetchPaid` is a single
-   * decision — buy this or do not. A lease is a sequence of them against a
-   * running total nobody in this process can read, and it ends when the budget
-   * says so rather than when the agent decides it has had enough.
-   */
-  const goalSpec = findDemoGoal(ctx.mode);
-  if (goalSpec?.upstream !== undefined && goalSpec.upstream.capability === "gpu/lease") {
-    await streamLeaseRun(res, ctx, builder, emit, forward);
-    return;
-  }
-
   // Scoped to this run, not registered on the shared loop. `subscribe()` is
   // process-wide, so two concurrent runs would each receive the other's events
   // and each trace would record both goals.
@@ -794,9 +576,7 @@ async function streamRun(
       builder.record({
         type: "vendor-upstream",
         capability: goal?.upstream?.capability ?? "unknown",
-        // "tier" is the search vendor's word. A rental has a card instead, and
-        // the field carries whichever of the two names what was bought.
-        tier: upstreamVariantOf(goal) ?? "unknown",
+        tier: goal?.upstream?.tier ?? "unknown",
         ...upstream,
       });
       if (
@@ -830,7 +610,21 @@ async function streamRun(
    * the run. The money has moved and the record exists; losing the commitment
    * is not a reason to report the run as broken.
    */
-  await anchorTrace(ctx, trace, emit);
+  if (ctx.anchors) {
+    const outcome = await ctx.anchors.anchor(
+      ctx.vaultAddress,
+      ctx.goalId,
+      trace.root,
+      trace.steps.length,
+    );
+    emit("anchor", outcome);
+    ctx.log(
+      outcome.kind === "anchored"
+        ? `anchored goal=${ctx.goalId} root=${trace.root} tx=${outcome.txHash}`
+        : `anchor goal=${ctx.goalId} -> ${outcome.kind}` +
+          ("reason" in outcome ? `: ${outcome.reason}` : ""),
+    );
+  }
 
   emit("result", result);
   emit("trace", trace);

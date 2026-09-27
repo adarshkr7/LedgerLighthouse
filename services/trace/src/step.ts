@@ -43,20 +43,6 @@ export type StepType =
    * verifiability it does not have.
    */
   | "vendor-upstream"
-  /**
-   * The lease lifecycle: opened, renewed, refused, ended.
-   *
-   * **Vendor-attested**, like `vendor-upstream`, and for a narrower reason than
-   * it looks. The chain facts a renewal produces — the decision handle, the
-   * commit — are already in the `spend-requested` and `decision-finalized`
-   * steps the payment loop emits for that same renewal, attested there and
-   * re-checkable against Base Sepolia. What is left here is the vendor's word:
-   * which lease, when it expires, how many blocks it has run.
-   *
-   * So a `lease` step adds narrative and no evidence, and it must not carry a
-   * `StepAttestation` claiming otherwise. `VENDOR_ATTESTED_STEPS` enforces that.
-   */
-  | "lease"
   | "failed";
 
 /**
@@ -66,7 +52,7 @@ export type StepType =
  * `StepAttestation`. Kept as data rather than a comment so adding a type forces
  * a decision about which side of that line it falls on.
  */
-export const VENDOR_ATTESTED_STEPS: readonly StepType[] = ["vendor-upstream", "lease"];
+export const VENDOR_ATTESTED_STEPS: readonly StepType[] = ["vendor-upstream"];
 
 /**
  * The three fields that make a payment step independently verifiable by someone
