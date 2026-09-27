@@ -29,7 +29,7 @@ import {
   type DemoGoal,
 } from "@ntux402/shared";
 
-import { Copyable, Dot, Field, Ring, truncate } from "./dashboard/primitives.js";
+import { Copyable, Field, Ring, truncate } from "./dashboard/primitives.js";
 import { Timeline } from "./dashboard/Timeline.js";
 import { EvidenceBody, GuaranteeList, Outcome, evidenceCount } from "./dashboard/panels.js";
 import { Modal } from "./dashboard/Modal.js";
@@ -801,35 +801,14 @@ export default function App() {
       <header className="d-top">
         <span className="d-top-brand">LedgerLighthouse</span>
 
-        <span className="d-top-live">
-          <Dot tone={isConnected && !wrongChain ? "live" : "idle"} />
-          {isConnected && !wrongChain ? "Live" : "Idle"}
-        </span>
-
-        <span
-          className="d-top-live"
-          title={
-            inco?.status === "unavailable"
-              ? `Inco cannot reveal decisions right now: ${inco.detail}`
-              : inco?.status === "ready"
-                ? `Inco answered in ${(inco.latencyMs / 1000).toFixed(1)}s`
-                : "Checking whether Inco can reveal decisions"
-          }
-        >
-          <Dot tone={inco?.status === "ready" ? "live" : incoDown ? "down" : "idle"} />
-          {inco?.status === "ready" ? "Inco ready" : incoDown ? "Inco unavailable" : "Inco"}
-        </span>
-
         <ol className="d-rail" aria-label="Demo progress">
           {steps.map((step) => (
             <li key={step.key} className="d-rail-step" data-state={step.state}>
+              {/* The label's colour carries the state: accent when done, a
+                  sweep crossing it while this is the step you can act on,
+                  uncoloured when still blocked. Colour alone is not read
+                  out, so `.d-sr` below is what assistive tech gets. */}
               <span className="d-rail-label">{step.label}</span>
-              {/* The bar carries the state: filled when done, sweeping while
-                  this is the step you can act on, empty when still blocked.
-                  Decorative — `.d-sr` below is what assistive tech reads. */}
-              <span className="d-rail-bar" aria-hidden="true">
-                <i />
-              </span>
               <span className="d-sr">{step.state}</span>
             </li>
           ))}
@@ -877,61 +856,98 @@ export default function App() {
       </header>
 
       {/* ============================================================= FRAME
-          Exactly one viewport tall, and it never scrolls. Each pane owns its
-          own overflow, so a long timeline scrolls inside its column instead
-          of pushing the goal state or the controls off screen. */}
+          Exactly one viewport tall, and it never scrolls. The goal sits in a
+          strip across the top, where its handful of facts use the width
+          instead of a whole column of height. The two live panes share
+          everything below it, and each owns its own overflow, so a long
+          timeline scrolls inside its column instead of pushing the controls
+          off screen. */}
       <div className="d-frame">
         {/* -------------------------------------------------- goal & payer */}
-        <section className="d-pane">
-          <header className="d-pane-head">
-            <h2>Goal &amp; payer</h2>
-            {goalId ? (
-              <button type="button" className="d-link" onClick={() => setModal("goal")}>
-                Details
-              </button>
-            ) : null}
-          </header>
+        <section className="d-pane d-strip" aria-label="Goal and payer">
+          {goalId ? (
+            <>
+              <Ring
+                spent={spent}
+                funded={funding}
+                size={84}
+                caption="Share of the funded payer balance already spent"
+              />
 
-          <div className="d-pane-body">
-            {goalId ? (
-              <>
-                <Ring
-                  spent={spent}
-                  funded={funding}
-                  caption="Share of the funded payer balance already spent"
-                />
-                <p className="d-caption d-centre">
+              <div className="d-strip-title">
+                <div className="d-strip-head">
+                  <h2>Goal #{goalId}</h2>
+                  <button type="button" className="d-link" onClick={() => setModal("goal")}>
+                    Details
+                  </button>
+                </div>
+                <p className="d-caption">
                   Of the funded payer balance. The encrypted budget itself is not readable — by
                   anyone, including this page.
                 </p>
+              </div>
 
-                <Field label="Goal">#{goalId}</Field>
-                <Field label="Remaining budget">
-                  <span className="d-cipher">encrypted · </span>
+              <div className="d-stats">
+                <div className="d-stat">
+                  <span className="d-label">Remaining budget</span>
+                  <span className="d-stat-value d-cipher">encrypted</span>
                   {budgetHandle ? (
-                    <Copyable value={budgetHandle} display={truncate(budgetHandle, 8, 6)} />
+                    <span className="d-stat-sub">
+                      <Copyable value={budgetHandle} display={truncate(budgetHandle, 6, 4)} />
+                    </span>
                   ) : (
-                    <span className="d-muted">unavailable on a resumed goal</span>
+                    <span className="d-stat-sub">unavailable on a resumed goal</span>
                   )}
-                </Field>
-                <Field label="Payer">
+                </div>
+                <div className="d-stat">
+                  <span className="d-label">Payer</span>
                   {payer ? (
-                    <Copyable
-                      value={payer}
-                      display={truncate(payer, 8, 6)}
-                      href={explorer.address(payer)}
-                    />
+                    <span className="d-stat-value">
+                      <Copyable
+                        value={payer}
+                        display={truncate(payer, 6, 4)}
+                        href={explorer.address(payer)}
+                      />
+                    </span>
                   ) : (
-                    <span className="d-muted">not minted</span>
+                    <span className="d-stat-value d-muted">not minted</span>
                   )}
-                </Field>
-                <Field label="Spent this session">{formatUsdc(spent)} USDC</Field>
+                </div>
+                <div className="d-stat">
+                  <span className="d-label">Spent this session</span>
+                  <span className="d-stat-value">{formatUsdc(spent)} USDC</span>
+                </div>
+              </div>
+
+              {/* The next step first, and the way out under it. */}
+              <div className="d-strip-actions">
+                {!funded ? (
+                  underfunded ? (
+                    <div className="d-notice">
+                      No test USDC — this account holds {formatUsdc(usdcBalance ?? 0n)}. Get some
+                      from the{" "}
+                      <a href="https://faucet.circle.com" target="_blank" rel="noreferrer">
+                        Circle faucet
+                      </a>
+                      . The malicious run works without it.
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      className="d-btn d-btn-block"
+                      disabled={!!busy}
+                      onClick={fundPayer}
+                    >
+                      Fund {formatUsdc(funding)} USDC
+                    </button>
+                  )
+                ) : null}
 
                 {/*
                   The way out. Placed here rather than in the goal dialog
-                  because it is about the balance shown directly above it, and
-                  because "how do I get my money back" should not require
-                  finding a dialog first.
+                  because it is about the balance shown beside it, and because
+                  "how do I get my money back" should not require finding a
+                  dialog first.
                 */}
                 {returned ? (
                   <div className="d-returned">
@@ -955,40 +971,24 @@ export default function App() {
                     {closed ? "Return remaining funds" : "Close goal · return funds"}
                   </button>
                 )}
-
-                {!funded ? (
-                  underfunded ? (
-                    <div className="d-notice">
-                      No test USDC — this account holds {formatUsdc(usdcBalance ?? 0n)}. Get some
-                      from the{" "}
-                      <a href="https://faucet.circle.com" target="_blank" rel="noreferrer">
-                        Circle faucet
-                      </a>
-                      . The malicious run works without it.
-                    </div>
-                  ) : (
-                    <button
-                      type="button"
-                      className="d-btn d-btn-block"
-                      disabled={!!busy}
-                      onClick={fundPayer}
-                    >
-                      Fund {formatUsdc(funding)} USDC
-                    </button>
-                  )
-                ) : null}
-              </>
-            ) : (
-              /* No goal yet. Everything it takes to open one is a dialog away
-                 rather than inline: it is four controls used once, and it
-                 would otherwise be the largest thing in the frame for the
-                 entire rest of the session. */
-              <div className="d-empty">
+              </div>
+            </>
+          ) : (
+            /* No goal yet. Everything it takes to open one is a dialog away
+               rather than inline: it is four controls used once, and it would
+               otherwise be the largest thing in the frame for the entire rest
+               of the session. The dashed ring holds the place the real one
+               will take, so the strip does not change shape when it arrives. */
+            <>
+              <span className="d-ring-ghost" aria-hidden="true" />
+              <div className="d-strip-title">
                 <p className="d-empty-lead">No goal open.</p>
                 <p className="d-caption">
                   A run spends against an encrypted budget. Open one to begin — it costs one wallet
                   signature.
                 </p>
+              </div>
+              <div className="d-strip-actions">
                 <button
                   type="button"
                   className="d-btn d-btn-block"
@@ -997,20 +997,8 @@ export default function App() {
                   Set up a goal
                 </button>
               </div>
-            )}
-
-            {configError ? (
-              <div className="d-notice" data-tone="error">
-                <strong>No orchestrator on {ORCHESTRATOR_URL}.</strong>
-                <p>
-                  The web dev server does not start the backing services. Run{" "}
-                  <code>pnpm dev</code> from the repo root — it brings up the signer, mock API and
-                  orchestrator alongside this page.
-                </p>
-                <p className="d-notice-detail">{configError}</p>
-              </div>
-            ) : null}
-          </div>
+            </>
+          )}
         </section>
 
         {/* ------------------------------------------------ live execution */}
@@ -1030,27 +1018,36 @@ export default function App() {
           </header>
 
           <div className="d-pane-body">
-            <div className="d-launch">
-              <GoalPicker
-                selected={resource}
-                disabled={!!busy}
-                onSelect={(goal) => {
-                  setResource(goal);
-                  resetDemo();
-                }}
-              />
-              <p className="d-expectation" data-kind={resource.kind}>
-                {resource.expectation}
-              </p>
+            {configError ? (
+              <div className="d-notice" data-tone="error">
+                <strong>No orchestrator on {ORCHESTRATOR_URL}.</strong>
+                <p>
+                  The web dev server does not start the backing services. Run{" "}
+                  <code>pnpm dev</code> from the repo root — it brings up the signer, mock API and
+                  orchestrator alongside this page.
+                </p>
+                <p className="d-notice-detail">{configError}</p>
+              </div>
+            ) : null}
 
+            <div className="d-launch">
+              {/* One command row: what to buy, then buy it. */}
               <div className="d-controls">
+                <GoalPicker
+                  selected={resource}
+                  disabled={!!busy}
+                  onSelect={(goal) => {
+                    setResource(goal);
+                    resetDemo();
+                  }}
+                />
                 <button
                   type="button"
                   className="d-btn"
                   disabled={!goalId || closed || !!busy || incoDown}
                   onClick={() => run(resource)}
                 >
-                  Buy {resource.label} · {formatUsdc(requestedPrice)} USDC
+                  Buy · {formatUsdc(requestedPrice)} USDC
                 </button>
                 <button
                   type="button"
@@ -1061,6 +1058,9 @@ export default function App() {
                   Reset
                 </button>
               </div>
+              <p className="d-expectation" data-kind={resource.kind}>
+                {resource.expectation}
+              </p>
               {!goalId ? (
                 <p className="d-hint">Open a goal first — a run spends against its budget.</p>
               ) : null}
@@ -1139,10 +1139,13 @@ export default function App() {
             {started ? (
               <ModelInput events={events} running={running} model={config?.agentModel} />
             ) : (
-              <p className="d-caption">
-                The vendor&apos;s own words land here once a run starts — including the ones written
-                to talk the agent into paying.
-              </p>
+              <div className="d-empty">
+                <p className="d-empty-lead">Nothing read yet.</p>
+                <p className="d-caption">
+                  The vendor&apos;s own words land here once a run starts — including the ones
+                  written to talk the agent into paying.
+                </p>
+              </div>
             )}
           </div>
         </section>
@@ -1317,33 +1320,35 @@ export default function App() {
             for a goal opened in another session. There is still no goal title:
             the record has no such field, so there is nothing to read and the
             dialog is titled by id instead. */}
-        <Field label="Opened with">
-          {openedHere ? (
-            `${formatUsdc(budget)} USDC`
-          ) : (
-            // A resumed goal was opened elsewhere; this session never saw its
-            // budget and must not imply otherwise.
-            <span className="d-muted">set in another session</span>
-          )}
-        </Field>
-        <Field label="Per-call cap">{formatUsdc(PER_CALL_CAP)} USDC · public</Field>
-        <Field label="Calls remaining">
-          {goalState ? (
-            `${goalState.callsRemaining} of ${CALLS_REMAINING}`
-          ) : (
-            <span className="d-muted">unavailable</span>
-          )}
-        </Field>
-        <Field label="Expiry">
-          {goalState ? (
-            formatExpiry(goalState.expiry)
-          ) : (
-            <span className="d-muted">unavailable</span>
-          )}
-        </Field>
-        <Field label="Last funded">
-          {funded ? `${formatUsdc(funding)} USDC` : <span className="d-muted">—</span>}
-        </Field>
+        <div className="d-fields">
+          <Field label="Opened with">
+            {openedHere ? (
+              `${formatUsdc(budget)} USDC`
+            ) : (
+              // A resumed goal was opened elsewhere; this session never saw its
+              // budget and must not imply otherwise.
+              <span className="d-muted">set in another session</span>
+            )}
+          </Field>
+          <Field label="Per-call cap">{formatUsdc(PER_CALL_CAP)} USDC · public</Field>
+          <Field label="Calls remaining">
+            {goalState ? (
+              `${goalState.callsRemaining} of ${CALLS_REMAINING}`
+            ) : (
+              <span className="d-muted">unavailable</span>
+            )}
+          </Field>
+          <Field label="Expiry">
+            {goalState ? (
+              formatExpiry(goalState.expiry)
+            ) : (
+              <span className="d-muted">unavailable</span>
+            )}
+          </Field>
+          <Field label="Last funded">
+            {funded ? `${formatUsdc(funding)} USDC` : <span className="d-muted">—</span>}
+          </Field>
+        </div>
         <p className="d-caption">
           The funded payer balance is the maximum autonomous spend. The encrypted budget bounds it
           further, and nobody — including this page — can read that number.

@@ -17,15 +17,12 @@ export function Field({ label, children }: { label: string; children: ReactNode 
   );
 }
 
-export function Dot({ tone = "live" }: { tone?: "live" | "idle" | "down" }) {
-  return <span className="d-dot" data-tone={tone} aria-hidden="true" />;
-}
-
 /**
  * Copy-to-clipboard with an inline confirmation.
  *
  * A hash you cannot copy is decoration, and a `title` tooltip is not reachable
- * by keyboard — so this is a real button with a visible label change.
+ * by keyboard. So this is a real button, and its icon turns to a check when
+ * the copy lands.
  */
 export function Copyable({
   value,
@@ -63,12 +60,51 @@ export function Copyable({
       <button
         type="button"
         className="d-copy-btn"
+        data-copied={copied ? "" : undefined}
         onClick={copy}
         aria-label={copied ? "Copied" : `Copy ${value}`}
+        title={copied ? "Copied" : "Copy"}
       >
-        {copied ? "copied" : "copy"}
+        {copied ? <CheckIcon /> : <CopyIcon />}
       </button>
     </span>
+  );
+}
+
+function CopyIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="13"
+      height="13"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <rect x="9" y="9" width="12" height="12" rx="2.5" />
+      <path d="M5 15H4.5A1.5 1.5 0 0 1 3 13.5v-9A1.5 1.5 0 0 1 4.5 3h9A1.5 1.5 0 0 1 15 4.5V5" />
+    </svg>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="13"
+      height="13"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="m5 12.5 4.5 4.5L19 7.5" />
+    </svg>
   );
 }
 
@@ -109,10 +145,13 @@ export function Ring({
   spent,
   funded,
   caption,
+  size = 110,
 }: {
   spent: bigint;
   funded: bigint;
   caption: string;
+  /** Rendered diameter in px. The drawing scales with it, stroke included. */
+  size?: number;
 }) {
   const pct = funded === 0n ? 0 : Number((spent * 10_000n) / funded) / 100;
   const clamped = Math.max(0, Math.min(100, pct));
@@ -122,7 +161,7 @@ export function Ring({
 
   return (
     <div className="d-ring">
-      <svg viewBox="0 0 110 110" width="110" height="110" role="img" aria-label={caption}>
+      <svg viewBox="0 0 110 110" width={size} height={size} role="img" aria-label={caption}>
         <circle cx="55" cy="55" r={r} className="d-ring-track" />
         <circle
           cx="55"

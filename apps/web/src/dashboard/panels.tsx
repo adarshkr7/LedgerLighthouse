@@ -158,32 +158,37 @@ export function EvidenceBody({
 
   return (
     <>
-      <Field label="Decision handle">
-        {spend ? (
-          <Copyable value={spend.spend.decisionHandle} display={truncate(spend.spend.decisionHandle)} />
-        ) : (
-          <span className="d-muted">—</span>
-        )}
-      </Field>
-      <Field label="Terms hash">
-        {spend ? (
-          <Copyable value={spend.spend.termsHash} display={truncate(spend.spend.termsHash)} />
-        ) : (
-          <span className="d-muted">—</span>
-        )}
-      </Field>
-      <Field label="Validity window">
-        {spend ? (
-          <span className="d-mono">
-            {spend.spend.validAfter} .. {spend.spend.validBefore}
-          </span>
-        ) : (
-          <span className="d-muted">—</span>
-        )}
-      </Field>
-      <TxLink label="Commit tx" hash={spend?.spend.commitTx} />
-      <TxLink label="Finalize tx" hash={finalized?.txHash} />
-      <TxLink label="Settlement tx" hash={settled?.settlement.transaction} />
+      <div className="d-fields">
+        <Field label="Decision handle">
+          {spend ? (
+            <Copyable
+              value={spend.spend.decisionHandle}
+              display={truncate(spend.spend.decisionHandle)}
+            />
+          ) : (
+            <span className="d-muted">—</span>
+          )}
+        </Field>
+        <Field label="Terms hash">
+          {spend ? (
+            <Copyable value={spend.spend.termsHash} display={truncate(spend.spend.termsHash)} />
+          ) : (
+            <span className="d-muted">—</span>
+          )}
+        </Field>
+        <Field label="Validity window">
+          {spend ? (
+            <span className="d-mono">
+              {spend.spend.validAfter} .. {spend.spend.validBefore}
+            </span>
+          ) : (
+            <span className="d-muted">—</span>
+          )}
+        </Field>
+        <TxLink label="Commit tx" hash={spend?.spend.commitTx} />
+        <TxLink label="Finalize tx" hash={finalized?.txHash} />
+        <TxLink label="Settlement tx" hash={settled?.settlement.transaction} />
+      </div>
       {settled?.settlement.simulated ? (
         <p className="d-caption">
           Settlement was stubbed — the payload was validated but no USDC moved.
