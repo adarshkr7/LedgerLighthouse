@@ -114,6 +114,42 @@ for (const [i, service] of services.entries()) {
   });
 }
 
+// Once the orchestrator answers, diagnose everything once and print only the
+// summary. A misconfigured signer, a stale vault or Inco being down is then on
+// screen before the first click rather than found during a run. DEV_DIAGNOSE=0
+// turns it off.
+if (process.env.DEV_DIAGNOSE !== "0") {
+  const orchestrator = `http://127.0.0.1:${config.ORCHESTRATOR_PORT ?? 8404}/health`;
+  const label = `${DIM}${"diagnose".padEnd(width)}${OFF} ${DIM}│${OFF} `;
+  const started = Date.now();
+  const waitThenDiagnose = async () => {
+    while (Date.now() - started < 120_000) {
+      const up = await fetch(orchestrator, { signal: AbortSignal.timeout(2_000) }).then((r) => r.ok, () => false);
+      if (up) break;
+      await new Promise((resolve) => setTimeout(resolve, 2_000));
+    }
+    const child = spawn("pnpm --filter @ntux402/e2e run diagnose", {
+      cwd: repoRoot,
+      shell: true,
+      stdio: ["ignore", "pipe", "pipe"],
+      env: { ...process.env, DIAGNOSE_QUIET: "1" },
+    });
+    children.push(child);
+    let buffer = "";
+    child.stdout.setEncoding("utf8");
+    child.stdout.on("data", (chunk) => {
+      buffer += chunk;
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+      for (const line of lines) {
+        if (line.trim() === "" || line.startsWith("$ ") || line.startsWith("> ")) continue;
+        process.stdout.write(`${label}${line}\n`);
+      }
+    });
+  };
+  void waitThenDiagnose();
+}
+
 // `shell: true` means each child is a shell wrapping pnpm wrapping node. On
 // Windows, killing the shell orphans the node grandchild, which keeps its port
 // and greets the next `pnpm dev` with EADDRINUSE. Kill the tree, not the shell.
