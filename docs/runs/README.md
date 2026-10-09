@@ -5,6 +5,71 @@ Kept because a demo that depends on a venue's wifi is a demo with a single point
 of failure — and because a transaction hash is checkable by someone who does not
 trust us, which a live walkthrough is not.
 
+## 9 October 2026: the encrypted cap
+
+The per-call cap used to be public, so every vendor could read the most a single call would pay
+and price to it. It is now encrypted like the budget and compared inside Inco. That needed a new
+vault: PolicyVault
+[`0x052E…feD8`](https://sepolia.basescan.org/address/0x052E52a28AA15e0B556de4FCe3d0BEBb7EB4feD8)
+([deploy](https://sepolia.basescan.org/tx/0x6960e625cc7bf16fc361b43f95f70356458ab671c15b2c09c65589352cbeceff)).
+The enclave signer from the next section was rebound to it by changing its `POLICY_VAULT_ADDRESS`
+secret and restarting the machine. The previous vault's payers held no USDC by then.
+
+The rebinding was itself a small test of the boot diagnostics. The first attempt removed the old
+secret and failed to set the new one, and the enclave booted without it. `/health` answered
+`boot-failed`, stage `configuration`, `Missing POLICY_VAULT_ADDRESS`, and the second attempt
+fixed it.
+
+What it costs, against the public-cap vault's runs above:
+
+| | Public cap | Encrypted cap |
+| --- | --- | --- |
+| `openGoal` (demo goal) | 429,262 gas, one Inco fee | 532,474 gas, two Inco fees |
+| `requestSpend` | 296,539 gas | 320,563 gas |
+| `finalizeDecision` | unchanged | unchanged |
+
+### `tee-check-2026-10-09-encrypted-cap-passing.log`
+
+Inco alone, no signer, no USDC. Goal 2: a spend inside the budget approved, a spend past the
+remaining budget but under the cap rejected, and a flipped plaintext refused by on-chain
+verification for each. The first attempt on this vault exposed two bugs in the script, fixed
+before this run: it reused one payer address, so it could pass only once per vault before
+`PayerAlreadyBound`, and it sent `requestSpend` before the RPC could see the new goal. That
+first attempt left goal 1 open with no funds.
+
+### `demo-2026-10-09-encrypted-cap-passing.log`
+
+Exit code 0, goal 3, live settlement, the live model deciding, the payer `0x2F8846E2…EfB7c`
+minted in the enclave.
+
+| | Run 1, honest | Run 2, overcharge |
+| --- | --- | --- |
+| Agent decision | proceed | proceed |
+| `finalizeDecision` | [APPROVED](https://sepolia.basescan.org/tx/0xb02680dc22434f4790fac4970f7c788e99327eeab567ceb3af26f0f64220f539) | [REJECTED](https://sepolia.basescan.org/tx/0x4677afbb85a21feb935b5a160685270d560506f7894d865ea140060afd365fd2) |
+| Signed in the enclave | 0.01 USDC | nothing |
+| Settlement | [settled](https://sepolia.basescan.org/tx/0x959d9492a00b9fd5ceb931f69bac45d923c1f7c482a52c0959c6dc6fbea16eda) | none |
+| Payer balance | 0.45 → 0.44 | 0.44 → 0.44 |
+
+The demo's cap is 6.00 USDC, far above both prices, so run 2 was refused by the budget, as before.
+
+### `adversary-2026-10-09-encrypted-cap-passing.log`
+
+Exit code 0, goals 10 to 12. Fourteen strategies: thirteen held, none deviated, and C6 is
+inconclusive as always. Eighteen transactions are linked under the findings.
+
+C13 is new. It asks one unit over the cap, 0.100001 USDC, on the cap-bound goal while its budget
+(1.00) and call count (2) both allow the ask, so only the encrypted cap can refuse it. It was
+[committed](https://sepolia.basescan.org/tx/0xe079da1cff6661ced1a05f5038be6f9a393789d70e6cf993172c998ef0ec3e79)
+and [rejected on chain](https://sepolia.basescan.org/tx/0xa68278bcf6a0a7b94a3cee0b3910a15a153bcf56e8ab373a1004da8087ad1237).
+C1 then extracted exactly 0.20 from the same goal, so the rejection consumed no call and no
+budget.
+
+An earlier run of the same campaign had C8 inconclusive: the replayed attestation was refused
+with `UnknownSpend` rather than `InvalidAttestation`, because the relay sent `finalizeDecision`
+straight after its commit and a lagging RPC node had not seen the spend. The relay now waits until
+the spend is readable before returning from `requestSpend`, and C8 is back to
+`InvalidAttestation`.
+
 ## 9 October 2026: the signer in the enclave
 
 The runs below used the Authorization Signer inside an Oasis ROFL TDX enclave, app

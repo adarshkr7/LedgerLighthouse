@@ -1,0 +1,70 @@
+$ tsx src/tee-check.ts
+
+--- preflight -----------------------------------------------------
+
+  pass  chain                             84532
+  pass  vault                             0x052E52a28AA15e0B556de4FCe3d0BEBb7EB4feD8
+  pass  user (pays the Inco fee)          0x28384D2aBD29cc57E495784ed6f2711b7Ce376B8  0.034475582658817995 ETH
+  pass  relay (gas only)                  0x25e0a349480f32A474bdf24c1c7956c2F919e825  0.004578584923429573 ETH
+  pass  Inco executor deployed            0x4b9911b0191B0b6a6eA8F2Ed562e20Cff5AC8624
+  pass  Inco fee                          0.000001 ETH per encrypted input
+
+--- 1. encrypt the budget client-side -----------------------------
+
+  pass  encrypted                         0.1 USDC in 33ms
+  pass  ciphertext is opaque              2634 hex chars
+
+--- 2. open a goal — ciphertext becomes an on-chain handle --------
+
+  pass  openGoal confirmed                1.77s  gas 462478
+  pass  goalId                            2
+  pass  goal visible to the RPC           payerGoal = 2
+  pass  budget handle                     0x4cfb9ac6fb8c70a20b00c660e1e942c4b2136802652fd2560ff3655196000800
+
+  The handle above is the whole point: it is what the chain stores instead
+  of 0.1. Reading it back tells you nothing.
+
+--- 3. spend 0.04 — inside the encrypted budget -------------------
+
+  pass  requestSpend confirmed            1.55s  gas 320646
+  pass  decision handle                   0x3a41493338c911eacb621a177155ac997fcedc52d6d73823ff1993e3e9d60000
+        committed — and at this moment nobody, including this script, knows the answer
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x3a41493338c911eacb621a177155ac997fcedc52d6d73823ff1993e3e9d60000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x3a41493338c911eacb621a177155ac997fcedc52d6d73823ff1993e3e9d60000 not found, it might not have been processed yet, try again later
+  pass  attestedReveal                    true in 3.62s (1 attempt), 2 signatures
+  pass  decision is true                  
+  pass  flipped plaintext is rejected     claimed false, on-chain verification refused it
+  pass  finalizeDecision confirmed        1.81s  gas 106817
+  pass  on-chain isApproved agrees        true
+
+--- 4. spend 0.09 — inside the cap, past the budget ---------------
+
+  The encrypted cap is 6.0 and the payee is allowlisted, so only
+  the budget can refuse this. The enclave already debited 0.04,
+  leaving 0.06 — a figure this process never saw.
+
+  pass  requestSpend confirmed            1.53s  gas 320634
+  pass  decision handle                   0x2836722a03b791baee5eaafb6988da1167d9f32e1624221669275d9d49fc0000
+        committed — and at this moment nobody, including this script, knows the answer
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x2836722a03b791baee5eaafb6988da1167d9f32e1624221669275d9d49fc0000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x2836722a03b791baee5eaafb6988da1167d9f32e1624221669275d9d49fc0000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x2836722a03b791baee5eaafb6988da1167d9f32e1624221669275d9d49fc0000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x2836722a03b791baee5eaafb6988da1167d9f32e1624221669275d9d49fc0000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x2836722a03b791baee5eaafb6988da1167d9f32e1624221669275d9d49fc0000 not found, it might not have been processed yet, try again later
+  pass  attestedReveal                    false in 8.08s (1 attempt), 2 signatures
+  pass  decision is false                 
+  pass  flipped plaintext is rejected     claimed true, on-chain verification refused it
+  pass  finalizeDecision confirmed        1.89s  gas 101404
+  pass  on-chain isApproved agrees        false
+
+--- 5. close the goal ---------------------------------------------
+
+  pass  closeGoal confirmed               gas 30008
+
+--------------------------------------------------------------
+
+  Inco TEE round trip verified: encryption in, attested decryption out,
+  both decisions checked on chain, goal 2 closed.
+
+  https://sepolia.basescan.org/address/0x052E52a28AA15e0B556de4FCe3d0BEBb7EB4feD8
+

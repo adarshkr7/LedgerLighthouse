@@ -17,10 +17,10 @@ Base Sepolia, chain id `84532`.
 
 | Contract | Address | Deployment tx |
 |---|---|---|
-| `PolicyVault` | [`0x518B8701484ba99A38f60090cd4a2cc710d3522c`](https://sepolia.basescan.org/address/0x518B8701484ba99A38f60090cd4a2cc710d3522c) | [`0xc7926dc0…fb300b`](https://sepolia.basescan.org/tx/0xc7926dc0110604ec1a8cec636343a2d344f1c29a3754f9ad8e86ff4c80fb300b) |
+| `PolicyVault` | [`0x052E52a28AA15e0B556de4FCe3d0BEBb7EB4feD8`](https://sepolia.basescan.org/address/0x052E52a28AA15e0B556de4FCe3d0BEBb7EB4feD8) | [`0x6960e625…eceff`](https://sepolia.basescan.org/tx/0x6960e625cc7bf16fc361b43f95f70356458ab671c15b2c09c65589352cbeceff) |
 | `TraceAnchor` | [`0x065d5E16160159cAB7D841818aBc92b4E85D5818`](https://sepolia.basescan.org/address/0x065d5E16160159cAB7D841818aBc92b4E85D5818) | [`0x068c2d88…2f9900`](https://sepolia.basescan.org/tx/0x068c2d8883bfe2a294164da805274905aa33c85f2a68a27ab1c06892972f9900) |
 
-The PolicyVault was redeployed on 9 October 2026. The previous one, [`0x0C759D06…F15921`](https://sepolia.basescan.org/address/0x0C759D06a1c14F43852D7b078Db2f8C342F15921), was deployed before each payer was bound to one goal (`48805e9`), and the adversary campaign's payer-capture attack succeeded against it. Runs logged before that date used the old vault. The new vault is not yet source-verified on Basescan; TraceAnchor is.
+The PolicyVault was redeployed twice on 9 October 2026. [`0x0C759D06…F15921`](https://sepolia.basescan.org/address/0x0C759D06a1c14F43852D7b078Db2f8C342F15921) was deployed before each payer was bound to one goal (`48805e9`), and the adversary campaign's payer-capture attack succeeded against it. [`0x518B8701…3522c`](https://sepolia.basescan.org/address/0x518B8701484ba99A38f60090cd4a2cc710d3522c) added the binding but kept the per-call cap public. The current vault encrypts the cap (§5.1). Each log in `docs/runs` names the vault it ran against. The current vault is not yet source-verified on Basescan; TraceAnchor is.
 
 Settlement asset: USDC at [`0x036CbD53842c5426634e7929541eC2318f3dCF7e`](https://sepolia.basescan.org/address/0x036CbD53842c5426634e7929541eC2318f3dCF7e).
 
@@ -129,6 +129,10 @@ the 402. The bound is the conjunction of `perCallCap`, the allowlist and `callsR
 loss ceiling = perCallCap × callsRemaining, paid only to an allowlisted payee
 ```
 
+The cap is encrypted, so a compromised orchestrator does not know this ceiling either. Each
+approved amount tells it the cap is at least that much. A rejection with calls left does not say
+whether the budget or the cap refused it.
+
 Every term there is scoped to one goal, so the ceiling holds only while a payer belongs to one
 goal. That is now enforced rather than assumed: see the last bullet in §3.2.
 
@@ -205,7 +209,7 @@ afterwards cannot be used to spend.
 | State | Storage | Rationale |
 |---|---|---|
 | `remainingBudget` | `euint256` [INCO] | The headline secret — reveals strategy and willingness to pay |
-| `perCallCap` | public [BUILD] | Bounds per-call size; readable by anyone, see §7 |
+| `perCallCap` | `euint256` [INCO] | Bounds per-call size; hidden so a vendor cannot price to it, see §7 |
 | `callsRemaining` | public [BUILD] | Bounds call count independently of spend size |
 | `payTo` allowlist | public [BUILD] | Avoids `eaddress` comparisons and their fees |
 | `asset`, `expiry`, `seq` | public [BUILD] | Not sensitive |
@@ -223,8 +227,10 @@ cannot open a goal.** A ciphertext prepared for any other address yields a handl
 use.
 
 `openGoal` is `payable` because converting a client ciphertext into a handle is the one operation
-here that charges the Inco fee — currently `1e12` wei. Comparison, select, sub and reveal do not,
-which is why `requestSpend` is not payable.
+here that charges the Inco fee — currently `1e12` wei. `openGoal` converts two, the budget and the
+cap, so it takes two fees. Comparison, select, sub and reveal do not, which is why `requestSpend` is
+not payable. Both ciphertexts are bound to the same sender, so the cap cannot be swapped for one
+somebody else encrypted.
 
 ### 5.3 Ordering: key before goal
 
@@ -244,12 +250,13 @@ So the vault enforces the weaker property it *can* check, that the address is un
 the binding in `payerGoal`. First writer wins, and the residual is a griefing one: the mint is an
 HTTP call to the signer and invisible on chain, but the `openGoal` naming it is not, so someone
 watching the mempool can front-run it and burn the payer before its owner uses it. The victim
-mints another. The attacker pays an Inco fee and gains nothing, because the payer holds no funds
+mints another. The attacker pays two Inco fees and gains nothing, because the payer holds no funds
 until after the goal exists.
 
 ### 5.4 Handle lifecycle
 
-- `allowThis` on the budget handle at `openGoal`, and again on the new handle after **every** debit.
+- `allowThis` on the budget and cap handles at `openGoal`, and again on the new budget handle after
+  **every** debit. The cap never changes, so its handle is granted once.
   Without it the vault permanently loses the ability to compute over its own budget. This is the
   single most likely way to brick the system, which is why Foundry cheatcode tests cover it.
 - Never on intermediate comparison results — they are transiently allowed within the transaction.
@@ -305,17 +312,18 @@ non-zero, no spend already pending. These `revert`. A malformed request is not a
 should never reach the chain as one.
 
 **Policy** — `perCallCap`, `callsRemaining`, `remainingBudget`. These resolve into the *decision*
-rather than reverting, **including the public ones**. An over-cap request must land on chain and
+rather than reverting, **including the public one**. An over-cap request must land on chain and
 bounce visibly; if it reverted there would be no record.
 
-Only the budget comparison touches Inco. The public predicates are evaluated in plaintext, because
-branching on public data is unrestricted:
+The cap and the budget are compared inside Inco and combined into one encrypted condition, so the
+revealed decision says approve or reject and never which limit refused. The call count is public
+and evaluated in plaintext, because branching on public data is unrestricted:
 
 ```solidity
-record.decision = _evaluateAndDebit(
-    goalId, amount, amount <= perCallCap[goalId] && goal.callsRemaining >= 1
-);
+record.decision = _evaluateAndDebit(goalId, amount, goal.callsRemaining >= 1);
 ```
+
+Until 9 October 2026 the cap was public and checked here in plaintext, next to the call count.
 
 ### 6.2 The write-ahead ordering is enforced by the platform
 
@@ -326,7 +334,8 @@ released.** Inco makes this the only expressible option, because you cannot writ
 **Select the operand, not the result:**
 
 ```solidity
-ebool ok       = _remainingBudget[goalId].ge(amount);
+ebool ok       = _remainingBudget[goalId].ge(amount)
+                     .and(_perCallCap[goalId].ge(amount));
 euint256 debit = ok.select(amount.asEuint256(), uint256(0).asEuint256());
 euint256 next  = _remainingBudget[goalId].sub(debit);
 next.allowThis();
@@ -447,7 +456,7 @@ nothing but "connection refused" from outside, which is how a root-only key sock
 | Missing `allowThis` after debit [INCO] | Vault can never compute over the budget again. Covered by cheatcode tests |
 | Revealing the wrong handle [INCO] | Reveals are permanent. Only ever the per-request decision handle |
 | Inco cannot reveal decisions, e.g. a covalidator down [INCO] | `POST /runs` is refused with `503` *before* `requestSpend`, so nothing commits; the console pauses Buy. `IncoHealthProbe` asks Inco to reveal a decision that is already public |
-| RPC answers from a node behind its own receipts | Every sending key uses viem's nonce manager, so a stale nonce count cannot reuse a nonce. A `SpendPending` whose pending seq this relay already finalized, or is zero, is a stale estimate and is retried; any other is real and returned. A sweep refused as "still open" right after `closeGoal` is retried for a bounded time |
+| RPC answers from a node behind its own receipts | Every sending key uses viem's nonce manager, so a stale nonce count cannot reuse a nonce. A `SpendPending` whose pending seq this relay already finalized, or is zero, is a stale estimate and is retried; any other is real and returned. `requestSpend` returns only once the spend is readable, so the finalize that follows it is not refused with `UnknownSpend` by a node that has not seen the commit. A sweep refused as "still open" right after `closeGoal` is retried for a bounded time |
 | Enclave machine expires or its disk is wiped [OASIS] | Payer keys are rebuilt from the chain at boot, §5.6 |
 | Signer cannot boot | `/health` reports the step and the error; boot is retried every 30 s, §6.6 |
 
@@ -455,14 +464,16 @@ nothing but "connection refused" from outside, which is how a root-only key sock
 
 ## 7. Confidentiality boundary, stated exactly
 
-Encrypted on chain: the budget, as `euint256`; and the per-spend decision, until `finalizeDecision`
-reveals it.
+Encrypted on chain: the budget and the per-call cap, as `euint256`; and the per-spend decision,
+until `finalizeDecision` reveals it.
 
-Public on chain: `perCallCap`, `callsRemaining`, allowlist membership, and every `requestSpend` term,
-approval, and rejection record.
+Public on chain: `callsRemaining`, allowlist membership, and every `requestSpend` term, approval,
+and rejection record.
 
-A vendor can therefore read the per-call ceiling and price immediately beneath it. That is a real
-limitation of this deployment, visible in the contract state, and recorded here rather than deferred.
+Until 9 October 2026 the cap was public too, so a vendor could read the per-call ceiling and price
+immediately beneath it. What still leaks: every approved amount is public, so each approval is a
+lower bound on the cap, and someone watching many approvals on one goal learns roughly where it
+sits. A rejection with calls left does not say whether the budget or the cap refused it.
 
 ---
 
@@ -515,17 +526,19 @@ Recorded on Base Sepolia against the deployed vault.
 | Operation | Cost |
 |---|---|
 | Client-side encryption | 28–75 ms |
-| `openGoal` | ~429,300 gas + `1e12` wei Inco fee |
-| `requestSpend` | ~296,600 gas |
+| `openGoal` | ~532,500 gas + two `1e12` wei Inco fees |
+| `requestSpend` | ~320,600 gas |
 | `finalizeDecision` | ~101,400–106,800 gas |
 | `closeGoal` | ~30,000 gas |
 | `attestedReveal` after commit | 5–12 s, 1–2 poll attempts, 2 signatures |
 
 A rejected decision resolves consistently faster than an approved one.
 
-The `openGoal` figure was re-measured on 9 October 2026 against the redeployed vault, which includes
-the `payerGoal` write, with a four-payee allowlist. Each allowlisted payee is one storage write, so
-the figure grows with the list.
+The `openGoal` and `requestSpend` figures were re-measured on 9 October 2026 against the
+encrypted-cap vault, with a four-payee allowlist. Encrypting the cap added about 103,000 gas to
+`openGoal`, for the second ciphertext and its handle, and about 24,000 to `requestSpend`, for the
+second comparison and the `and`. Each allowlisted payee is one storage write, so the `openGoal`
+figure grows with the list.
 
 ---
 
