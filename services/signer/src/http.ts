@@ -89,6 +89,53 @@ export interface SignerServerOptions {
   readonly binding?: { readonly chainId: number; readonly vault: string };
 }
 
+/** Why the signer is not serving, as /health reports it. See `createBootFailureServer`. */
+export interface BootFailure {
+  /** The boot step that failed, e.g. "key index rebuild". */
+  readonly stage: string;
+  /** The first line of the error, with URL paths and queries removed. */
+  readonly detail: string;
+  /** What usually causes this, when the error is a known one. */
+  readonly hint?: string | undefined;
+  /** When boot first failed, ISO 8601. */
+  readonly since: string;
+  readonly attempts: number;
+}
+
+/**
+ * Stands in for the signer while it cannot start, and says why.
+ *
+ * Inside a ROFL machine the container's output is not in `oasis rofl machine
+ * logs`, so a signer that exits at boot is a crash loop with no visible cause:
+ * the proxy reports "connection refused" and nothing else. On 9 October 2026
+ * that hid a socket permission error for the length of a deployment. So a
+ * failed boot keeps the port and answers GET /health with 503 and the reason,
+ * and every other route with 503 and the same reason. It signs nothing, mints
+ * nothing and holds no key, so it is safe to expose where the signer would be.
+ */
+export function createBootFailureServer(current: () => BootFailure): Server {
+  return createServer((req, res) => {
+    const cors = corsHeaders(req);
+    if (req.method === "OPTIONS") {
+      res.writeHead(204, cors);
+      res.end();
+      return;
+    }
+    const failure = current();
+    const path = (req.url ?? "/").split("?")[0];
+    if (path === "/health") {
+      send(res, 503, { ok: false, service: "authorization-signer", state: "boot-failed", ...failure }, cors);
+      return;
+    }
+    send(
+      res,
+      503,
+      { error: `the signer is not running: boot failed at ${failure.stage}: ${failure.detail}` },
+      cors,
+    );
+  });
+}
+
 export function createSignerServer(options: SignerServerOptions): Server {
   const { signer } = options;
   const log = options.log ?? (() => {});
