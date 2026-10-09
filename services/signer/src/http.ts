@@ -87,6 +87,12 @@ export interface SignerServerOptions {
    * has to know this signer reads the same vault. Both values are public.
    */
   readonly binding?: { readonly chainId: number; readonly vault: string };
+  /**
+   * Which key store holds the payer keys and how many it can reach, for
+   * /health. Lets a caller check custody from the signer's own account instead
+   * of guessing from its URL. Counts only; never an address or a key.
+   */
+  readonly custody?: () => Promise<{ readonly store: "rofl" | "file" | "memory"; readonly keys: number; readonly nextId?: number | undefined }>;
 }
 
 /** Why the signer is not serving, as /health reports it. See `createBootFailureServer`. */
@@ -164,7 +170,13 @@ export function createSignerServer(options: SignerServerOptions): Server {
       // Unguarded on purpose: a liveness probe that needs a credential is a
       // liveness probe that reports the credential rather than the service.
       if (req.method === "GET" && path === "/health") {
-        send(res, 200, { ok: true, service: "authorization-signer", ...options.binding }, cors);
+        const custody = options.custody ? await options.custody() : undefined;
+        send(
+          res,
+          200,
+          { ok: true, service: "authorization-signer", ...options.binding, ...(custody ? { custody } : {}) },
+          cors,
+        );
         return;
       }
 

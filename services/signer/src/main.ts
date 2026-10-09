@@ -37,7 +37,7 @@ import {
   describeEnclaveLimits,
   enclaveLimitsFromEnv,
 } from "./enclave-limit.js";
-import { RoflKeyStore, openKeyStore } from "./keystore.js";
+import { FileKeyStore, RoflKeyStore, openKeyStore } from "./keystore.js";
 import { createBootFailureServer, createSignerServer, type BootFailure } from "./http.js";
 import { AuthorizationSigner } from "./service.js";
 import { OnChainVaultReader } from "./vault.js";
@@ -196,9 +196,15 @@ async function boot(step: (name: string) => void) {
    */
   const keys = new RateLimitedKeyStore(store, enclaveLimits);
   const signer = new AuthorizationSigner({ vault, keys, config: { chainId, usdcAddress } });
+  const kind = store instanceof RoflKeyStore ? "rofl" : store instanceof FileKeyStore ? "file" : "memory";
   const server = createSignerServer({
     signer,
     binding: { chainId, vault: vaultAddress },
+    custody: async () => ({
+      store: kind,
+      keys: (await keys.addresses()).length,
+      ...(store instanceof RoflKeyStore ? { nextId: store.nextId } : {}),
+    }),
     log: (line) => log.info(line),
   });
 

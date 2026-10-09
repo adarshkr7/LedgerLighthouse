@@ -258,9 +258,17 @@ export function normalizePrivateKey(key: string): Hex {
  *
  * `mint` advances the counter and persists it *before* deriving, so a crash can
  * skip an id but never hand one out twice. After a rebuild the counter resumes
- * past the scanned window, so an id minted but not yet bound when the index was
- * lost is not reissued either. And if one ever were, the vault refuses to bind a
- * payer to a second goal.
+ * right after the highest bound id. An id minted but not yet bound when the
+ * index was lost can then be handed out again, which is harmless: the vault
+ * refuses to bind one payer to two goals, so the second openGoal reverts.
+ *
+ * The rebuild stops after a run of unbound ids, so recovery depends on gaps
+ * staying shorter than that run. Gaps come from payers minted and never used
+ * for a goal. The first version of this resumed past the whole scanned window
+ * instead, which made a gap exactly as long as the run: the wipe test on
+ * 9 October 2026 rebuilt nothing, because ids 0 to 24 were unbound and the
+ * payers started at 25. Resuming after the highest bound id leaves no such gap,
+ * and the default run is 50 so that machine's payers are still found.
  *
  * Ids minted under the old random scheme are kept when an old index is loaded,
  * but cannot be rebuilt if it is lost.
@@ -339,27 +347,30 @@ export class RoflKeyStore implements KeyStore {
    */
   async recover(
     isBound: (address: Address) => Promise<boolean>,
-    gap = 25,
+    gap = 50,
   ): Promise<{ readonly scanned: number; readonly found: number } | undefined> {
     if (this.#next[this.#namespace] !== undefined) return undefined;
 
     let n = 0;
     let found = 0;
+    let highest = -1;
     for (let misses = 0; misses < gap; n++) {
       const keyId = this.#keyId(n);
       const address = await this.#addressOf(keyId);
       if (await isBound(address)) {
         this.#keys[address.toLowerCase()] = keyId;
         found++;
+        highest = n;
         misses = 0;
       } else {
         misses++;
       }
     }
 
-    // Past the whole scanned window, not just past the last bound id: an id
-    // minted but not yet bound when the index was lost is not handed out again.
-    this.#next[this.#namespace] = n;
+    // Right after the highest bound id, never past the scanned window: skipping
+    // the window would leave a gap as long as `gap`, and the next rebuild would
+    // stop at it. See the class comment.
+    this.#next[this.#namespace] = highest + 1;
     this.#persist();
     return { scanned: n, found };
   }
@@ -389,6 +400,11 @@ export class RoflKeyStore implements KeyStore {
 
   async addresses(): Promise<readonly Address[]> {
     return Object.keys(this.#keys) as Address[];
+  }
+
+  /** Where the counter stands for this namespace, for /health. */
+  get nextId(): number | undefined {
+    return this.#next[this.#namespace];
   }
 }
 

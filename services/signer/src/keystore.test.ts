@@ -197,15 +197,55 @@ describe("RoflKeyStore key ids", () => {
     expect(await after.signerFor(b)).toBeUndefined();
   });
 
-  it("resumes past the scanned window, so no scanned id is handed out again", async () => {
+  it("resumes right after the highest bound id", async () => {
     const appd = new FakeAppd();
-    const store = new RoflKeyStore(appd, tempIndex(), NS);
-    await store.recover(async () => false, 3);
+    const before = new RoflKeyStore(appd, tempIndex(), NS);
+    const a = await before.mint(); // id 0, bound
+    await before.mint(); // id 1, never used
+    const bound = new Set([a.toLowerCase()]);
 
+    const after = new RoflKeyStore(appd, tempIndex(), NS);
+    await after.recover(async (x: Address) => bound.has(x.toLowerCase()), 3);
     appd.calls.length = 0;
-    await store.mint();
+    await after.mint();
 
-    expect(appd.calls).toEqual([`payer/${NS}/3`]);
+    // id 1 again: harmless, since the vault binds one payer to one goal only.
+    expect(appd.calls).toEqual([`payer/${NS}/1`]);
+  });
+
+  /*
+   * The wipe test on 9 October 2026, as it happened. First boot on a vault with
+   * no enclave payers yet, then five payers minted and bound, then the disk
+   * wiped. The first version of recover() resumed at the end of its scanned
+   * window, left a 25-id hole, and the second rebuild found nothing.
+   */
+  it("finds every payer after a first boot, mints and a wipe", async () => {
+    const appd = new FakeAppd();
+    const first = new RoflKeyStore(appd, tempIndex(), NS);
+    await first.recover(async () => false); // empty vault at first boot
+    const minted: Address[] = [];
+    for (let i = 0; i < 5; i++) minted.push(await first.mint());
+    const bound = new Set(minted.map((x) => x.toLowerCase()));
+
+    const wiped = new RoflKeyStore(appd, tempIndex(), NS);
+    const rebuilt = await wiped.recover(async (x: Address) => bound.has(x.toLowerCase()));
+
+    expect(rebuilt?.found).toBe(5);
+    for (const payer of minted) expect((await wiped.signerFor(payer))?.address).toBe(payer);
+  });
+
+  it("crosses the 25-id hole the first version left", async () => {
+    const appd = new FakeAppd();
+    const bound = new Set<string>();
+    for (let n = 25; n < 30; n++) {
+      bound.add(privateKeyToAccount(await appd.generateKey(`payer/${NS}/${n}`)).address.toLowerCase());
+    }
+
+    const store = new RoflKeyStore(appd, tempIndex(), NS);
+    const rebuilt = await store.recover(async (x: Address) => bound.has(x.toLowerCase()));
+
+    expect(rebuilt?.found).toBe(5);
+    expect(store.nextId).toBe(30);
   });
 
   it("does not rescan a namespace the index already knows", async () => {
