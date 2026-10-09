@@ -18,13 +18,14 @@ services:
     #     -f services/signer/Dockerfile -t docker.io/schwarzite/totem-signer:<tag> --push .
     #   docker buildx imagetools inspect docker.io/schwarzite/totem-signer:<tag>
     #
-    # v3, built on 9 October 2026 from c703a63. v2 (16f7ab2) brought counted
-    # enclave key ids, the NETWORK setting and the vault binding in /health, and
-    # crash-looped in the enclave on a root-only key socket. v3 grants that socket
-    # to the node user and reports a failed boot on /health instead of exiting.
+    # v4, built on 9 October 2026 from d72945b: the key counter resumes after the
+    # highest bound id, and /health reports custody. v3 (c703a63) granted the key
+    # socket to the node user and reports a failed boot on /health instead of
+    # exiting. v2 (16f7ab2) brought counted enclave key ids, the NETWORK setting
+    # and the vault binding in /health, and crash-looped on that socket.
     # --provenance=false makes this a single linux/amd64 manifest, so there is no
     # attestation entry in an index for a runtime to trip over.
-    image: docker.io/schwarzite/totem-signer@sha256:0c4dcf952d8ca9c79c8e10653c6c21e676a67e77d30a93305b6467d6b1558370
+    image: docker.io/schwarzite/totem-signer@sha256:ad385c57942cb5419bd3440c61429b8a4ac896ee4f122db675d18946544e6af3
     platform: linux/amd64
     restart: on-failure
     ports:
