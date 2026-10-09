@@ -34,7 +34,8 @@ services:
       # which is why RoflKeyStore fails loudly rather than falling back.
       - /run/rofl-appd.sock:/run/rofl-appd.sock
       # Non-secret address -> key_id index. Persistent so payers survive a
-      # restart; safe to lose in the sense that it leaks nothing.
+      # restart. Safe to lose: it leaks nothing, and key ids are counted per
+      # chain and vault, so a new machine rebuilds it from the chain at boot.
       - /storage/signer:/data
     environment:
       - SIGNER_ROFL_SOCKET=/run/rofl-appd.sock

@@ -36,7 +36,7 @@ import {
   describeEnclaveLimits,
   enclaveLimitsFromEnv,
 } from "./enclave-limit.js";
-import { openKeyStore } from "./keystore.js";
+import { RoflKeyStore, openKeyStore } from "./keystore.js";
 import { createSignerServer } from "./http.js";
 import { AuthorizationSigner } from "./service.js";
 import { OnChainVaultReader } from "./vault.js";
@@ -164,16 +164,40 @@ const enclaveLimits = enclaveLimitsFromEnv();
  * arrives from the Oasis proxy's address, so per-IP cannot tell them apart and
  * this is the bound that actually holds.
  */
-const keys = new RateLimitedKeyStore(
-  openKeyStore({
-    roflSocket: process.env["SIGNER_ROFL_SOCKET"],
-    roflIndexPath: process.env["SIGNER_ROFL_INDEX_PATH"],
-    filePath: keyStorePath(),
-    // Turns a silent downgrade to keys-on-disk into a refusal to boot.
-    requireRofl: process.env["SIGNER_REQUIRE_ROFL"] === "true",
-  }),
-  enclaveLimits,
-);
+const vaultAddress = requiredAddress("POLICY_VAULT_ADDRESS");
+const store = openKeyStore({
+  roflSocket: process.env["SIGNER_ROFL_SOCKET"],
+  roflIndexPath: process.env["SIGNER_ROFL_INDEX_PATH"],
+  // Enclave key ids are counted per chain and vault. See RoflKeyStore.
+  roflNamespace: `${chainId}/${vaultAddress.toLowerCase()}`,
+  filePath: keyStorePath(),
+  // Turns a silent downgrade to keys-on-disk into a refusal to boot.
+  requireRofl: process.env["SIGNER_REQUIRE_ROFL"] === "true",
+});
+
+/*
+ * On a machine whose disk is new, or after switching vaults, the enclave index
+ * has no record of this vault. Rebuild it from the chain before serving, so a
+ * payer minted on a machine that has since expired is reachable again, and so
+ * the counter never hands out an id that is already bound. If the vault cannot
+ * say which payers are bound, the signer refuses to start: guessing the counter
+ * is how a key would be issued twice.
+ */
+if (store instanceof RoflKeyStore) {
+  try {
+    const rebuilt = await store.recover(async (payer) => (await vault.payerGoal(payer)) !== 0n);
+    if (rebuilt) log.info("rebuilt the enclave key index from the chain", rebuilt);
+  } catch (e) {
+    log.error("could not rebuild the enclave key index; refusing to start", {
+      vault: vaultAddress,
+      detail: e instanceof Error ? e.message.split("\n")[0] : String(e),
+      hint: "a vault deployed before the payer binding has no payerGoal to rebuild from",
+    });
+    process.exit(1);
+  }
+}
+
+const keys = new RateLimitedKeyStore(store, enclaveLimits);
 
 const signer = new AuthorizationSigner({
   vault,
@@ -183,7 +207,7 @@ const signer = new AuthorizationSigner({
 
 const server = createSignerServer({
   signer,
-  binding: { chainId, vault: requiredAddress("POLICY_VAULT_ADDRESS") },
+  binding: { chainId, vault: vaultAddress },
   log: (line) => log.info(line),
 });
 

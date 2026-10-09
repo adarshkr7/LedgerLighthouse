@@ -132,6 +132,20 @@ export class OnChainVaultReader implements VaultReader {
     };
   }
 
+  /**
+   * The goal this payer is bound to, or 0n. Used to rebuild the ROFL key index
+   * after its disk is lost; see `RoflKeyStore.recover`. A vault deployed before
+   * the payer binding has no such function, and this throws on one.
+   */
+  async payerGoal(payer: Address): Promise<bigint> {
+    return (await this.#client.readContract({
+      address: this.#vault,
+      abi: policyVaultAbi,
+      functionName: "payerGoal",
+      args: [payer],
+    })) as bigint;
+  }
+
   async tokenBalance(token: Address, holder: Address): Promise<bigint> {
     return (await this.#client.readContract({
       address: token,
