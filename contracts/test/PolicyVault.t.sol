@@ -81,7 +81,7 @@ contract PolicyVaultTest is IncoTest {
             // goal must be opened by the user's own transaction
             // (ARCHITECTURE.md).
             budgetCiphertext: fakePrepareEuint256Ciphertext(budget, opener, address(vault)),
-            perCallCap: cap,
+            perCallCapCiphertext: fakePrepareEuint256Ciphertext(cap, opener, address(vault)),
             callsRemaining: calls,
             payer: payer,
             relay: address(this),
@@ -97,11 +97,12 @@ contract PolicyVaultTest is IncoTest {
     /// and the attack the binding closes is a *different* account naming
     /// somebody else's payer.
     ///
-    /// A second *successful* goal also needs a budget the first did not use.
-    /// The fake infra derives a handle from the ciphertext, and an identical
-    /// (value, owner, dapp) triple reproduces it exactly, so the second
-    /// `newEuint256` reverts `HandleAlreadyExists`. That is a property of the
-    /// test double, not of the vault.
+    /// A second *successful* goal also needs a budget and a cap the first did
+    /// not use, and the two must differ from each other. The fake infra derives
+    /// a handle from the ciphertext, and an identical (value, owner, dapp)
+    /// triple reproduces it exactly, so a repeat `newEuint256` reverts
+    /// `HandleAlreadyExists`. That is a property of the test double, not of the
+    /// vault: real ciphertexts are randomized.
     function _openGoalFor(uint256 budget, uint256 cap, uint32 calls, address payer, address opener)
         internal
         returns (uint256 id)
@@ -111,8 +112,8 @@ contract PolicyVaultTest is IncoTest {
         // Hoist the fee: `vm.prank` applies to the very next call, and an
         // `inco.getFee()` sitting inside the `{value: ...}` expression would
         // consume it — leaving `openGoal` to run as the test runner and the
-        // ciphertext binding to mismatch.
-        uint256 fee = inco.getFee();
+        // ciphertext binding to mismatch. Two encrypted inputs, two fees.
+        uint256 fee = 2 * inco.getFee();
         vm.deal(opener, fee);
         vm.prank(opener);
         id = vault.openGoal{value: fee}(params);
@@ -126,7 +127,7 @@ contract PolicyVaultTest is IncoTest {
     /// repeat.
     function _expectOpenRefused(address payer, address opener) internal {
         PolicyVault.OpenGoalParams memory params = _paramsFor(BUDGET, PER_CALL_CAP, CALLS, payer, opener);
-        uint256 fee = inco.getFee();
+        uint256 fee = 2 * inco.getFee();
         vm.deal(opener, fee);
         vm.prank(opener);
         vm.expectRevert(PolicyVault.PayerAlreadyBound.selector);
@@ -262,10 +263,11 @@ contract PolicyVaultTest is IncoTest {
         vault.finalizeDecision(goalId, seq, approved, signatures);
     }
 
-    /// `perCallCap` is public in the hackathon-v1 simplification, so it *could*
-    /// be a `require`. It deliberately is not: an over-cap request must land on
-    /// chain and bounce, not revert. The visible bounce is the product.
-    function testPublicCapEnforced() public {
+    /// The cap is encrypted, so it is enforced inside Inco and an over-cap
+    /// request resolves into a rejection. Even when the cap was public it was
+    /// never a `require`: an over-cap request must land on chain and bounce,
+    /// not revert. The visible bounce is the product.
+    function testEncryptedCapEnforced() public {
         uint256 over = PER_CALL_CAP + 1;
         uint256 budgetBefore = _budget();
         uint32 callsBefore = _callsRemaining();
@@ -299,8 +301,8 @@ contract PolicyVaultTest is IncoTest {
         assertEq(_callsRemaining(), CALLS - 2, "rejected spend consumed a call");
     }
 
-    /// The encrypted conjunct: `amount <= perCallCap` passes publicly, but the
-    /// encrypted budget is too small. Nobody — including the caller — can know
+    /// The budget conjunct: under the encrypted cap, within the call count, but
+    /// the encrypted budget is too small. Nobody — including the caller — can know
     /// the outcome until the reveal resolves, yet the counters must be untouched.
     function testRejectedSpendLeavesEncryptedBudgetUnchanged() public {
         // Spend down to 100_000, under the 200_000 cap the whole way.
@@ -452,7 +454,7 @@ contract PolicyVaultTest is IncoTest {
 
         // A different budget, so the test double does not hand back the handle
         // it already minted for the first goal. See `_openGoalFor`.
-        uint256 second = _openGoalFor(BUDGET + 1, PER_CALL_CAP, CALLS, OTHER_PAYER, alice);
+        uint256 second = _openGoalFor(BUDGET + 1, PER_CALL_CAP + 1, CALLS, OTHER_PAYER, alice);
         assertEq(vault.payerGoal(OTHER_PAYER), second, "a fresh payer must open a goal normally");
     }
 
@@ -536,5 +538,41 @@ contract PolicyVaultTest is IncoTest {
         (uint64 seq, bool afterExhaustion) = _spendAndFinalize(10_000);
         assertFalse(afterExhaustion, "spend with no calls left must reject");
         assertEq(seq, uint64(CALLS) + 1, "and must still land on chain");
+    }
+
+    // ---------------------------------------------------- the encrypted cap
+
+    /// Stored as a handle that decrypts to what the opener encrypted, and kept
+    /// apart from the budget.
+    function testCapIsStoredEncrypted() public view {
+        euint256 cap = vault.perCallCapHandle(goalId);
+        assertEq(getUint256Value(cap), PER_CALL_CAP, "cap handle must decrypt to the cap");
+        assertTrue(
+            euint256.unwrap(cap) != euint256.unwrap(vault.remainingBudgetHandle(goalId)),
+            "cap and budget must be separate handles"
+        );
+    }
+
+    /// The cap binds on its own: well inside the budget, one unit over the cap.
+    function testCapAloneRejects() public {
+        uint256 over = PER_CALL_CAP + 1;
+        assertLt(over, _budget(), "precondition: the budget would allow it");
+
+        (, bool approved) = _spendAndFinalize(over);
+        assertFalse(approved, "an amount over the encrypted cap must reject");
+
+        (, bool atCap) = _spendAndFinalize(PER_CALL_CAP);
+        assertTrue(atCap, "an amount equal to the cap must approve");
+    }
+
+    /// Two encrypted inputs cost two Inco fees, and one is refused.
+    function testOpenGoalRequiresAFeePerEncryptedInput() public {
+        PolicyVault.OpenGoalParams memory params =
+            _paramsFor(BUDGET + 2, PER_CALL_CAP + 2, CALLS, OTHER_PAYER, alice);
+        uint256 single = inco.getFee();
+        vm.deal(alice, single);
+        vm.prank(alice);
+        vm.expectRevert(PolicyVault.FeeNotPaid.selector);
+        vault.openGoal{value: single}(params);
     }
 }

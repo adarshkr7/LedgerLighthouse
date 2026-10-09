@@ -51,12 +51,12 @@ for (let goalId = 1n; goalId <= goalCount; goalId++) {
     args: [goalId],
   })) as `0x${string}`;
 
-  const cap = (await client.readContract({
+  const capHandle = (await client.readContract({
     address: vaultAddress,
     abi,
-    functionName: "perCallCap",
+    functionName: "perCallCapHandle",
     args: [goalId],
-  })) as bigint;
+  })) as `0x${string}`;
 
   console.log(`goal ${goalId}  ${goal.open ? "open" : "closed"}`);
   console.log(`  owner          ${goal.owner}`);
@@ -65,7 +65,7 @@ for (let goalId = 1n; goalId <= goalCount; goalId++) {
   console.log(`  asset          ${goal.asset}${
     goal.asset.toLowerCase() === usdcAddress.toLowerCase() ? `  (${network.label} USDC)` : "  (NOT USDC)"
   }`);
-  console.log(`  perCallCap     ${formatUsdc(cap)} USDC`);
+  console.log(`  cap handle     ${capHandle}   <- encrypted, opaque bytes32`);
   console.log(`  callsRemaining ${goal.callsRemaining}`);
   console.log(`  budget handle  ${budgetHandle}   <- opaque bytes32`);
   console.log(`  spends         ${goal.seq}`);

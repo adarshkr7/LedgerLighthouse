@@ -307,7 +307,7 @@ describe("the catalog's own paths", () => {
    *
    * Its whole job is to be refused by the *encrypted* budget, which only means
    * anything if nothing public could have refused it first. So: no injection in
-   * the description, and a price comfortably under the public per-call cap.
+   * the description, and a price comfortably under the per-call cap.
    */
   it("keeps the overcharge entry free of anything a public check could catch", async () => {
     const goal = findDemoGoal("compliance-audit")!;
@@ -320,7 +320,7 @@ describe("the catalog's own paths", () => {
     expect(selected.ok).toBe(true);
     if (!selected.ok) return;
 
-    // Well under the 6.00 USDC public per-call cap the demo opens goals with.
+    // Well under the 6.00 USDC encrypted per-call cap the demo opens goals with.
     expect(selected.value.amount).toBeLessThan(6_000_000n);
     // Above the 0.20 USDC encrypted budget — so the only thing left to stop it
     // is the confidential check.

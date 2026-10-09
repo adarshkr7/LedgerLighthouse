@@ -25,7 +25,8 @@
  * which by then has already been debited by the first spend, inside the enclave,
  * without this process ever learning the balance.
  *
- * Costs one Inco fee (~0.000001 ETH) plus gas for five transactions.
+ * Costs two Inco fees (~0.000002 ETH), one per encrypted input, plus gas for
+ * five transactions.
  */
 
 import {
@@ -60,8 +61,8 @@ loadDotEnv();
 // 0.10 USDC encrypted. Small on purpose: this budget is never spent against
 // real money, it only has to be a number the enclave can compare.
 const BUDGET = 100_000n;
-// Deliberately far above both spends, so neither can be refused in plaintext.
-// A bounce here has exactly one possible source.
+// Encrypted too, and far above both spends, so the cap cannot be what refuses
+// either of them. A bounce here has exactly one possible source: the budget.
 const PER_CALL_CAP = 6_000_000n;
 const FIRST_SPEND = 40_000n; // 0.04 — inside the budget
 const SECOND_SPEND = 90_000n; // 0.09 — inside the *cap*, past what the budget has left
@@ -153,6 +154,11 @@ const budgetCiphertext = (await zap.encrypt(BUDGET, {
   handleType: handleTypes.euint256,
 })) as Hex;
 const encryptMs = ms(t);
+const perCallCapCiphertext = (await zap.encrypt(PER_CALL_CAP, {
+  accountAddress: user.address,
+  dappAddress: vaultAddress,
+  handleType: handleTypes.euint256,
+})) as Hex;
 
 check("encrypted", budgetCiphertext.startsWith("0x"), `${formatUsdc(BUDGET)} USDC in ${fmt(encryptMs)}`);
 check("ciphertext is opaque", !budgetCiphertext.includes(BUDGET.toString(16)), `${budgetCiphertext.length} hex chars`);
@@ -168,7 +174,7 @@ const openHash = await userWallet.writeContract({
   args: [
     {
       budgetCiphertext,
-      perCallCap: PER_CALL_CAP,
+      perCallCapCiphertext,
       callsRemaining: 5,
       // Never used: nothing here settles. The field only has to be non-zero.
       payer: user.address,
@@ -178,7 +184,8 @@ const openHash = await userWallet.writeContract({
       allowlist: [relay.address],
     },
   ],
-  value: incoFee,
+  // One Inco fee per encrypted input: the budget and the cap.
+  value: 2n * incoFee,
 });
 const openReceipt = await publicClient.waitForTransactionReceipt({ hash: openHash });
 check("openGoal confirmed", openReceipt.status === "success", `${fmt(ms(t))}  gas ${openReceipt.gasUsed}`);
@@ -281,8 +288,8 @@ await spend(FIRST_SPEND, "tee-check/inside-budget", true);
 
 // --------------------------------------------------------------- refused path
 rule(`4. spend ${formatUsdc(SECOND_SPEND)} — inside the cap, past the budget`);
-console.log(`  Public cap is ${formatUsdc(PER_CALL_CAP)} and the payee is allowlisted, so nothing in`);
-console.log(`  plaintext can refuse this. The enclave already debited ${formatUsdc(FIRST_SPEND)},`);
+console.log(`  The encrypted cap is ${formatUsdc(PER_CALL_CAP)} and the payee is allowlisted, so only`);
+console.log(`  the budget can refuse this. The enclave already debited ${formatUsdc(FIRST_SPEND)},`);
 console.log(`  leaving ${formatUsdc(BUDGET - FIRST_SPEND)} — a figure this process never saw.\n`);
 await spend(SECOND_SPEND, "tee-check/past-budget", false);
 

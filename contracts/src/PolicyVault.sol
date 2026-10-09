@@ -10,13 +10,18 @@ import {ebool, euint256, e, inco} from "@inco/lightning/src/Lib.sol";
 /// authority. The orchestrator may only call `requestSpend` with public terms;
 /// it can neither read nor alter the budget, nor forge an approval.
 ///
-/// ## Hackathon-v1 simplification
+/// ## What is encrypted
 ///
-/// Only `remainingBudget` is encrypted. `perCallCap` and `callsRemaining` are
-/// public plaintext. This narrows what is hidden — a vendor can now see the
-/// per-call ceiling — but leaves the security property intact: the headline
-/// secret (how much is left to spend) stays confidential, and the decision is
-/// still produced by Inco and verified on chain.
+/// `remainingBudget` and `perCallCap`. Both are bound to the opener's own
+/// ciphertexts and only ever compared inside Inco. `callsRemaining`, the
+/// allowlist, the asset and the expiry stay public.
+///
+/// The cap was public until 9 October 2026. A public cap told every vendor the
+/// most a single call would pay, so a hostile vendor simply priced at it, and
+/// the encrypted budget then hid only how many such calls the agent could
+/// afford. With both encrypted, a rejection does not say which limit failed.
+/// What still leaks: every approved amount is public, so each approval is a
+/// public lower bound on the cap.
 ///
 /// ## Where a condition is enforced, and why it differs
 ///
@@ -26,10 +31,11 @@ import {ebool, euint256, e, inco} from "@inco/lightning/src/Lib.sol";
 ///     the relay, payer not already bound to another goal. These `revert`. A
 ///     malformed request is not a policy decision and should never reach the
 ///     chain as one.
-///   - **Policy** — `perCallCap`, `callsRemaining`, `remainingBudget`. These
-///     resolve into the decision rather than reverting, *including the public
-///     ones*. An over-cap request must land on chain and bounce visibly. If it
-///     reverted, there would be no record, and the bounce is the product.
+///   - **Policy** — `perCallCap`, `remainingBudget` (both encrypted) and
+///     `callsRemaining` (public). These resolve into the decision rather than
+///     reverting, *including the public one*. An over-cap request must land on
+///     chain and bounce visibly. If it reverted, there would be no record, and
+///     the bounce is the product.
 ///
 /// ## Write-ahead ordering
 ///
@@ -72,7 +78,8 @@ contract PolicyVault {
 
     struct OpenGoalParams {
         bytes budgetCiphertext;
-        uint256 perCallCap;
+        /// Encrypted like the budget, by the same wallet, for this vault.
+        bytes perCallCapCiphertext;
         uint32 callsRemaining;
         address payer;
         address relay;
@@ -90,8 +97,8 @@ contract PolicyVault {
     uint256 public goalCount;
 
     mapping(uint256 goalId => Goal) public goals;
-    /// Public, so the value is plainly visible — that is the simplification.
-    mapping(uint256 goalId => uint256) public perCallCap;
+    /// Encrypted. The most one call may spend; set once at `openGoal`.
+    mapping(uint256 goalId => euint256) internal _perCallCap;
     /// Encrypted. The vault never sees a plaintext balance.
     mapping(uint256 goalId => euint256) internal _remainingBudget;
     mapping(uint256 goalId => mapping(address payee => bool)) public allowlisted;
@@ -126,10 +133,10 @@ contract PolicyVault {
         address indexed payer,
         address relay,
         address asset,
-        uint256 perCallCap,
         uint32 callsRemaining,
         uint64 expiry,
-        bytes32 budgetHandle
+        bytes32 budgetHandle,
+        bytes32 perCallCapHandle
     );
     event GoalClosed(uint256 indexed goalId);
     event SpendRequested(
@@ -152,7 +159,6 @@ contract PolicyVault {
     error InvalidRelay();
     error InvalidAsset();
     error InvalidExpiry();
-    error InvalidCap();
     error InvalidCallCount();
     error EmptyAllowlist();
     error UnknownGoal();
@@ -175,11 +181,14 @@ contract PolicyVault {
     /// structurally cannot open a goal.
     ///
     /// @dev Payable because converting a client ciphertext into a handle is the
-    /// one operation here that charges the Inco fee. Trivial encryption,
-    /// comparison, select, sub and reveal do not, which is why `requestSpend`
-    /// is not payable.
+    /// one operation here that charges the Inco fee, and `openGoal` converts
+    /// two: the budget and the cap. Trivial encryption, comparison, select, sub
+    /// and reveal do not, which is why `requestSpend` is not payable.
+    ///
+    /// There is no plaintext check that the cap is positive, because there is
+    /// no plaintext cap. A zero cap only makes every request reject.
     function openGoal(OpenGoalParams calldata params) external payable returns (uint256 goalId) {
-        require(msg.value == inco.getFee(), FeeNotPaid());
+        require(msg.value == 2 * inco.getFee(), FeeNotPaid());
         require(params.payer != address(0), InvalidPayer());
         // Structural, so it reverts: naming a payer that is already somebody
         // else's is not a request the policy has an opinion about. See
@@ -188,7 +197,6 @@ contract PolicyVault {
         require(params.relay != address(0), InvalidRelay());
         require(params.asset != address(0), InvalidAsset());
         require(params.expiry > block.timestamp, InvalidExpiry());
-        require(params.perCallCap > 0, InvalidCap());
         require(params.callsRemaining > 0, InvalidCallCount());
         require(params.allowlist.length > 0, EmptyAllowlist());
 
@@ -202,6 +210,11 @@ contract PolicyVault {
         budget.allowThis();
         _remainingBudget[goalId] = budget;
 
+        // Same binding, same permanent grant: every request compares against it.
+        euint256 cap = params.perCallCapCiphertext.newEuint256(msg.sender);
+        cap.allowThis();
+        _perCallCap[goalId] = cap;
+
         goals[goalId] = Goal({
             owner: msg.sender,
             payer: params.payer,
@@ -212,7 +225,6 @@ contract PolicyVault {
             seq: 0,
             open: true
         });
-        perCallCap[goalId] = params.perCallCap;
         // Written alongside the goal record it describes, so the two cannot be
         // added separately and drift.
         payerGoal[params.payer] = goalId;
@@ -227,10 +239,10 @@ contract PolicyVault {
             params.payer,
             params.relay,
             params.asset,
-            params.perCallCap,
             params.callsRemaining,
             params.expiry,
-            euint256.unwrap(budget)
+            euint256.unwrap(budget),
+            euint256.unwrap(cap)
         );
     }
 
@@ -303,11 +315,10 @@ contract PolicyVault {
             )
         );
 
-        // Policy predicates. The public ones are evaluated in plaintext —
-        // branching on public data is unrestricted — and only the budget
-        // comparison touches Inco.
-        record.decision =
-            _evaluateAndDebit(goalId, amount, amount <= perCallCap[goalId] && goal.callsRemaining >= 1);
+        // Policy predicates. The call count is public and evaluated in
+        // plaintext, since branching on public data is unrestricted. The cap and
+        // the budget are compared inside Inco.
+        record.decision = _evaluateAndDebit(goalId, amount, goal.callsRemaining >= 1);
 
         pendingSeq[goalId] = seq;
 
@@ -323,11 +334,14 @@ contract PolicyVault {
         );
     }
 
-    /// @dev Evaluates the encrypted conjunct and applies the conditional debit.
+    /// @dev Evaluates the encrypted conjuncts and applies the conditional debit.
     /// Returns the revealed decision handle.
+    ///
+    /// One combined condition, so the revealed decision says only approve or
+    /// reject, never which limit stopped the spend.
     function _evaluateAndDebit(uint256 goalId, uint256 amount, bool publicOk) private returns (ebool ok) {
         if (publicOk) {
-            ok = _remainingBudget[goalId].ge(amount);
+            ok = _remainingBudget[goalId].ge(amount).and(_perCallCap[goalId].ge(amount));
 
             // Select the *operand*, not the result: the subtraction is then
             // always well-defined, rather than computing an underflowed value
@@ -446,6 +460,10 @@ contract PolicyVault {
     /// @notice The budget handle — an opaque `bytes32`. Exposed so the UI can
     /// show that it reveals nothing; no access is granted to anyone by
     /// returning it.
+    function perCallCapHandle(uint256 goalId) external view returns (euint256) {
+        return _perCallCap[goalId];
+    }
+
     function remainingBudgetHandle(uint256 goalId) external view returns (euint256) {
         return _remainingBudget[goalId];
     }
