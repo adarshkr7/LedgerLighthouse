@@ -52,8 +52,7 @@ run completed anyway. That is worth more than a clean log.
 
 ## `adversary-2026-09-05-passing.log`
 
-Track 2 of the evaluation design (`paper/evaluation-design.md` §5): the **A2 adversary
-campaign**, run against the deployed vault. Exit code 0 — ten strategies held, none deviated.
+The **A2 adversary campaign**, run against the deployed vault. Exit code 0 — ten strategies held, none deviated.
 
 There is no agent and no model in this run. That is the point. Under A2 — arbitrary code
 execution in the orchestrator — there is nothing to manipulate, because the adversary skips the

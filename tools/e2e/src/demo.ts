@@ -30,12 +30,10 @@ import {
   type Address,
   type Hex,
 } from "viem";
-import { baseSepolia } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
-import { Lightning } from "@inco/lightning-js/lite";
 import { handleTypes } from "@inco/lightning-js";
-import { rpcTransport } from "@ntux402/shared/viem";
-import { DEMO_PAYEES, formatUsdc, rpcUrls, usdcAbi } from "@ntux402/shared";
+import { rpcTransport, viemChain } from "@ntux402/shared/viem";
+import { DEMO_PAYEES, formatUsdc, usdcAbi } from "@ntux402/shared";
 import {
   IncoDecisionReader,
   PaymentLoop,
@@ -44,6 +42,7 @@ import {
   VaultRelay,
   X402Client,
   buildAgent,
+  connectLightning,
   llmConfigured,
   renderEvent,
   type PaymentResult,
@@ -53,7 +52,6 @@ import {
 type Mode = "honest" | "malicious";
 
 import {
-  BASE_SEPOLIA_CHAIN_ID,
   INCO_FEE_ABI,
   INCO_SINGLETON,
   fmt,
@@ -62,9 +60,9 @@ import {
   now,
   optional,
   policyVaultAbi,
-  required,
   requiredAddress,
   requiredHexKey,
+  networkFromEnv,
 } from "./config.js";
 
 loadDotEnv();
@@ -95,9 +93,8 @@ const PAYER_FUNDING = 450_000n; // 0.45 USDC
 
 
 
-const rpcUrl = required("BASE_SEPOLIA_RPC_URL");
+const { network, rpcUrl, usdcAddress } = networkFromEnv();
 const vaultAddress = requiredAddress("POLICY_VAULT_ADDRESS");
-const usdcAddress = requiredAddress("USDC_ADDRESS");
 const signerUrl = optional("SIGNER_URL") ?? `http://127.0.0.1:${process.env["SIGNER_PORT"] ?? 8402}`;
 const mockApiUrl = optional("MOCK_API_URL") ?? `http://127.0.0.1:${process.env["MOCK_API_PORT"] ?? 4021}`;
 
@@ -105,8 +102,8 @@ const user = privateKeyToAccount(requiredHexKey("DEPLOYER_PRIVATE_KEY"));
 const relayKey = requiredHexKey("ORCHESTRATOR_RELAY_KEY");
 const relayAddress = privateKeyToAccount(relayKey).address;
 
-const publicClient = createPublicClient({ chain: baseSepolia, transport: rpcTransport(rpcUrl) });
-const userWallet = createWalletClient({ account: user, chain: baseSepolia, transport: rpcTransport(rpcUrl) });
+const publicClient = createPublicClient({ chain: viemChain(network), transport: rpcTransport(rpcUrl) });
+const userWallet = createWalletClient({ account: user, chain: viemChain(network), transport: rpcTransport(rpcUrl) });
 const abi = policyVaultAbi();
 
 const rule = (label = "") =>
@@ -116,8 +113,8 @@ const rule = (label = "") =>
 rule("preflight");
 
 const chainId = await publicClient.getChainId();
-if (chainId !== BASE_SEPOLIA_CHAIN_ID) {
-  throw new Error(`Wrong chain: ${chainId}, expected ${BASE_SEPOLIA_CHAIN_ID}`);
+if (chainId !== network.chainId) {
+  throw new Error(`Wrong chain: ${chainId}, expected ${network.chainId}`);
 }
 console.log(`  chain      ${chainId}`);
 console.log(`  vault      ${vaultAddress}`);
@@ -166,7 +163,7 @@ console.log(`  Nothing else in the system can produce a signature for it.`);
 // ------------------------------------------------------------- open the goal
 rule("2. open the goal — the user's own transaction");
 
-const zap = await Lightning.baseSepoliaTestnet({ hostChainRpcUrls: [...rpcUrls(rpcUrl)] });
+const zap = await connectLightning(network, rpcUrl);
 
 let t = now();
 const budgetCiphertext = (await zap.encrypt(BUDGET, {
@@ -213,7 +210,7 @@ console.log(`  budget handle ${budgetHandle}`);
 console.log(`  budget        ${formatUsdc(BUDGET)} USDC — encrypted; the handle above reveals nothing`);
 console.log(`  perCallCap    ${formatUsdc(PER_CALL_CAP)} USDC — public, and deliberately ABOVE the`);
 console.log(`                malicious price, so the bounce comes from Inco and not from a require()`);
-console.log(`\n  Basescan: https://sepolia.basescan.org/address/${vaultAddress}`);
+console.log(`\n  Basescan: ${network.explorer}/address/${vaultAddress}`);
 
 // Every mock payee is allowlisted on purpose: run 2 must fail the *confidential*
 // check, not a public precondition. A PayeeNotAllowlisted revert would prove
@@ -241,7 +238,7 @@ let fundedPayer: boolean;
 if (userUsdc < PAYER_FUNDING) {
   const shortfall =
     `The user account holds ${formatUsdc(userUsdc)} USDC, needs ${formatUsdc(PAYER_FUNDING)}. ` +
-    `Faucet: https://faucet.circle.com (select Base Sepolia).`;
+    (network.testnet ? "Faucet: https://faucet.circle.com (select Base Sepolia)." : `Send USDC on ${network.label} to it.`);
   // Only fatal when settlement is live. Without a facilitator nothing submits
   // `transferWithAuthorization`, so an unfunded payer still exercises the whole
   // control flow — including the bounce, which never needed USDC anyway.
@@ -280,7 +277,7 @@ console.log(`  payer balance confirmed at ${formatUsdc(payerStartingBalance)} US
 // --------------------------------------------------------------- the agent
 rule("4. hand off to the orchestrator");
 
-const relay = new VaultRelay({ rpcUrl, vaultAddress, relayKey, chainId: BASE_SEPOLIA_CHAIN_ID });
+const relay = new VaultRelay({ rpcUrl, vaultAddress, relayKey, chainId: network.chainId });
 const agentKey = optional("LLM_API_KEY");
 const agentModel = optional("LLM_MODEL");
 const agentBaseUrl = optional("LLM_BASE_URL");
@@ -306,6 +303,7 @@ const loop = new PaymentLoop({
   signer,
   agent,
   asset: usdcAddress,
+  network: network.x402Network,
   onEvent: (event) => console.log(renderEvent(event)),
 });
 

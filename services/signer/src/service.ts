@@ -46,8 +46,7 @@ import {
 } from "viem";
 import {
   TRANSFER_WITH_AUTHORIZATION_TYPES,
-  USDC_EIP712_NAME,
-  USDC_EIP712_VERSION,
+  networkForChainId,
   type TransferAuthorization,
 } from "@ntux402/shared";
 
@@ -60,6 +59,11 @@ export interface SignerConfig {
   readonly chainId: number;
   /** Asserted against the goal record's `asset`. A 402 never gets a say. */
   readonly usdcAddress: Address;
+  /**
+   * USDC's EIP-712 domain. Defaults to the values for `chainId`: the name is
+   * "USDC" on Base Sepolia and "USD Coin" on Base, so one fixed default signed
+   * mainnet authorizations the token rejects.
+   */
   readonly eip712Name?: string;
   readonly eip712Version?: string;
   /**
@@ -105,11 +109,17 @@ export class AuthorizationSigner {
   constructor(options: { vault: VaultReader; keys: KeyStore; config: SignerConfig }) {
     this.#vault = options.vault;
     this.#keys = options.keys;
+    const usdc = networkForChainId(options.config.chainId)?.usdc;
+    const eip712Name = options.config.eip712Name ?? usdc?.eip712Name;
+    const eip712Version = options.config.eip712Version ?? usdc?.eip712Version;
+    if (!eip712Name || !eip712Version) {
+      throw new Error(`no USDC EIP-712 domain known for chain ${options.config.chainId}`);
+    }
     this.#config = {
       chainId: options.config.chainId,
       usdcAddress: options.config.usdcAddress,
-      eip712Name: options.config.eip712Name ?? USDC_EIP712_NAME,
-      eip712Version: options.config.eip712Version ?? USDC_EIP712_VERSION,
+      eip712Name,
+      eip712Version,
       verifyDomainOnChain: options.config.verifyDomainOnChain ?? true,
       now: options.config.now ?? (() => Math.floor(Date.now() / 1000)),
     };

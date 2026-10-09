@@ -4,18 +4,16 @@
  *   pnpm --filter @ntux402/e2e run balances
  */
 import { createPublicClient, formatEther } from "viem";
-import { baseSepolia } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
-import { rpcTransport } from "@ntux402/shared/viem";
+import { rpcTransport, viemChain } from "@ntux402/shared/viem";
 import { formatUsdc, usdcAbi } from "@ntux402/shared";
 
-import { loadDotEnv, optional, required, requiredAddress } from "./config.js";
+import { loadDotEnv, optional, networkFromEnv } from "./config.js";
 
 loadDotEnv();
 
-const rpcUrl = required("BASE_SEPOLIA_RPC_URL");
-const usdc = requiredAddress("USDC_ADDRESS");
-const client = createPublicClient({ chain: baseSepolia, transport: rpcTransport(rpcUrl) });
+const { network, rpcUrl, usdcAddress: usdc } = networkFromEnv();
+const client = createPublicClient({ chain: viemChain(network), transport: rpcTransport(rpcUrl) });
 
 const roles: Array<[string, string | undefined]> = [
   ["user (DEPLOYER_PRIVATE_KEY)", optional("DEPLOYER_PRIVATE_KEY")],

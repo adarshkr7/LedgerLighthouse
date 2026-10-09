@@ -2,7 +2,7 @@
  *   pnpm --filter @ntux402/facilitator run start
  *
  * Needs FACILITATOR_PRIVATE_KEY (gas only — it holds no user funds) and a
- * little Base Sepolia ETH. Set X402_FACILITATOR_URL to this server's address so
+ * little ETH on the network NETWORK names. Set X402_FACILITATOR_URL to this server's address so
  * the resource server finds it.
  */
 
@@ -11,41 +11,37 @@ import {
   createLogger,
   describeGuard,
   loadDotEnv,
-  required,
-  requiredAddress,
+  networkFromEnv,
   requiredHexKey,
 } from "@ntux402/shared/node";
-import { NETWORK_BASE_SEPOLIA } from "@ntux402/shared";
-import { createPublicClient, formatEther, http } from "viem";
-import { baseSepolia } from "viem/chains";
+import { createPublicClient, formatEther } from "viem";
 
 import { Facilitator } from "./facilitator.js";
 import { createFacilitatorServer } from "./http.js";
-import { rpcTransport } from "@ntux402/shared/viem";
+import { rpcTransport, viemChain } from "@ntux402/shared/viem";
 
 loadDotEnv();
 
 const log = createLogger("facilitator");
 
 const port = Number(process.env["FACILITATOR_PORT"] ?? 8403);
-const chainId = Number(process.env["CHAIN_ID"] ?? 84532);
-const rpcUrl = required("BASE_SEPOLIA_RPC_URL");
+const { network, rpcUrl, usdcAddress } = networkFromEnv();
 
 const facilitator = new Facilitator({
   rpcUrl,
-  chainId,
-  asset: requiredAddress("USDC_ADDRESS"),
-  network: NETWORK_BASE_SEPOLIA,
+  chainId: network.chainId,
+  asset: usdcAddress,
+  network: network.x402Network,
   settlerKey: requiredHexKey("FACILITATOR_PRIVATE_KEY"),
 });
 
 const server = createFacilitatorServer({
   facilitator,
-  network: NETWORK_BASE_SEPOLIA,
+  network: network.x402Network,
   log: (line) => log.info(line),
 });
 
-const client = createPublicClient({ chain: baseSepolia, transport: rpcTransport(rpcUrl) });
+const client = createPublicClient({ chain: viemChain(network), transport: rpcTransport(rpcUrl) });
 
 /*
  * Listen first, read the gas balance after.
@@ -65,7 +61,7 @@ const client = createPublicClient({ chain: baseSepolia, transport: rpcTransport(
  */
 server.listen(port, bindHost(), () => {
   log.info(`listening on http://${bindHost()}:${port}`, { guard: describeGuard() });
-  log.info("settler", { address: facilitator.settlerAddress });
+  log.info("settler", { address: facilitator.settlerAddress, network: network.label });
 });
 
 void client.getBalance({ address: facilitator.settlerAddress }).then(
@@ -73,8 +69,9 @@ void client.getBalance({ address: facilitator.settlerAddress }).then(
     log.info("gas balance", { eth: formatEther(balance) });
     if (balance < 500_000_000_000_000n) {
       log.warn(
-        "low gas balance — settlement will fail. " +
-          "Faucet: https://www.alchemy.com/faucets/base-sepolia",
+        network.testnet
+          ? "low gas balance — settlement will fail. Faucet: https://www.alchemy.com/faucets/base-sepolia"
+          : `low gas balance — settlement will fail. Send a little ETH on ${network.label} to the settler.`,
       );
     }
   },

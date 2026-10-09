@@ -1,5 +1,5 @@
 /**
- * Track 2 — the A2 adversary campaign (paper/evaluation-design.md §5).
+ * Track 2: the A2 adversary campaign.
  *
  *   pnpm --filter @ntux402/e2e run adversary
  *
@@ -64,32 +64,30 @@ import {
   type Address,
   type Hex,
 } from "viem";
-import { baseSepolia } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
-import { Lightning } from "@inco/lightning-js/lite";
 import { handleTypes } from "@inco/lightning-js";
-import { rpcTransport } from "@ntux402/shared/viem";
-import { DEMO_PAYEES, rpcUrls } from "@ntux402/shared";
+import { rpcTransport, viemChain } from "@ntux402/shared/viem";
+import { DEMO_PAYEES } from "@ntux402/shared";
 import {
   IncoDecisionReader,
   SignerClient,
   VaultRelay,
+  connectLightning,
   pollForDecision,
   type AttestedDecision,
   type AuthorizeOutcome,
 } from "@ntux402/orchestrator";
 
 import {
-  BASE_SEPOLIA_CHAIN_ID,
   INCO_FEE_ABI,
   INCO_SINGLETON,
   formatUsdc,
   loadDotEnv,
   optional,
   policyVaultAbi,
-  required,
   requiredAddress,
   requiredHexKey,
+  networkFromEnv,
 } from "./config.js";
 
 loadDotEnv();
@@ -271,31 +269,30 @@ const first = (text: string): string => text.split("\n")[0]!.slice(0, 160);
 
 // -------------------------------------------------------------------- setup
 
-const rpcUrl = required("BASE_SEPOLIA_RPC_URL");
+const { network, rpcUrl, usdcAddress } = networkFromEnv();
 const vaultAddress = requiredAddress("POLICY_VAULT_ADDRESS");
-const usdcAddress = requiredAddress("USDC_ADDRESS");
 const signerUrl = optional("SIGNER_URL") ?? `http://127.0.0.1:${process.env["SIGNER_PORT"] ?? 8402}`;
 
 const user = privateKeyToAccount(requiredHexKey("DEPLOYER_PRIVATE_KEY"));
 const relayKey = requiredHexKey("ORCHESTRATOR_RELAY_KEY");
 const relayAddress = privateKeyToAccount(relayKey).address;
 
-const publicClient = createPublicClient({ chain: baseSepolia, transport: rpcTransport(rpcUrl) });
+const publicClient = createPublicClient({ chain: viemChain(network), transport: rpcTransport(rpcUrl) });
 const userWallet = createWalletClient({
   account: user,
-  chain: baseSepolia,
+  chain: viemChain(network),
   transport: rpcTransport(rpcUrl),
 });
 const abi = policyVaultAbi();
 
-const relay = new VaultRelay({ rpcUrl, vaultAddress, relayKey, chainId: BASE_SEPOLIA_CHAIN_ID });
+const relay = new VaultRelay({ rpcUrl, vaultAddress, relayKey, chainId: network.chainId });
 const signer = new SignerClient(
   signerUrl,
   undefined,
   optional("SIGNER_SERVICE_TOKEN") ?? optional("SERVICE_TOKEN"),
 );
 
-const zap = await Lightning.baseSepoliaTestnet({ hostChainRpcUrls: [...rpcUrls(rpcUrl)] });
+const zap = await connectLightning(network, rpcUrl);
 const decisions = new IncoDecisionReader(zap);
 
 const rule = (label = "") =>
@@ -545,7 +542,7 @@ async function attemptSpend(
  * This is the strongest thing an A2 adversary can do that the architecture
  * *permits*. It is not an attack on any control — it is the control's stated
  * ceiling, exercised deliberately, and the question is only whether the ceiling
- * is where the paper says it is.
+ * is where `perCallCap × callsRemaining` says it is.
  */
 async function c1MaxExtraction(goal: OpenedGoal): Promise<bigint> {
   console.log(`\n  C1 on goal ${goal.goalId} (${goal.label}) — asking perCallCap every call`);
@@ -803,8 +800,8 @@ console.log("  Threat model: arbitrary code execution in the orchestrator.");
 console.log("  No agent, no model. The adversary calls requestSpend directly.\n");
 
 const chainId = await publicClient.getChainId();
-if (chainId !== BASE_SEPOLIA_CHAIN_ID) {
-  throw new Error(`Wrong chain: ${chainId}, expected ${BASE_SEPOLIA_CHAIN_ID}`);
+if (chainId !== network.chainId) {
+  throw new Error(`Wrong chain: ${chainId}, expected ${network.chainId}`);
 }
 const health = await fetch(`${signerUrl}/health`).catch(() => undefined);
 if (!health?.ok) throw new Error(`signer is not reachable at ${signerUrl}. Start it first.`);

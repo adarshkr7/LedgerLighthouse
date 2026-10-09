@@ -23,10 +23,9 @@ import {
   type PublicClient,
   type WalletClient,
 } from "viem";
-import { baseSepolia } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
 import { policyVaultAbi } from "@ntux402/shared";
-import { rpcTransport } from "@ntux402/shared/viem";
+import { rpcTransport, viemChainForId } from "@ntux402/shared/viem";
 
 export interface SpendRequested {
   readonly seq: bigint;
@@ -63,19 +62,21 @@ export class VaultRelay {
   readonly #vault: Address;
   readonly #chainId: number;
   readonly #relay: Address;
+  readonly #chain: ReturnType<typeof viemChainForId>;
 
   constructor(config: VaultRelayConfig) {
     const account = privateKeyToAccount(config.relayKey);
     this.#relay = account.address;
     this.#vault = config.vaultAddress;
     this.#chainId = config.chainId;
+    this.#chain = viemChainForId(config.chainId);
     this.#public = createPublicClient({
-      chain: baseSepolia,
+      chain: this.#chain,
       transport: rpcTransport(config.rpcUrl),
     }) as PublicClient;
     this.#wallet = createWalletClient({
       account,
-      chain: baseSepolia,
+      chain: this.#chain,
       transport: rpcTransport(config.rpcUrl),
     });
   }
@@ -133,7 +134,7 @@ export class VaultRelay {
       abi: policyVaultAbi,
       functionName: "requestSpend",
       args: [goalId, amount, payTo, resource],
-      chain: baseSepolia,
+      chain: this.#chain,
       account: this.#wallet.account!,
     });
 
@@ -188,7 +189,7 @@ export class VaultRelay {
       abi: policyVaultAbi,
       functionName: "finalizeDecision",
       args: [goalId, seq, approved, signatures],
-      chain: baseSepolia,
+      chain: this.#chain,
       account: this.#wallet.account!,
     });
 

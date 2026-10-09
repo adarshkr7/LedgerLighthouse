@@ -15,6 +15,7 @@
 import { useState } from "react";
 import { ConnectorAlreadyConnectedError, useAccount, useConnect } from "wagmi";
 
+import { NETWORK } from "../lib/config.js";
 import { Modal } from "./Modal.js";
 
 /**
@@ -57,7 +58,7 @@ export function ConnectGate() {
   }
 
   return (
-    <Modal open={status !== "connected"} title="Connect a wallet" tag="Base Sepolia · testnet">
+    <Modal open={status !== "connected"} title="Connect a wallet" tag={`${NETWORK.label} · ${NETWORK.testnet ? "testnet" : "mainnet, real money"}`}>
       <p className="d-caption">
         Your wallet signs three things in this console: opening a goal, funding its budget, and
         closing it to take the money back. It signs nothing while the agent is paying.

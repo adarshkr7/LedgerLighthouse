@@ -11,9 +11,8 @@
  */
 
 import { createPublicClient, http, type Address, type Hex, type PublicClient } from "viem";
-import { baseSepolia } from "viem/chains";
 import { policyVaultAbi, usdcAbi } from "@ntux402/shared";
-import { rpcTransport } from "@ntux402/shared/viem";
+import { rpcTransport, viemChainForId } from "@ntux402/shared/viem";
 
 /** The goal record, as stored on chain. */
 export interface GoalRecord {
@@ -59,11 +58,16 @@ export class OnChainVaultReader implements VaultReader {
   readonly #client: PublicClient;
   readonly #vault: Address;
 
-  constructor(options: { rpcUrl: string; vaultAddress: Address; client?: PublicClient }) {
+  constructor(options: {
+    rpcUrl: string;
+    vaultAddress: Address;
+    chainId: number;
+    client?: PublicClient;
+  }) {
     this.#client =
       options.client ??
       (createPublicClient({
-        chain: baseSepolia,
+        chain: viemChainForId(options.chainId),
         transport: rpcTransport(options.rpcUrl),
       }) as PublicClient);
     this.#vault = options.vaultAddress;

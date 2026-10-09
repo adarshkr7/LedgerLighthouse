@@ -37,8 +37,8 @@
  */
 
 import {
-  NETWORK_BASE_SEPOLIA,
   SCHEME_EXACT,
+  networkForChainId,
   X402_VERSION,
   type Address,
   type SettleResponse,
@@ -85,17 +85,24 @@ export async function sweepGoal(goalId: string, config: SweepConfig): Promise<Sw
   }
   const signed: SignedAuthorization = authorized.value;
 
+  // The network is the one the signer signed for, so the envelope cannot name
+  // a different chain from the signature inside it.
+  const network = networkForChainId(signed.chainId);
+  if (network === undefined) {
+    return { kind: "failed", reason: `signer signed for chain ${signed.chainId}, which is not a known network` };
+  }
+
   // --- submit it -----------------------------------------------------------
   const envelope = {
     paymentPayload: {
       x402Version: X402_VERSION,
       scheme: SCHEME_EXACT,
-      network: NETWORK_BASE_SEPOLIA,
+      network: network.x402Network,
       payload: { signature: signed.signature, authorization: signed.authorization },
     },
     paymentRequirements: {
       scheme: SCHEME_EXACT,
-      network: NETWORK_BASE_SEPOLIA,
+      network: network.x402Network,
       maxAmountRequired: signed.authorization.value,
       resource: `goal:${goalId}/sweep`,
       description: "Return of unspent ephemeral payer balance to the goal owner",

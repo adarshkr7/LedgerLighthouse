@@ -7,11 +7,10 @@
  * a MetaMask account, a payer address, a faucet destination.
  */
 import { createPublicClient, formatEther, isAddress, type Address } from "viem";
-import { baseSepolia } from "viem/chains";
-import { rpcTransport } from "@ntux402/shared/viem";
+import { rpcTransport, viemChain } from "@ntux402/shared/viem";
 import { formatUsdc, usdcAbi } from "@ntux402/shared";
 
-import { loadDotEnv, required, requiredAddress } from "./config.js";
+import { loadDotEnv, networkFromEnv } from "./config.js";
 
 loadDotEnv();
 
@@ -21,10 +20,10 @@ if (targets.length === 0) {
   process.exit(2);
 }
 
-const usdc = requiredAddress("USDC_ADDRESS");
-const client = createPublicClient({ chain: baseSepolia, transport: rpcTransport(required("BASE_SEPOLIA_RPC_URL")) });
+const { network, rpcUrl, usdcAddress: usdc } = networkFromEnv();
+const client = createPublicClient({ chain: viemChain(network), transport: rpcTransport(rpcUrl) });
 
-console.log("\nBase Sepolia\n");
+console.log(`\n${network.label}\n`);
 for (const address of targets) {
   const [eth, balance, code] = await Promise.all([
     client.getBalance({ address }),

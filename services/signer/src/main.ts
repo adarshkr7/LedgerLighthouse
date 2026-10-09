@@ -1,10 +1,12 @@
 /**
- * Runs the Authorization Signer against Base Sepolia.
+ * Runs the Authorization Signer against the network NETWORK names (Base
+ * Sepolia when unset).
  *
  *   pnpm --filter @ntux402/signer run start
  *
- * Reads BASE_SEPOLIA_RPC_URL, POLICY_VAULT_ADDRESS, USDC_ADDRESS, CHAIN_ID and
- * SIGNER_KEY_STORE_PATH. Deliberately does **not** read ORCHESTRATOR_RELAY_KEY:
+ * Reads NETWORK, RPC_URL (or BASE_SEPOLIA_RPC_URL), POLICY_VAULT_ADDRESS and
+ * SIGNER_KEY_STORE_PATH. CHAIN_ID and USDC_ADDRESS are still accepted, as
+ * checks against NETWORK. Deliberately does **not** read ORCHESTRATOR_RELAY_KEY:
  * this process has no business submitting transactions, and reading the variable
  * at all is the first step towards doing so.
  */
@@ -25,7 +27,7 @@ import {
   describeGuard,
   findRepoRoot,
   loadDotEnv,
-  required,
+  networkFromEnv,
   requiredAddress,
 } from "@ntux402/shared/node";
 
@@ -44,11 +46,13 @@ loadDotEnv();
 const log = createLogger("signer");
 
 const port = Number(process.env["SIGNER_PORT"] ?? 8402);
-const chainId = Number(process.env["CHAIN_ID"] ?? 84532);
+const { network, rpcUrl, usdcAddress } = networkFromEnv();
+const chainId = network.chainId;
 
 const vault = new OnChainVaultReader({
-  rpcUrl: required("BASE_SEPOLIA_RPC_URL"),
+  rpcUrl,
   vaultAddress: requiredAddress("POLICY_VAULT_ADDRESS"),
+  chainId,
 });
 
 /**
@@ -174,7 +178,7 @@ const keys = new RateLimitedKeyStore(
 const signer = new AuthorizationSigner({
   vault,
   keys,
-  config: { chainId, usdcAddress: requiredAddress("USDC_ADDRESS") },
+  config: { chainId, usdcAddress },
 });
 
 const server = createSignerServer({
@@ -188,7 +192,8 @@ server.listen(port, bindHost(), () => {
   log.info("enclave key operations are rate limited", {
     limits: describeEnclaveLimits(enclaveLimits),
   });
-  log.info("bound to chain", { chainId, vault: process.env["POLICY_VAULT_ADDRESS"] });
+  log.info("bound to chain", { network: network.label, chainId, vault: process.env["POLICY_VAULT_ADDRESS"] });
+  if (!network.testnet) log.warn(`${network.label} is mainnet: the payers this signer holds carry real USDC`);
   log.info("key store", {
     // The resolved absolute path, not the raw setting: which file this is was
     // the ambiguity that lost keys in the first place.

@@ -36,17 +36,13 @@ import {
   type Address,
   type Hex,
 } from "viem";
-import { baseSepolia } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
-import { Lightning } from "@inco/lightning-js/lite";
 import { handleTypes } from "@inco/lightning-js";
 
-import { rpcTransport } from "@ntux402/shared/viem";
-import { rpcUrls } from "@ntux402/shared";
-import { IncoDecisionReader, pollForDecision } from "@ntux402/orchestrator";
+import { rpcTransport, viemChain } from "@ntux402/shared/viem";
+import { IncoDecisionReader, connectLightning, pollForDecision } from "@ntux402/orchestrator";
 
 import {
-  BASE_SEPOLIA_CHAIN_ID,
   INCO_FEE_ABI,
   INCO_SINGLETON,
   fmt,
@@ -55,9 +51,9 @@ import {
   ms,
   now,
   policyVaultAbi,
-  required,
   requiredAddress,
   requiredHexKey,
+  networkFromEnv,
 } from "./config.js";
 
 loadDotEnv();
@@ -71,16 +67,15 @@ const PER_CALL_CAP = 6_000_000n;
 const FIRST_SPEND = 40_000n; // 0.04 — inside the budget
 const SECOND_SPEND = 90_000n; // 0.09 — inside the *cap*, past what the budget has left
 
-const rpcUrl = required("BASE_SEPOLIA_RPC_URL");
+const { network, rpcUrl, usdcAddress } = networkFromEnv();
 const vaultAddress = requiredAddress("POLICY_VAULT_ADDRESS");
-const usdcAddress = requiredAddress("USDC_ADDRESS");
 
 const user = privateKeyToAccount(requiredHexKey("DEPLOYER_PRIVATE_KEY"));
 const relay = privateKeyToAccount(requiredHexKey("ORCHESTRATOR_RELAY_KEY"));
 
-const publicClient = createPublicClient({ chain: baseSepolia, transport: rpcTransport(rpcUrl) });
-const userWallet = createWalletClient({ account: user, chain: baseSepolia, transport: rpcTransport(rpcUrl) });
-const relayWallet = createWalletClient({ account: relay, chain: baseSepolia, transport: rpcTransport(rpcUrl) });
+const publicClient = createPublicClient({ chain: viemChain(network), transport: rpcTransport(rpcUrl) });
+const userWallet = createWalletClient({ account: user, chain: viemChain(network), transport: rpcTransport(rpcUrl) });
+const relayWallet = createWalletClient({ account: relay, chain: viemChain(network), transport: rpcTransport(rpcUrl) });
 const abi = policyVaultAbi();
 
 const rule = (label = "") =>
@@ -116,8 +111,8 @@ async function readUntil<T>(read: () => Promise<T>, want: T, timeoutMs = 30_000)
 rule("preflight");
 
 const chainId = await publicClient.getChainId();
-if (chainId !== BASE_SEPOLIA_CHAIN_ID) {
-  throw new Error(`Wrong chain: ${chainId}, expected ${BASE_SEPOLIA_CHAIN_ID}`);
+if (chainId !== network.chainId) {
+  throw new Error(`Wrong chain: ${chainId}, expected ${network.chainId}`);
 }
 check("chain", true, `${chainId}`);
 check("vault", true, vaultAddress);
@@ -147,7 +142,7 @@ check("Inco fee", true, `${formatEther(incoFee)} ETH per encrypted input`);
 // ----------------------------------------------------------------- encryption
 rule("1. encrypt the budget client-side");
 
-const zap = await Lightning.baseSepoliaTestnet({ hostChainRpcUrls: [...rpcUrls(rpcUrl)] });
+const zap = await connectLightning(network, rpcUrl);
 
 let t = now();
 const budgetCiphertext = (await zap.encrypt(BUDGET, {
@@ -310,4 +305,4 @@ if (failures > 0) {
 }
 console.log(`  Inco TEE round trip verified: encryption in, attested decryption out,`);
 console.log(`  both decisions checked on chain, goal ${goalId} closed.`);
-console.log(`\n  https://sepolia.basescan.org/address/${vaultAddress}\n`);
+console.log(`\n  ${network.explorer}/address/${vaultAddress}\n`);

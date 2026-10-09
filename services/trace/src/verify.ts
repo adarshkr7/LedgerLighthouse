@@ -28,12 +28,11 @@ import {
   type Hex,
   type PublicClient,
 } from "viem";
-import { baseSepolia } from "viem/chains";
-import { policyVaultAbi, usdcAbi } from "@ntux402/shared";
+import { networkForChainId, policyVaultAbi, usdcAbi } from "@ntux402/shared";
 
 import { merkleRoot } from "./merkle.js";
 import { GENESIS_HASH, VENDOR_ATTESTED_STEPS, computeStepHash, type Trace } from "./step.js";
-import { rpcTransport } from "@ntux402/shared/viem";
+import { rpcTransport, viemChain } from "@ntux402/shared/viem";
 
 export interface Finding {
   readonly severity: "error" | "warning";
@@ -149,11 +148,17 @@ export async function verifyTrace(
   }
 
   // ------------------------------------------------------------- on chain
+  // The trace names its own chain, and that is the chain its claims are checked on.
+  const network = networkForChainId(trace.chainId);
+  if (options.rpcUrl && !options.client && network === undefined) {
+    fail("onchain.chainId", `the trace is for chain ${trace.chainId}, which is not a network this verifier knows`);
+    return { valid: false, checksRun, findings, onChain: false };
+  }
   const client =
     options.client ??
-    (options.rpcUrl
+    (options.rpcUrl && network
       ? (createPublicClient({
-          chain: baseSepolia,
+          chain: viemChain(network),
           transport: rpcTransport(options.rpcUrl),
         }) as PublicClient)
       : undefined);
@@ -162,7 +167,7 @@ export async function verifyTrace(
     warn(
       "onchain",
       "skipped — no RPC supplied. The hash chain is verified, but the trace's claims about " +
-        "Base Sepolia are not.",
+        `${network?.label ?? `chain ${trace.chainId}`} are not.`,
     );
     return { valid: !findings.some((f) => f.severity === "error"), checksRun, findings, onChain: false };
   }

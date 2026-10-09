@@ -40,6 +40,7 @@ import "./dashboard/dashboard.css";
 import {
   CHAIN,
   CHAIN_ID,
+  NETWORK,
   ORCHESTRATOR_URL,
   RPC_URL,
   RPC_URLS,
@@ -549,7 +550,10 @@ export default function App() {
       // Same endpoints the services use. Called bare, the SDK falls back to
       // the chain default — the endpoint observed returning -32011 on eth_call
       // while the rest of the app, pointed elsewhere, worked fine.
-      const zap = await Lightning.baseSepoliaTestnet({ hostChainRpcUrls: [...RPC_URLS] });
+      const incoOptions = { hostChainRpcUrls: [...RPC_URLS] };
+      const zap = await (NETWORK.testnet
+        ? Lightning.baseSepoliaTestnet(incoOptions)
+        : Lightning.baseMainnet(incoOptions));
       // Bound to (this address, this vault). A ciphertext prepared for anyone
       // else yields a handle openGoal cannot use — which is why the user, not
       // the orchestrator, has to send this transaction.
@@ -821,7 +825,7 @@ export default function App() {
           </span>
           <span className="d-top-item">
             <i>Network</i>
-            {wrongChain ? `chain ${chainId}` : "Base Sepolia"}
+            {wrongChain ? `chain ${chainId}` : NETWORK.label}
           </span>
           {config ? (
             <span className="d-top-item">
@@ -1164,7 +1168,7 @@ export default function App() {
         <div className="d-setup">
           {wrongChain ? (
             <>
-              <p className="d-notice">This demo writes only to Base Sepolia.</p>
+              <p className="d-notice">This console writes only to {NETWORK.label}.</p>
               <button
                 type="button"
                 className="d-btn d-btn-block"
@@ -1259,7 +1263,7 @@ export default function App() {
                 </p>
               ) : wrongChain ? (
                 <p className="d-hint">
-                  Wallet is on chain {chainId} — switch it to Base Sepolia ({CHAIN_ID}) to open a
+                  Wallet is on chain {chainId} — switch it to {NETWORK.label} ({CHAIN_ID}) to open a
                   goal. Until it moves, the wallet client is unavailable and the budget cannot be
                   encrypted.
                 </p>

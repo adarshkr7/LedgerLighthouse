@@ -19,12 +19,15 @@
  */
 
 import type { Hex } from "viem";
+import { NETWORKS } from "@ntux402/shared";
 
 import type { DecisionReader } from "./reveal.js";
 
-/** Decision handle of goal 47, seq 1 on the deployed PolicyVault: approved, finalized. */
-export const INCO_PROBE_HANDLE: Hex =
-  "0xc76c2592384d77ec2b8b85b1a4924b4edaf089266ee6798e3eefbae279df0000";
+/**
+ * Decision handle of goal 47, seq 1 on the Base Sepolia PolicyVault: approved,
+ * finalized. Other networks carry their own in `NETWORKS`, or none yet.
+ */
+export const INCO_PROBE_HANDLE: Hex = NETWORKS["base-sepolia"].incoProbeHandle!;
 
 export type IncoHealth =
   | { readonly status: "ready"; readonly latencyMs: number; readonly checkedAt: number }

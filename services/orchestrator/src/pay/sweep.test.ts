@@ -141,4 +141,48 @@ describe("sweepGoal", () => {
 
     expect(outcome).toEqual({ kind: "failed", reason: "payer balance 0" });
   });
+
+  it("names the network the signer signed for", async () => {
+    // A sweep signed on Base must not reach the facilitator labelled base-sepolia.
+    const { client } = signerReturning(200, { ...SIGNED, chainId: 8453 });
+    let envelope: unknown;
+
+    await sweepGoal("7", {
+      signer: client,
+      facilitatorUrl: "http://facilitator.local",
+      usdcAddress: USDC,
+      fetchImpl: (async (_url: string, init?: RequestInit) => {
+        envelope = JSON.parse(String(init?.body));
+        return new Response(JSON.stringify({ success: true, transaction: "0xdead" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }) as unknown as typeof fetch,
+    });
+
+    const sent = envelope as {
+      paymentPayload: { network: string };
+      paymentRequirements: { network: string };
+    };
+    expect(sent.paymentPayload.network).toBe("base");
+    expect(sent.paymentRequirements.network).toBe("base");
+  });
+
+  it("refuses to forward a signature for a chain it does not know", async () => {
+    const { client } = signerReturning(200, { ...SIGNED, chainId: 1 });
+    let forwarded = false;
+
+    const outcome = await sweepGoal("7", {
+      signer: client,
+      facilitatorUrl: "http://facilitator.local",
+      usdcAddress: USDC,
+      fetchImpl: (async () => {
+        forwarded = true;
+        return new Response("{}", { status: 200 });
+      }) as unknown as typeof fetch,
+    });
+
+    expect(outcome.kind).toBe("failed");
+    expect(forwarded).toBe(false);
+  });
 });
