@@ -49,8 +49,10 @@ Exit code 0, goal 4, live settlement, the live model deciding.
 | Settlement | [settled](https://sepolia.basescan.org/tx/0xf4c7713c4c53db339bbfdcca5a5d1b2c1a8bc351334c8e9745ca166547d0a3fe) | none |
 | Payer balance | 0.45 → 0.44 | 0.44 → 0.44 |
 
-The demo leaves goal 4 open with 0.44 USDC in its payer. Nothing in the e2e scripts closes a
-goal or sweeps a payer; only the console does.
+The demo left goal 4 open with 0.44 USDC in its payer. The sweep tool, written the same day,
+closed it and
+[returned the 0.44](https://sepolia.basescan.org/tx/0xdd2b0c19a2e7584d99c5ad548b10eb4e7adb016fe75e8bf74529844e765279ae)
+to the owner.
 
 ## `demo-2026-08-22-passing.log`
 

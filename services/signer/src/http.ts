@@ -81,6 +81,12 @@ export interface SignerServerOptions {
   readonly signer: AuthorizationSigner;
   /** Called for each request. Never receives a key or a signature payload. */
   readonly log?: (line: string) => void;
+  /**
+   * The chain and vault this signer reads goals from, reported by /health.
+   * Goal ids repeat across vaults, so a caller acting on one vault's goal ids
+   * has to know this signer reads the same vault. Both values are public.
+   */
+  readonly binding?: { readonly chainId: number; readonly vault: string };
 }
 
 export function createSignerServer(options: SignerServerOptions): Server {
@@ -111,7 +117,7 @@ export function createSignerServer(options: SignerServerOptions): Server {
       // Unguarded on purpose: a liveness probe that needs a credential is a
       // liveness probe that reports the credential rather than the service.
       if (req.method === "GET" && path === "/health") {
-        send(res, 200, { ok: true, service: "authorization-signer" }, cors);
+        send(res, 200, { ok: true, service: "authorization-signer", ...options.binding }, cors);
         return;
       }
 

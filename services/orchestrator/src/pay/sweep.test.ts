@@ -11,7 +11,7 @@
 import { describe, expect, it } from "vitest";
 
 import { SignerClient } from "./signer-client.js";
-import { sweepGoal } from "./sweep.js";
+import { askSignerToSweep, sweepGoal } from "./sweep.js";
 
 const USDC = `0x${"33".repeat(20)}` as const;
 const OWNER = `0x${"44".repeat(20)}` as const;
@@ -84,7 +84,8 @@ describe("sweepGoal", () => {
     // The informative ones: "goal is still open", "payer holds no USDC". They
     // are the reason a sweep failed, so flattening them to a generic 502 would
     // leave the console unable to say what to do next.
-    const { client } = signerReturning(409, { error: "refused: goal 7 is still open." });
+    const reason = `refused: payer ${PAYER} holds no ${USDC}.`;
+    const { client } = signerReturning(409, { error: reason });
 
     const outcome = await sweepGoal("7", {
       signer: client,
@@ -92,11 +93,7 @@ describe("sweepGoal", () => {
       usdcAddress: USDC,
     });
 
-    expect(outcome).toEqual({
-      kind: "refused",
-      status: 409,
-      reason: "refused: goal 7 is still open.",
-    });
+    expect(outcome).toEqual({ kind: "refused", status: 409, reason });
   });
 
   it("forwards the signed authorization to the facilitator unchanged", async () => {
@@ -184,5 +181,56 @@ describe("sweepGoal", () => {
 
     expect(outcome.kind).toBe("failed");
     expect(forwarded).toBe(false);
+  });
+});
+
+/** A signer that answers each `/sweeps` call with the next response in `script`. */
+function signerScripted(script: ReadonlyArray<{ status: number; body: unknown }>) {
+  let calls = 0;
+  const fetchImpl = (async () => {
+    const next = script[Math.min(calls, script.length - 1)]!;
+    calls += 1;
+    return new Response(JSON.stringify(next.body), {
+      status: next.status,
+      headers: { "content-type": "application/json" },
+    });
+  }) as unknown as typeof fetch;
+  return { calls: () => calls, client: new SignerClient("http://signer.local", fetchImpl) };
+}
+
+const STILL_OPEN = { status: 409, body: { error: "refused: goal 7 is still open. Close it first." } };
+
+describe("askSignerToSweep", () => {
+  /*
+   * The case from the first live run: closeGoal confirmed, and the signer's
+   * RPC answered from a node that had not seen it yet.
+   */
+  it("waits out a stale 'still open' after a close", async () => {
+    const { calls, client } = signerScripted([STILL_OPEN, STILL_OPEN, { status: 200, body: SIGNED }]);
+
+    const outcome = await askSignerToSweep(client, "7", { intervalMs: 0 });
+
+    expect(outcome.kind).toBe("signed");
+    expect(calls()).toBe(3);
+  });
+
+  it("gives up on a goal that stays open", async () => {
+    const { calls, client } = signerScripted([STILL_OPEN]);
+
+    const outcome = await askSignerToSweep(client, "7", { attempts: 4, intervalMs: 0 });
+
+    expect(outcome).toMatchObject({ kind: "refused", status: 409 });
+    expect(calls()).toBe(4);
+  });
+
+  it("does not retry any other refusal", async () => {
+    const { calls, client } = signerScripted([
+      { status: 404, body: { error: `refused: no key held for payer ${PAYER}.` } },
+    ]);
+
+    const outcome = await askSignerToSweep(client, "7", { intervalMs: 0 });
+
+    expect(outcome).toMatchObject({ kind: "refused", status: 404 });
+    expect(calls()).toBe(1);
   });
 });

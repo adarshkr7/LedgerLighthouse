@@ -183,6 +183,7 @@ const signer = new AuthorizationSigner({
 
 const server = createSignerServer({
   signer,
+  binding: { chainId, vault: requiredAddress("POLICY_VAULT_ADDRESS") },
   log: (line) => log.info(line),
 });
 

@@ -237,6 +237,21 @@ Starts the signer (`8402`), mock resource server (`4021`), orchestrator (`8404`)
 (`5173`). Open <http://127.0.0.1:5173>, connect MetaMask on Base Sepolia, and walk the five steps —
 connect, mint payer, open goal, fund, run.
 
+### Get the money back
+
+A goal's payer keeps whatever its runs did not spend until the goal is closed and swept. The console
+does both for its own goal. For everything else:
+
+```bash
+pnpm --filter @ntux402/e2e run sweep
+```
+
+That lists every goal on the vault whose payer still holds USDC, and what it would do with each. It
+sends nothing. Add `-- --execute` to close the goals `DEPLOYER_PRIVATE_KEY` owns and return every
+balance the signer holds a key for to the goal's owner. Goals owned by another wallet have to be
+closed by that wallet in the console first. `-- --vault 0x…` targets another vault, and the signer
+must be running against that same vault.
+
 ### Verify
 
 ```bash
@@ -271,7 +286,7 @@ Two traps worth knowing: `oasis rofl build` will not run on native Windows, and 
 | `packages/shared/` | Types, the x402 client, chain helpers, the shared HTTP guard |
 | `apps/web/` | Console — MetaMask goal opening, funding, run visualisation |
 | `mock-api/` | Mock resource server — fabricated data at chosen prices |
-| `tools/e2e/` | Keygen, funding, and the end-to-end demo runner |
+| `tools/e2e/` | Keygen, funding, the end-to-end demo and adversary runners, and the sweep tool |
 | `scripts/` | `dev`, `verify`, ABI sync, and the CI import-boundary check |
 | `docs/` | Architecture, and recorded runs |
 
