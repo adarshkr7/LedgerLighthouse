@@ -19,7 +19,7 @@
  * true decision, once for a false one, and then once more with the plaintext
  * deliberately flipped. If a lie verified, the attestation would be decoration.
  *
- * The second spend is the interesting one. It is under the public per-call cap
+ * The second spend is the interesting one. It is under the encrypted per-call cap
  * and its payee is allowlisted, so every plaintext precondition passes. The only
  * thing in the system that can refuse it is the encrypted remaining budget —
  * which by then has already been debited by the first spend, inside the enclave,
@@ -37,6 +37,7 @@ import {
   type Address,
   type Hex,
 } from "viem";
+import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { handleTypes } from "@inco/lightning-js";
 
 import { rpcTransport, sendingAccount, viemChain } from "@ntux402/shared/viem";
@@ -72,6 +73,9 @@ const vaultAddress = requiredAddress("POLICY_VAULT_ADDRESS");
 
 const user = sendingAccount(requiredHexKey("DEPLOYER_PRIVATE_KEY"));
 const relay = sendingAccount(requiredHexKey("ORCHESTRATOR_RELAY_KEY"));
+// The vault binds a payer to one goal for good, so reusing an address would
+// make this script pass once per vault and then revert `PayerAlreadyBound`.
+const throwawayPayer = privateKeyToAccount(generatePrivateKey()).address;
 
 const publicClient = createPublicClient({ chain: viemChain(network), transport: rpcTransport(rpcUrl) });
 const userWallet = createWalletClient({ account: user, chain: viemChain(network), transport: rpcTransport(rpcUrl) });
@@ -176,8 +180,9 @@ const openHash = await userWallet.writeContract({
       budgetCiphertext,
       perCallCapCiphertext,
       callsRemaining: 5,
-      // Never used: nothing here settles. The field only has to be non-zero.
-      payer: user.address,
+      // Never funded and never signs: nothing here settles. It only has to be
+      // an address no goal has bound yet, so a fresh one each run.
+      payer: throwawayPayer,
       relay: relay.address,
       asset: usdcAddress,
       expiry: BigInt(Math.floor(Date.now() / 1000) + 3600),
@@ -195,6 +200,14 @@ if (!opened) throw new Error("GoalOpened not emitted");
 const { goalId, budgetHandle } = opened.args as unknown as { goalId: bigint; budgetHandle: Hex };
 
 check("goalId", true, `${goalId}`);
+
+// The relay simulates `requestSpend` before sending it, and a lagging node that
+// has not seen this goal yet answers `UnknownGoal`. Wait until it is visible.
+const bound = await readUntil(
+  () => publicClient.readContract({ address: vaultAddress, abi, functionName: "payerGoal", args: [throwawayPayer] }) as Promise<bigint>,
+  goalId,
+);
+check("goal visible to the RPC", bound === goalId, `payerGoal = ${bound}`);
 check("budget handle", budgetHandle !== `0x${"0".repeat(64)}`, budgetHandle);
 console.log(`\n  The handle above is the whole point: it is what the chain stores instead`);
 console.log(`  of ${formatUsdc(BUDGET)}. Reading it back tells you nothing.`);
