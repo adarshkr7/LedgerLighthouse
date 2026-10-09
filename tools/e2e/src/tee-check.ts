@@ -36,10 +36,9 @@ import {
   type Address,
   type Hex,
 } from "viem";
-import { privateKeyToAccount } from "viem/accounts";
 import { handleTypes } from "@inco/lightning-js";
 
-import { rpcTransport, viemChain } from "@ntux402/shared/viem";
+import { rpcTransport, sendingAccount, viemChain } from "@ntux402/shared/viem";
 import { IncoDecisionReader, connectLightning, pollForDecision } from "@ntux402/orchestrator";
 
 import {
@@ -70,8 +69,8 @@ const SECOND_SPEND = 90_000n; // 0.09 — inside the *cap*, past what the budget
 const { network, rpcUrl, usdcAddress } = networkFromEnv();
 const vaultAddress = requiredAddress("POLICY_VAULT_ADDRESS");
 
-const user = privateKeyToAccount(requiredHexKey("DEPLOYER_PRIVATE_KEY"));
-const relay = privateKeyToAccount(requiredHexKey("ORCHESTRATOR_RELAY_KEY"));
+const user = sendingAccount(requiredHexKey("DEPLOYER_PRIVATE_KEY"));
+const relay = sendingAccount(requiredHexKey("ORCHESTRATOR_RELAY_KEY"));
 
 const publicClient = createPublicClient({ chain: viemChain(network), transport: rpcTransport(rpcUrl) });
 const userWallet = createWalletClient({ account: user, chain: viemChain(network), transport: rpcTransport(rpcUrl) });

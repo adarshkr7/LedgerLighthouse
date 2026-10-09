@@ -8,3 +8,4 @@
 
 export * from "./transport.js";
 export * from "./chains.js";
+export * from "./account.js";

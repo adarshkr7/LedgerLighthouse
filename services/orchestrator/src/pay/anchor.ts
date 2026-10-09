@@ -39,9 +39,8 @@ import {
   type PublicClient,
   type WalletClient,
 } from "viem";
-import { privateKeyToAccount } from "viem/accounts";
 import { traceAnchorAbi } from "@ntux402/shared";
-import { rpcTransport, viemChainForId } from "@ntux402/shared/viem";
+import { rpcTransport, sendingAccount, viemChainForId } from "@ntux402/shared/viem";
 
 export type AnchorOutcome =
   | { readonly kind: "anchored"; readonly txHash: Hex; readonly root: Hex }
@@ -88,7 +87,7 @@ export class TraceAnchorClient {
     this.#wallet =
       config.clients?.walletClient ??
       createWalletClient({
-        account: privateKeyToAccount(config.relayKey),
+        account: sendingAccount(config.relayKey),
         chain: this.#chain,
         transport: rpcTransport(config.rpcUrl),
       });

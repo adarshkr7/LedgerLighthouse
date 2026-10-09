@@ -11,7 +11,7 @@
 import { createPublicClient, createWalletClient, formatEther, parseEther } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 
-import { rpcTransport, viemChain } from "@ntux402/shared/viem";
+import { rpcTransport, sendingAccount, viemChain } from "@ntux402/shared/viem";
 
 import { loadDotEnv, optional, requiredHexKey, networkFromEnv } from "./config.js";
 
@@ -21,7 +21,7 @@ loadDotEnv();
 const TARGET = parseEther("0.005");
 
 const { network, rpcUrl } = networkFromEnv();
-const user = privateKeyToAccount(requiredHexKey("DEPLOYER_PRIVATE_KEY"));
+const user = sendingAccount(requiredHexKey("DEPLOYER_PRIVATE_KEY"));
 
 const publicClient = createPublicClient({ chain: viemChain(network), transport: rpcTransport(rpcUrl) });
 const wallet = createWalletClient({ account: user, chain: viemChain(network), transport: rpcTransport(rpcUrl) });

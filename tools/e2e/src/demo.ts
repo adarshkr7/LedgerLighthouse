@@ -32,7 +32,7 @@ import {
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { handleTypes } from "@inco/lightning-js";
-import { rpcTransport, viemChain } from "@ntux402/shared/viem";
+import { rpcTransport, sendingAccount, viemChain } from "@ntux402/shared/viem";
 import { DEMO_PAYEES, formatUsdc, usdcAbi } from "@ntux402/shared";
 import {
   IncoDecisionReader,
@@ -98,7 +98,7 @@ const vaultAddress = requiredAddress("POLICY_VAULT_ADDRESS");
 const signerUrl = optional("SIGNER_URL") ?? `http://127.0.0.1:${process.env["SIGNER_PORT"] ?? 8402}`;
 const mockApiUrl = optional("MOCK_API_URL") ?? `http://127.0.0.1:${process.env["MOCK_API_PORT"] ?? 4021}`;
 
-const user = privateKeyToAccount(requiredHexKey("DEPLOYER_PRIVATE_KEY"));
+const user = sendingAccount(requiredHexKey("DEPLOYER_PRIVATE_KEY"));
 const relayKey = requiredHexKey("ORCHESTRATOR_RELAY_KEY");
 const relayAddress = privateKeyToAccount(relayKey).address;
 

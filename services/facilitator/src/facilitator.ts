@@ -36,7 +36,6 @@ import {
   type PublicClient,
   type WalletClient,
 } from "viem";
-import { privateKeyToAccount } from "viem/accounts";
 import {
   TRANSFER_WITH_AUTHORIZATION_TYPES,
   networkForChainId,
@@ -46,7 +45,7 @@ import {
   type SettleResponse,
   type VerifyResponse,
 } from "@ntux402/shared";
-import { rpcTransport, viemChainForId } from "@ntux402/shared/viem";
+import { rpcTransport, sendingAccount, viemChainForId } from "@ntux402/shared/viem";
 
 export interface FacilitatorConfig {
   readonly rpcUrl: string;
@@ -81,7 +80,7 @@ export class Facilitator {
     const version = config.eip712Version ?? usdc?.eip712Version;
     if (!name || !version) throw new Error(`no USDC EIP-712 domain known for chain ${config.chainId}`);
     this.#eip712 = { name, version };
-    const account = privateKeyToAccount(config.settlerKey);
+    const account = sendingAccount(config.settlerKey);
     this.#settler = account.address;
     this.#public = createPublicClient({
       chain: this.#chain,
