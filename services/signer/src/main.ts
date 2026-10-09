@@ -1,10 +1,12 @@
 /**
- * Runs the Authorization Signer against Base Sepolia.
+ * Runs the Authorization Signer against the network NETWORK names (Base
+ * Sepolia when unset).
  *
  *   pnpm --filter @ntux402/signer run start
  *
- * Reads BASE_SEPOLIA_RPC_URL, POLICY_VAULT_ADDRESS, USDC_ADDRESS, CHAIN_ID and
- * SIGNER_KEY_STORE_PATH. Deliberately does **not** read ORCHESTRATOR_RELAY_KEY:
+ * Reads NETWORK, RPC_URL (or BASE_SEPOLIA_RPC_URL), POLICY_VAULT_ADDRESS and
+ * SIGNER_KEY_STORE_PATH. CHAIN_ID and USDC_ADDRESS are still accepted, as
+ * checks against NETWORK. Deliberately does **not** read ORCHESTRATOR_RELAY_KEY:
  * this process has no business submitting transactions, and reading the variable
  * at all is the first step towards doing so.
  */
@@ -17,6 +19,7 @@ import {
   readFileSync,
   unlinkSync,
 } from "node:fs";
+import type { Server } from "node:http";
 import { dirname, isAbsolute, resolve } from "node:path";
 
 import {
@@ -25,7 +28,7 @@ import {
   describeGuard,
   findRepoRoot,
   loadDotEnv,
-  required,
+  networkFromEnv,
   requiredAddress,
 } from "@ntux402/shared/node";
 
@@ -34,22 +37,17 @@ import {
   describeEnclaveLimits,
   enclaveLimitsFromEnv,
 } from "./enclave-limit.js";
-import { openKeyStore } from "./keystore.js";
-import { createSignerServer } from "./http.js";
+import { FileKeyStore, RoflKeyStore, openKeyStore } from "./keystore.js";
+import { createBootFailureServer, createSignerServer, type BootFailure } from "./http.js";
 import { AuthorizationSigner } from "./service.js";
 import { OnChainVaultReader } from "./vault.js";
+import { hintFor, summarize } from "./boot-failure.js";
 
 loadDotEnv();
 
 const log = createLogger("signer");
 
 const port = Number(process.env["SIGNER_PORT"] ?? 8402);
-const chainId = Number(process.env["CHAIN_ID"] ?? 84532);
-
-const vault = new OnChainVaultReader({
-  rpcUrl: required("BASE_SEPOLIA_RPC_URL"),
-  vaultAddress: requiredAddress("POLICY_VAULT_ADDRESS"),
-});
 
 /**
  * Where the file key store lives, resolved once and absolutely.
@@ -145,63 +143,140 @@ function migrate(legacy: string, canonical: string): void {
   }
 }
 
-// ROFL when a socket is configured, file/memory otherwise. See keystore.ts for
-// why the fallback exists rather than being treated as a misconfiguration.
-//
-// Read before the store is opened so a malformed limit fails the boot next to
-// the other configuration errors, rather than after a socket has been probed.
-const enclaveLimits = enclaveLimitsFromEnv();
+// ------------------------------------------------------------------- boot
 
-/*
- * Wrapped, not configured in: the rate limit belongs to the enclave's key
- * daemon rather than to any one store, and applying it out here means the
- * laptop stores get it too. See enclave-limit.ts for why this is separate from
- * the per-IP limiter in http.ts — on the deployed ROFL machine every caller
- * arrives from the Oasis proxy's address, so per-IP cannot tell them apart and
- * this is the bound that actually holds.
+/**
+ * Everything that can stop the signer from starting, in order, with the step
+ * named before each so a failure can say where it happened.
  */
-const keys = new RateLimitedKeyStore(
-  openKeyStore({
+async function boot(step: (name: string) => void) {
+  step("configuration");
+  const { network, rpcUrl, usdcAddress } = networkFromEnv();
+  const chainId = network.chainId;
+  const vaultAddress = requiredAddress("POLICY_VAULT_ADDRESS");
+  // Read before the store is opened so a malformed limit fails next to the
+  // other configuration errors, rather than after a socket has been probed.
+  const enclaveLimits = enclaveLimitsFromEnv();
+  const vault = new OnChainVaultReader({ rpcUrl, vaultAddress, chainId });
+
+  // ROFL when a socket is configured, file/memory otherwise. See keystore.ts
+  // for why the fallback exists rather than being treated as a misconfiguration.
+  step("key store");
+  const store = openKeyStore({
     roflSocket: process.env["SIGNER_ROFL_SOCKET"],
     roflIndexPath: process.env["SIGNER_ROFL_INDEX_PATH"],
+    // Enclave key ids are counted per chain and vault. See RoflKeyStore.
+    roflNamespace: `${chainId}/${vaultAddress.toLowerCase()}`,
     filePath: keyStorePath(),
     // Turns a silent downgrade to keys-on-disk into a refusal to boot.
     requireRofl: process.env["SIGNER_REQUIRE_ROFL"] === "true",
-  }),
-  enclaveLimits,
-);
-
-const signer = new AuthorizationSigner({
-  vault,
-  keys,
-  config: { chainId, usdcAddress: requiredAddress("USDC_ADDRESS") },
-});
-
-const server = createSignerServer({
-  signer,
-  log: (line) => log.info(line),
-});
-
-server.listen(port, bindHost(), () => {
-  const roflSocket = process.env["SIGNER_ROFL_SOCKET"];
-  log.info(`listening on http://${bindHost()}:${port}`, { guard: describeGuard() });
-  log.info("enclave key operations are rate limited", {
-    limits: describeEnclaveLimits(enclaveLimits),
   });
-  log.info("bound to chain", { chainId, vault: process.env["POLICY_VAULT_ADDRESS"] });
-  log.info("key store", {
-    // The resolved absolute path, not the raw setting: which file this is was
-    // the ambiguity that lost keys in the first place.
-    store: roflSocket
-      ? `ROFL enclave via ${roflSocket}`
-      : (keyStorePath() ?? "in-memory (keys lost on restart)"),
-  });
-  // Said plainly, every boot. A local key store is a demo affordance, and the
-  // log should not let it pass as a deployment.
-  if (!roflSocket) {
-    log.warn(
-      "no enclave — private keys are held by this process. Set SIGNER_ROFL_SOCKET for real " +
-        "custody, and SIGNER_REQUIRE_ROFL=true to make its absence fatal.",
-    );
+
+  /*
+   * On a machine whose disk is new, or after switching vaults, the enclave
+   * index has no record of this vault. Rebuild it from the chain before
+   * serving, so a payer minted on a machine that has since expired is
+   * reachable again, and so the counter never hands out an id that is already
+   * bound. If the vault cannot say which payers are bound, boot fails: guessing
+   * the counter is how a key would be issued twice.
+   */
+  if (store instanceof RoflKeyStore) {
+    step("key index rebuild");
+    const rebuilt = await store.recover(async (payer) => (await vault.payerGoal(payer)) !== 0n);
+    if (rebuilt) log.info("rebuilt the enclave key index from the chain", rebuilt);
   }
-});
+
+  /*
+   * Wrapped, not configured in: the rate limit belongs to the enclave's key
+   * daemon rather than to any one store, and applying it out here means the
+   * laptop stores get it too. See enclave-limit.ts for why this is separate
+   * from the per-IP limiter in http.ts — on the deployed ROFL machine every
+   * caller arrives from the Oasis proxy's address, so per-IP cannot tell them
+   * apart and this is the bound that actually holds.
+   */
+  const keys = new RateLimitedKeyStore(store, enclaveLimits);
+  const signer = new AuthorizationSigner({ vault, keys, config: { chainId, usdcAddress } });
+  const kind = store instanceof RoflKeyStore ? "rofl" : store instanceof FileKeyStore ? "file" : "memory";
+  const server = createSignerServer({
+    signer,
+    binding: { chainId, vault: vaultAddress },
+    custody: async () => ({
+      store: kind,
+      keys: (await keys.addresses()).length,
+      ...(store instanceof RoflKeyStore ? { nextId: store.nextId } : {}),
+    }),
+    log: (line) => log.info(line),
+  });
+
+  const describe = () => {
+    const roflSocket = process.env["SIGNER_ROFL_SOCKET"];
+    log.info(`listening on http://${bindHost()}:${port}`, { guard: describeGuard() });
+    log.info("enclave key operations are rate limited", {
+      limits: describeEnclaveLimits(enclaveLimits),
+    });
+    log.info("bound to chain", { network: network.label, chainId, vault: vaultAddress });
+    if (!network.testnet) log.warn(`${network.label} is mainnet: the payers this signer holds carry real USDC`);
+    log.info("key store", {
+      // The resolved absolute path, not the raw setting: which file this is
+      // was the ambiguity that lost keys in the first place.
+      store: roflSocket
+        ? `ROFL enclave via ${roflSocket}`
+        : (keyStorePath() ?? "in-memory (keys lost on restart)"),
+    });
+    // Said plainly, every boot. A local key store is a demo affordance, and
+    // the log should not let it pass as a deployment.
+    if (!roflSocket) {
+      log.warn(
+        "no enclave — private keys are held by this process. Set SIGNER_ROFL_SOCKET for real " +
+          "custody, and SIGNER_REQUIRE_ROFL=true to make its absence fatal.",
+      );
+    }
+  };
+
+  return { server, describe };
+}
+
+/*
+ * Boot, and if it fails, stay up and say why rather than exit. A crash loop
+ * inside a ROFL machine shows nothing but "connection refused" from outside;
+ * this way GET /health names the step and the error. Boot is retried every 30
+ * seconds, so a passing cause, such as the RPC being down when the machine
+ * came up, clears without anyone intervening.
+ */
+let failure: BootFailure | undefined;
+let failureServer: Server | undefined;
+for (let attempt = 1; ; attempt++) {
+  let stage = "start";
+  try {
+    const ready = await boot((name) => (stage = name));
+    if (failureServer) {
+      const closing = failureServer;
+      await new Promise<void>((resolve) => {
+        closing.close(() => resolve());
+        closing.closeAllConnections();
+      });
+      log.info("boot succeeded after failing; serving normally", { attempts: attempt });
+    }
+    ready.server.listen(port, bindHost(), ready.describe);
+    break;
+  } catch (error) {
+    const detail = summarize(error);
+    failure = {
+      stage,
+      detail,
+      hint: hintFor(stage, detail),
+      since: failure?.since ?? new Date().toISOString(),
+      attempts: attempt,
+    };
+    log.error(`boot failed at ${stage}; /health reports why, retrying in 30s`, {
+      detail,
+      ...(failure.hint ? { hint: failure.hint } : {}),
+      attempt,
+    });
+    if (!failureServer) {
+      failureServer = createBootFailureServer(() => failure!);
+      failureServer.listen(port, bindHost());
+    }
+    await new Promise((resolve) => setTimeout(resolve, 30_000));
+  }
+}

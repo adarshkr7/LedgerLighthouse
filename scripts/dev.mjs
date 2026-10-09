@@ -61,11 +61,6 @@ console.log(`${DIM}ok${OFF}`);
 const services = [
   { name: "signer", filter: "@ntux402/signer", script: "start" },
   { name: "mock-api", filter: "@ntux402/mock-api", script: "start" },
-  // Only when a vendor key is configured. Without one the service refuses to
-  // start, and a dead pane every `pnpm dev` teaches people to ignore panes.
-  ...(config.SEARCH_VENDOR_KEY
-    ? [{ name: "vendor-search", filter: "@ntux402/vendor-search", script: "start" }]
-    : []),
   ...(config.X402_FACILITATOR_URL
     ? [{ name: "facilitator", filter: "@ntux402/facilitator", script: "start" }]
     : []),
@@ -117,6 +112,42 @@ for (const [i, service] of services.entries()) {
   child.on("exit", (code) => {
     process.stdout.write(`${label}${DIM}exited (${code})${OFF}\n`);
   });
+}
+
+// Once the orchestrator answers, diagnose everything once and print only the
+// summary. A misconfigured signer, a stale vault or Inco being down is then on
+// screen before the first click rather than found during a run. DEV_DIAGNOSE=0
+// turns it off.
+if (process.env.DEV_DIAGNOSE !== "0") {
+  const orchestrator = `http://127.0.0.1:${config.ORCHESTRATOR_PORT ?? 8404}/health`;
+  const label = `${DIM}${"diagnose".padEnd(width)}${OFF} ${DIM}│${OFF} `;
+  const started = Date.now();
+  const waitThenDiagnose = async () => {
+    while (Date.now() - started < 120_000) {
+      const up = await fetch(orchestrator, { signal: AbortSignal.timeout(2_000) }).then((r) => r.ok, () => false);
+      if (up) break;
+      await new Promise((resolve) => setTimeout(resolve, 2_000));
+    }
+    const child = spawn("pnpm --filter @ntux402/e2e run diagnose", {
+      cwd: repoRoot,
+      shell: true,
+      stdio: ["ignore", "pipe", "pipe"],
+      env: { ...process.env, DIAGNOSE_QUIET: "1" },
+    });
+    children.push(child);
+    let buffer = "";
+    child.stdout.setEncoding("utf8");
+    child.stdout.on("data", (chunk) => {
+      buffer += chunk;
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+      for (const line of lines) {
+        if (line.trim() === "" || line.startsWith("$ ") || line.startsWith("> ")) continue;
+        process.stdout.write(`${label}${line}\n`);
+      }
+    });
+  };
+  void waitThenDiagnose();
 }
 
 // `shell: true` means each child is a shell wrapping pnpm wrapping node. On

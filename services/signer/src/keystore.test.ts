@@ -10,13 +10,13 @@
  * inside an attested enclave. That property comes from Oasis, not from us.
  */
 
-import { mkdtempSync, readFileSync, existsSync } from "node:fs";
+import { mkdtempSync, readFileSync, existsSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 import { privateKeyToAccount } from "viem/accounts";
-import type { Hex } from "viem";
+import type { Address, Hex } from "viem";
 
 import { RoflKeyStore, normalizePrivateKey, type RoflAppd } from "./keystore.js";
 
@@ -149,5 +149,152 @@ describe("RoflKeyStore", () => {
       generateKey: () => Promise.reject(new Error("rofl-appd unreachable at /run/rofl-appd.sock")),
     };
     await expect(new RoflKeyStore(broken).mint()).rejects.toThrow(/unreachable/);
+  });
+});
+
+describe("RoflKeyStore key ids", () => {
+  const NS = "84532/0xvault";
+
+  it("counts key ids under the chain and vault", async () => {
+    const appd = new FakeAppd();
+    const store = new RoflKeyStore(appd, undefined, NS);
+
+    await store.mint();
+    await store.mint();
+
+    expect(appd.calls).toEqual([`payer/${NS}/0`, `payer/${NS}/1`]);
+  });
+
+  it("carries the counter across a restart", async () => {
+    const path = tempIndex();
+    const appd = new FakeAppd();
+    await new RoflKeyStore(appd, path, NS).mint();
+
+    await new RoflKeyStore(appd, path, NS).mint();
+
+    expect(appd.calls).toEqual([`payer/${NS}/0`, `payer/${NS}/1`]);
+  });
+
+  /*
+   * What the machine expiry did to the random-id store: the disk went, and with
+   * it the only record of which key id belonged to which payer.
+   */
+  it("rebuilds a lost index from the chain", async () => {
+    const appd = new FakeAppd();
+    const before = new RoflKeyStore(appd, tempIndex(), NS);
+    const a = await before.mint();
+    const b = await before.mint();
+    const c = await before.mint();
+    // a and c were bound to goals; b was minted and never used.
+    const bound = new Set([a, c].map((x) => x.toLowerCase()));
+
+    const after = new RoflKeyStore(appd, tempIndex(), NS); // a fresh, empty disk
+    const rebuilt = await after.recover(async (x: Address) => bound.has(x.toLowerCase()), 3);
+
+    expect(rebuilt).toEqual({ scanned: 6, found: 2 });
+    expect((await after.signerFor(a))?.address).toBe(a);
+    expect((await after.signerFor(c))?.address).toBe(c);
+    expect(await after.signerFor(b)).toBeUndefined();
+  });
+
+  it("resumes right after the highest bound id", async () => {
+    const appd = new FakeAppd();
+    const before = new RoflKeyStore(appd, tempIndex(), NS);
+    const a = await before.mint(); // id 0, bound
+    await before.mint(); // id 1, never used
+    const bound = new Set([a.toLowerCase()]);
+
+    const after = new RoflKeyStore(appd, tempIndex(), NS);
+    await after.recover(async (x: Address) => bound.has(x.toLowerCase()), 3);
+    appd.calls.length = 0;
+    await after.mint();
+
+    // id 1 again: harmless, since the vault binds one payer to one goal only.
+    expect(appd.calls).toEqual([`payer/${NS}/1`]);
+  });
+
+  /*
+   * The wipe test on 9 October 2026, as it happened. First boot on a vault with
+   * no enclave payers yet, then five payers minted and bound, then the disk
+   * wiped. The first version of recover() resumed at the end of its scanned
+   * window, left a 25-id hole, and the second rebuild found nothing.
+   */
+  it("finds every payer after a first boot, mints and a wipe", async () => {
+    const appd = new FakeAppd();
+    const first = new RoflKeyStore(appd, tempIndex(), NS);
+    await first.recover(async () => false); // empty vault at first boot
+    const minted: Address[] = [];
+    for (let i = 0; i < 5; i++) minted.push(await first.mint());
+    const bound = new Set(minted.map((x) => x.toLowerCase()));
+
+    const wiped = new RoflKeyStore(appd, tempIndex(), NS);
+    const rebuilt = await wiped.recover(async (x: Address) => bound.has(x.toLowerCase()));
+
+    expect(rebuilt?.found).toBe(5);
+    for (const payer of minted) expect((await wiped.signerFor(payer))?.address).toBe(payer);
+  });
+
+  it("crosses the 25-id hole the first version left", async () => {
+    const appd = new FakeAppd();
+    const bound = new Set<string>();
+    for (let n = 25; n < 30; n++) {
+      bound.add(privateKeyToAccount(await appd.generateKey(`payer/${NS}/${n}`)).address.toLowerCase());
+    }
+
+    const store = new RoflKeyStore(appd, tempIndex(), NS);
+    const rebuilt = await store.recover(async (x: Address) => bound.has(x.toLowerCase()));
+
+    expect(rebuilt?.found).toBe(5);
+    expect(store.nextId).toBe(30);
+  });
+
+  it("does not rescan a namespace the index already knows", async () => {
+    const path = tempIndex();
+    const appd = new FakeAppd();
+    await new RoflKeyStore(appd, path, NS).mint();
+
+    const asked: Address[] = [];
+    const rebuilt = await new RoflKeyStore(appd, path, NS).recover(async (x) => {
+      asked.push(x);
+      return false;
+    });
+
+    expect(rebuilt).toBeUndefined();
+    expect(asked).toHaveLength(0);
+  });
+
+  it("refuses to guess when the chain cannot say which payers are bound", async () => {
+    const store = new RoflKeyStore(new FakeAppd(), tempIndex(), NS);
+    await expect(
+      store.recover(() => Promise.reject(new Error("payerGoal reverted"))),
+    ).rejects.toThrow(/payerGoal/);
+  });
+
+  it("skips an id after a crash between the counter and the derivation", async () => {
+    const path = tempIndex();
+    const real = new FakeAppd();
+    let fail = true;
+    const flaky: RoflAppd = {
+      generateKey: (keyId) => (fail ? Promise.reject(new Error("appd went away")) : real.generateKey(keyId)),
+    };
+
+    await expect(new RoflKeyStore(flaky, path, NS).mint()).rejects.toThrow(/went away/);
+    fail = false;
+    await new RoflKeyStore(flaky, path, NS).mint();
+
+    // Never payer/…/0 twice: the counter was written before the derivation failed.
+    expect(real.calls).toEqual([`payer/${NS}/1`]);
+  });
+
+  it("still reads an index in the original random-id format", async () => {
+    const path = tempIndex();
+    const appd = new FakeAppd();
+    const legacyId = "payer/0b6c8c2e-4a7f-4f43-9d3e-2a1d6b0c9f11";
+    const address = privateKeyToAccount(await appd.generateKey(legacyId)).address;
+    writeFileSync(path, JSON.stringify({ [address.toLowerCase()]: legacyId }));
+
+    const store = new RoflKeyStore(appd, path, NS);
+
+    expect((await store.signerFor(address))?.address).toBe(address);
   });
 });

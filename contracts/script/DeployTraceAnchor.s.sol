@@ -6,7 +6,7 @@ import {console} from "forge-std/console.sol";
 
 import {TraceAnchor} from "../src/TraceAnchor.sol";
 
-/// Deploys TraceAnchor to Base Sepolia.
+/// Deploys TraceAnchor to Base Sepolia, or to Base when given a Base RPC.
 ///
 ///   forge script script/DeployTraceAnchor.s.sol:DeployTraceAnchor \
 ///     --rpc-url "$BASE_SEPOLIA_RPC_URL" --broadcast --verify
@@ -21,6 +21,7 @@ import {TraceAnchor} from "../src/TraceAnchor.sol";
 /// authority, so nothing here needs to know who the deployer was.
 contract DeployTraceAnchor is Script {
     uint256 constant BASE_SEPOLIA = 84532;
+    uint256 constant BASE = 8453;
 
     error WrongChain(uint256 actual);
 
@@ -28,7 +29,7 @@ contract DeployTraceAnchor is Script {
         // Asserted rather than inferred, for the same reason the vault deploy
         // asserts it: an anchor on the wrong chain is one the verifier will
         // never find, and it fails silently at read time rather than loudly here.
-        require(block.chainid == BASE_SEPOLIA, WrongChain(block.chainid));
+        require(block.chainid == BASE_SEPOLIA || block.chainid == BASE, WrongChain(block.chainid));
 
         uint256 deployerKey = vm.envUint("DEPLOYER_PRIVATE_KEY");
 

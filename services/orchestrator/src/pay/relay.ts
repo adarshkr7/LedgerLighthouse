@@ -23,10 +23,8 @@ import {
   type PublicClient,
   type WalletClient,
 } from "viem";
-import { baseSepolia } from "viem/chains";
-import { privateKeyToAccount } from "viem/accounts";
 import { policyVaultAbi } from "@ntux402/shared";
-import { rpcTransport } from "@ntux402/shared/viem";
+import { rpcTransport, sendingAccount, viemChainForId } from "@ntux402/shared/viem";
 
 export interface SpendRequested {
   readonly seq: bigint;
@@ -63,19 +61,23 @@ export class VaultRelay {
   readonly #vault: Address;
   readonly #chainId: number;
   readonly #relay: Address;
+  readonly #chain: ReturnType<typeof viemChainForId>;
+  /** `goalId:seq` for every finalize this relay saw confirmed. See `requestSpend`. */
+  readonly #finalized = new Set<string>();
 
   constructor(config: VaultRelayConfig) {
-    const account = privateKeyToAccount(config.relayKey);
+    const account = sendingAccount(config.relayKey);
     this.#relay = account.address;
     this.#vault = config.vaultAddress;
     this.#chainId = config.chainId;
+    this.#chain = viemChainForId(config.chainId);
     this.#public = createPublicClient({
-      chain: baseSepolia,
+      chain: this.#chain,
       transport: rpcTransport(config.rpcUrl),
     }) as PublicClient;
     this.#wallet = createWalletClient({
       account,
-      chain: baseSepolia,
+      chain: this.#chain,
       transport: rpcTransport(config.rpcUrl),
     });
   }
@@ -119,8 +121,43 @@ export class VaultRelay {
    *
    * `asset` is not a parameter. The vault reads it from the goal record,
    * because a 402 body is a claim, not a source of configuration.
+   *
+   * ## A SpendPending that is not real
+   *
+   * Public Base RPCs are load balanced, and the node that estimates gas can be
+   * behind the node that returned the last receipt. A `requestSpend` sent right
+   * after this relay's own `finalizeDecision` then reverts in estimation with
+   * `SpendPending`, for a spend that is already finalized. The adversary
+   * campaign hit this on 9 October 2026.
+   *
+   * So a `SpendPending` is checked before it is believed. If the vault's
+   * pending seq reads as zero, or as a seq this relay has seen finalized, the
+   * estimate came from a stale node and the call is retried. Nothing was
+   * broadcast, so a retry cannot double-commit. Any other pending seq is a
+   * real one, and the refusal goes straight back to the caller.
    */
   async requestSpend(
+    goalId: bigint,
+    amount: bigint,
+    payTo: Address,
+    resource: string,
+  ): Promise<SpendRequested> {
+    const attempts = 5;
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await this.#requestSpendOnce(goalId, amount, payTo, resource);
+      } catch (error) {
+        const text = error instanceof Error ? error.message : String(error);
+        if (attempt >= attempts || !text.includes("SpendPending")) throw error;
+        const pending = await this.pendingSeq(goalId);
+        const stale = pending === 0n || this.#finalized.has(`${goalId}:${pending}`);
+        if (!stale) throw error;
+        await new Promise((resolve) => setTimeout(resolve, 2_000));
+      }
+    }
+  }
+
+  async #requestSpendOnce(
     goalId: bigint,
     amount: bigint,
     payTo: Address,
@@ -133,7 +170,7 @@ export class VaultRelay {
       abi: policyVaultAbi,
       functionName: "requestSpend",
       args: [goalId, amount, payTo, resource],
-      chain: baseSepolia,
+      chain: this.#chain,
       account: this.#wallet.account!,
     });
 
@@ -188,7 +225,7 @@ export class VaultRelay {
       abi: policyVaultAbi,
       functionName: "finalizeDecision",
       args: [goalId, seq, approved, signatures],
-      chain: baseSepolia,
+      chain: this.#chain,
       account: this.#wallet.account!,
     });
 
@@ -196,6 +233,7 @@ export class VaultRelay {
     if (receipt.status !== "success") {
       throw new Error(`finalizeDecision reverted (${hash})`);
     }
+    this.#finalized.add(`${goalId}:${seq}`);
     return { txHash: hash, gasUsed: receipt.gasUsed };
   }
 

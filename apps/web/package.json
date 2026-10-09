@@ -15,7 +15,6 @@
     "@ntux402/shared": "workspace:*",
     "@tanstack/react-query": "^5.90.2",
     "buffer": "^6.0.3",
-    "lenis": "^1.3.26",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "viem": "^2.55.11",

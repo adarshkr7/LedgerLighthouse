@@ -36,8 +36,8 @@ deployments:
           min_tcb_evaluation_data_number: 18
           tdx: {}
       enclaves:
-        - id: lgP6tR0ArjPH2Z0pdWOIQiSycnnW9STGhmmDA9NKQI0AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==
-        - id: Aoo5KlTROSe026RNYk8+Oi8up6tg+8lVfht02MKLsPQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==
+        - id: yZDwASpQFNQsPGY5Dr6JzQKShom9cm3DjV+qGXZLtHsAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==
+        - id: 3nT2O0AG+9diiv80qOK9vcDB+o7ZfrF3ysT4BrqHxVwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==
       endorsements:
         - any: {}
       fees: endorsing_node
@@ -45,16 +45,16 @@ deployments:
     secrets:
       - name: BASE_SEPOLIA_RPC_URL
         value: pGJwa1ggA2R1HgylrV3h2alNdb7yN/C4bUjL/JPZdJe98yGwjRlkbmFtZVgk2qCGOZde/5ec/3/AAsKRNB3IdIM3nkJlyHv8lQBX66DWG8LfZW5vbmNlTyi8/th/f8BB4OVmeWUVsmV2YWx1ZVg374sHkLRJFDs6RN7E281f0jZaSqPJx3wgRrHbvmNFPUnwNNofiDmiZl8R6QgCBtHVNYoirJJ7lQ==
-      - name: POLICY_VAULT_ADDRESS
-        value: pGJwa1ggE0k9pzkWuqXe5oZRClCQZfeRX0z1KnSKgjvpG2RzeT5kbmFtZVgkqh3sMBs+syJNPMh1FI1mSd7wDmwaucBbEwvIwnyTUd/lu4dTZW5vbmNlT5lTdFYNDOeUvG7GTtFHZGV2YWx1ZVg6+9BLP9QRhM1ihJFyQjTPDVqTspBlQ7UhPetD8r574hvBNtR4qo3HH0yzlAT0hSza8xfcTil1giU9Nw==
       - name: USDC_ADDRESS
         value: pGJwa1ggtd3PjSsymq07r/AEAcdqSC3cTCjsr1sQePNElk6zEUpkbmFtZVgcfT+ByG/0Xn20xfAswUt/fLEg4/JUg/8PCa1xG2Vub25jZU95Ml8Gmb4QColuuYI2sPVldmFsdWVYOkt4heVSY3DLl+aTZRl+Lf8dfhj2NDMAP6GyIDwxVCSn9H2bkup6Oscq+E3GZ01Cp3BeikKNm/caJV0=
       - name: SERVICE_TOKEN
         value: pGJwa1gg5wgt7DJtpDY2ALIZc6pKvsSHguw8JX4GgmmIdfNu0R1kbmFtZVgdq7zYYpaveQ3psMzsYxHMShewY4870JFs6IEj5ftlbm9uY2VPZytz7zRlNn5561lUICgpZXZhbHVlWFC9fr0pyvKY248T9j1X5ZIl1zvh8AHmMuJtt5usakMH9kumNNy+Buf+hHqRsakfUY5zCG7FC1R46ysW0XrVYUXCsHFkBoz8Gd8k+TCXEG+1JQ==
+      - name: POLICY_VAULT_ADDRESS
+        value: pGJwa1ggrWX2fEpf6c19lT+tIKL4O6vh79rfBR8QADQKt75lCF5kbmFtZVgkMBkCYhzAzOJ5KU/usfiYK8b+jGayZifqEj7xs2Qi8hy9m50fZW5vbmNlT4kUrke+k+b3VELTxx6QWmV2YWx1ZVg63m0+KYI4xBP917wP1LAPe0qXxQGIoGg0Rd9i1zA32HYIA2HXlQvHx7IBf7sb50RcrVOJN3VUgSdENw==
     machines:
       default:
         provider: oasis1qp2ens0hsp7gh23wajxa4hpetkdek3swyyulyrmz
         offer: playground_short
-        id: 00000000000006a1
+        id: 00000000000006ea
 tooling:
   version: 0.19.1

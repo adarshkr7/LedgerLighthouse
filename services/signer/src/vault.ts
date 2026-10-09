@@ -11,9 +11,8 @@
  */
 
 import { createPublicClient, http, type Address, type Hex, type PublicClient } from "viem";
-import { baseSepolia } from "viem/chains";
 import { policyVaultAbi, usdcAbi } from "@ntux402/shared";
-import { rpcTransport } from "@ntux402/shared/viem";
+import { rpcTransport, viemChainForId } from "@ntux402/shared/viem";
 
 /** The goal record, as stored on chain. */
 export interface GoalRecord {
@@ -59,11 +58,16 @@ export class OnChainVaultReader implements VaultReader {
   readonly #client: PublicClient;
   readonly #vault: Address;
 
-  constructor(options: { rpcUrl: string; vaultAddress: Address; client?: PublicClient }) {
+  constructor(options: {
+    rpcUrl: string;
+    vaultAddress: Address;
+    chainId: number;
+    client?: PublicClient;
+  }) {
     this.#client =
       options.client ??
       (createPublicClient({
-        chain: baseSepolia,
+        chain: viemChainForId(options.chainId),
         transport: rpcTransport(options.rpcUrl),
       }) as PublicClient);
     this.#vault = options.vaultAddress;
@@ -126,6 +130,20 @@ export class OnChainVaultReader implements VaultReader {
       finalized,
       approved,
     };
+  }
+
+  /**
+   * The goal this payer is bound to, or 0n. Used to rebuild the ROFL key index
+   * after its disk is lost; see `RoflKeyStore.recover`. A vault deployed before
+   * the payer binding has no such function, and this throws on one.
+   */
+  async payerGoal(payer: Address): Promise<bigint> {
+    return (await this.#client.readContract({
+      address: this.#vault,
+      abi: policyVaultAbi,
+      functionName: "payerGoal",
+      args: [payer],
+    })) as bigint;
   }
 
   async tokenBalance(token: Address, holder: Address): Promise<bigint> {

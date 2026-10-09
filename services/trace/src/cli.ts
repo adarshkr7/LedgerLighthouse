@@ -11,8 +11,8 @@
 
 import { readFileSync } from "node:fs";
 
-import { loadDotEnv, optional } from "@ntux402/shared/node";
-import { USDC_BASE_SEPOLIA } from "@ntux402/shared";
+import { loadDotEnv, networkFromEnv } from "@ntux402/shared/node";
+import { networkForChainId } from "@ntux402/shared";
 
 import { VENDOR_ATTESTED_STEPS, type Trace } from "./step.js";
 import { verifyTrace } from "./verify.js";
@@ -34,18 +34,26 @@ const rpcFlag = rpcIdx === -1 ? undefined : args[rpcValueIdx];
 // The file is the first argument that is neither a flag nor a flag's value.
 const file = args.find((a, i) => !a.startsWith("--") && i !== rpcValueIdx);
 
-const rpcUrl = offline
-  ? undefined
-  : rpcFlag && !rpcFlag.startsWith("--")
-    ? rpcFlag
-    : optional("BASE_SEPOLIA_RPC_URL");
-
 if (!file) {
   console.error("usage: verify <trace.json> [--rpc <url>] [--offline]");
   process.exit(2);
 }
 
 const trace = JSON.parse(readFileSync(file, "utf8")) as Trace;
+
+/*
+ * The trace's own chain decides which RPC and which USDC to check against. The
+ * configured RPC is used only when .env names that same network; a mainnet
+ * trace verified from a testnet .env falls back to the network's public RPCs.
+ */
+const traceNetwork = networkForChainId(trace.chainId);
+const rpcUrl = offline
+  ? undefined
+  : rpcFlag && !rpcFlag.startsWith("--")
+    ? rpcFlag
+    : traceNetwork?.name === networkFromEnv().network.name
+      ? networkFromEnv().rpcUrl
+      : traceNetwork?.defaultRpcUrls.join(",");
 
 console.log(`\nVerifying ${file}`);
 console.log(`  goal   ${trace.goalId}`);
@@ -57,7 +65,7 @@ console.log(`  mode   ${rpcUrl ? "hash chain + on-chain cross-checks" : "hash ch
 
 const result = await verifyTrace(trace, {
   ...(rpcUrl ? { rpcUrl } : {}),
-  usdcAddress: USDC_BASE_SEPOLIA,
+  ...(traceNetwork ? { usdcAddress: traceNetwork.usdc.address } : {}),
 });
 
 for (const finding of result.findings) {

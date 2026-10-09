@@ -39,10 +39,8 @@ import {
   type PublicClient,
   type WalletClient,
 } from "viem";
-import { privateKeyToAccount } from "viem/accounts";
-import { baseSepolia } from "viem/chains";
 import { traceAnchorAbi } from "@ntux402/shared";
-import { rpcTransport } from "@ntux402/shared/viem";
+import { rpcTransport, sendingAccount, viemChainForId } from "@ntux402/shared/viem";
 
 export type AnchorOutcome =
   | { readonly kind: "anchored"; readonly txHash: Hex; readonly root: Hex }
@@ -74,21 +72,23 @@ export class TraceAnchorClient {
   readonly #wallet: WalletClient;
   readonly #address: Address;
   readonly #chainId: number;
+  readonly #chain: ReturnType<typeof viemChainForId>;
 
   constructor(config: TraceAnchorClientConfig) {
     this.#address = config.anchorAddress;
     this.#chainId = config.chainId;
+    this.#chain = viemChainForId(config.chainId);
     this.#public =
       config.clients?.publicClient ??
       (createPublicClient({
-        chain: baseSepolia,
+        chain: this.#chain,
         transport: rpcTransport(config.rpcUrl),
       }) as PublicClient);
     this.#wallet =
       config.clients?.walletClient ??
       createWalletClient({
-        account: privateKeyToAccount(config.relayKey),
-        chain: baseSepolia,
+        account: sendingAccount(config.relayKey),
+        chain: this.#chain,
         transport: rpcTransport(config.rpcUrl),
       });
   }
@@ -134,7 +134,7 @@ export class TraceAnchorClient {
         abi: traceAnchorAbi,
         functionName: "anchor",
         args: [vault, goalId, root, stepCount],
-        chain: baseSepolia,
+        chain: this.#chain,
         account: this.#wallet.account!,
       });
 

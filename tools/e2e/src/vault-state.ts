@@ -10,21 +10,20 @@
  * demo does. Read-only; it holds no key and sends no transaction.
  */
 
-import { rpcTransport } from "@ntux402/shared/viem";
+import { rpcTransport, viemChain } from "@ntux402/shared/viem";
 import { OnChainVaultReader } from "@ntux402/signer";
-import { USDC_BASE_SEPOLIA, formatUsdc } from "@ntux402/shared";
+import { formatUsdc } from "@ntux402/shared";
 import { createPublicClient, type Address } from "viem";
-import { baseSepolia } from "viem/chains";
 
-import { loadDotEnv, policyVaultAbi, required, requiredAddress } from "./config.js";
+import { loadDotEnv, policyVaultAbi, requiredAddress, networkFromEnv } from "./config.js";
 
 loadDotEnv();
 
-const rpcUrl = required("BASE_SEPOLIA_RPC_URL");
+const { network, rpcUrl, usdcAddress } = networkFromEnv();
 const vaultAddress = requiredAddress("POLICY_VAULT_ADDRESS");
 
-const reader = new OnChainVaultReader({ rpcUrl, vaultAddress });
-const client = createPublicClient({ chain: baseSepolia, transport: rpcTransport(rpcUrl) });
+const reader = new OnChainVaultReader({ rpcUrl, vaultAddress, chainId: network.chainId });
+const client = createPublicClient({ chain: viemChain(network), transport: rpcTransport(rpcUrl) });
 const abi = policyVaultAbi();
 
 console.log(`\nPolicyVault ${vaultAddress}`);
@@ -64,7 +63,7 @@ for (let goalId = 1n; goalId <= goalCount; goalId++) {
   console.log(`  payer          ${goal.payer}`);
   console.log(`  relay          ${goal.relay}`);
   console.log(`  asset          ${goal.asset}${
-    goal.asset.toLowerCase() === USDC_BASE_SEPOLIA.toLowerCase() ? "  (Base Sepolia USDC)" : "  (NOT USDC)"
+    goal.asset.toLowerCase() === usdcAddress.toLowerCase() ? `  (${network.label} USDC)` : "  (NOT USDC)"
   }`);
   console.log(`  perCallCap     ${formatUsdc(cap)} USDC`);
   console.log(`  callsRemaining ${goal.callsRemaining}`);

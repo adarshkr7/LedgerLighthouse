@@ -13,12 +13,14 @@ chain, it is marked and the reason is given.
 
 ## 1. The ledger of record
 
-Base Sepolia, chain id `84532`. Both contracts are source-verified.
+Base Sepolia, chain id `84532`.
 
 | Contract | Address | Deployment tx |
 |---|---|---|
-| `PolicyVault` | [`0x0C759D06a1c14F43852D7b078Db2f8C342F15921`](https://sepolia.basescan.org/address/0x0C759D06a1c14F43852D7b078Db2f8C342F15921) | [`0xcbf4da83…c013ee`](https://sepolia.basescan.org/tx/0xcbf4da835639699cf7ae7d472fed635a145c6df97381300941ddc9ba7fc013ee) |
+| `PolicyVault` | [`0x518B8701484ba99A38f60090cd4a2cc710d3522c`](https://sepolia.basescan.org/address/0x518B8701484ba99A38f60090cd4a2cc710d3522c) | [`0xc7926dc0…fb300b`](https://sepolia.basescan.org/tx/0xc7926dc0110604ec1a8cec636343a2d344f1c29a3754f9ad8e86ff4c80fb300b) |
 | `TraceAnchor` | [`0x065d5E16160159cAB7D841818aBc92b4E85D5818`](https://sepolia.basescan.org/address/0x065d5E16160159cAB7D841818aBc92b4E85D5818) | [`0x068c2d88…2f9900`](https://sepolia.basescan.org/tx/0x068c2d8883bfe2a294164da805274905aa33c85f2a68a27ab1c06892972f9900) |
+
+The PolicyVault was redeployed on 9 October 2026. The previous one, [`0x0C759D06…F15921`](https://sepolia.basescan.org/address/0x0C759D06a1c14F43852D7b078Db2f8C342F15921), was deployed before each payer was bound to one goal (`48805e9`), and the adversary campaign's payer-capture attack succeeded against it. Runs logged before that date used the old vault. The new vault is not yet source-verified on Basescan; TraceAnchor is.
 
 Settlement asset: USDC at [`0x036CbD53842c5426634e7929541eC2318f3dCF7e`](https://sepolia.basescan.org/address/0x036CbD53842c5426634e7929541eC2318f3dCF7e).
 

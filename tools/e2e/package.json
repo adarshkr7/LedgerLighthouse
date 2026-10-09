@@ -14,7 +14,9 @@
     "balances": "tsx src/balances.ts",
     "keygen": "tsx src/keygen.ts",
     "fund": "tsx src/fund.ts",
-    "whois": "tsx src/whois.ts"
+    "whois": "tsx src/whois.ts",
+    "sweep": "tsx src/sweep.ts",
+    "diagnose": "tsx src/diagnose.ts"
   },
   "dependencies": {
     "@inco/lightning-js": "^1.0.2",

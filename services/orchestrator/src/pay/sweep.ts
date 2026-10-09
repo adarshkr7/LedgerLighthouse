@@ -37,14 +37,14 @@
  */
 
 import {
-  NETWORK_BASE_SEPOLIA,
   SCHEME_EXACT,
+  networkForChainId,
   X402_VERSION,
   type Address,
   type SettleResponse,
 } from "@ntux402/shared";
 
-import type { SignedAuthorization, SignerClient } from "./signer-client.js";
+import type { SignedAuthorization, SignerClient, SweepAuthorizationOutcome } from "./signer-client.js";
 
 export type SweepOutcome =
   | { readonly kind: "settled"; readonly settlement: SettleResponse; readonly amount: string; readonly to: Address }
@@ -58,6 +58,36 @@ export interface SweepConfig {
   readonly usdcAddress: Address;
   /** For the facilitator leg only; the signer leg goes through `signer`. */
   readonly fetchImpl?: typeof fetch;
+  /** How long to wait out a stale "still open". See `askSignerToSweep`. */
+  readonly retry?: { readonly attempts?: number; readonly intervalMs?: number };
+}
+
+/**
+ * Asks the signer for a sweep of a goal the caller has just closed.
+ *
+ * Callers sweep right after `closeGoal` confirms: the console does, and so does
+ * `tools/e2e` sweep. The signer reads the goal through its own RPC, and on a
+ * load-balanced endpoint that read can come from a node behind the receipt,
+ * so the first answer is a refusal saying the goal is "still open". The first
+ * live run of the sweep script hit exactly that on 9 October 2026.
+ *
+ * That one refusal is retried for a bounded time. Every other answer is final,
+ * and a goal that really is open is still refused, only later.
+ */
+export async function askSignerToSweep(
+  signer: SignerClient,
+  goalId: string,
+  options: { readonly attempts?: number; readonly intervalMs?: number } = {},
+): Promise<SweepAuthorizationOutcome> {
+  const attempts = options.attempts ?? 8;
+  const intervalMs = options.intervalMs ?? 2_500;
+  for (let attempt = 1; ; attempt++) {
+    const outcome = await signer.sweep(goalId);
+    const staleOpen =
+      outcome.kind === "refused" && outcome.status === 409 && outcome.reason.includes("still open");
+    if (!staleOpen || attempt >= attempts) return outcome;
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
 }
 
 export async function sweepGoal(goalId: string, config: SweepConfig): Promise<SweepOutcome> {
@@ -74,7 +104,7 @@ export async function sweepGoal(goalId: string, config: SweepConfig): Promise<Sw
   }
 
   // --- ask the signer ------------------------------------------------------
-  const authorized = await config.signer.sweep(goalId);
+  const authorized = await askSignerToSweep(config.signer, goalId, config.retry);
   if (authorized.kind === "unreachable") {
     return { kind: "failed", reason: `signer unreachable: ${authorized.reason}` };
   }
@@ -85,17 +115,24 @@ export async function sweepGoal(goalId: string, config: SweepConfig): Promise<Sw
   }
   const signed: SignedAuthorization = authorized.value;
 
+  // The network is the one the signer signed for, so the envelope cannot name
+  // a different chain from the signature inside it.
+  const network = networkForChainId(signed.chainId);
+  if (network === undefined) {
+    return { kind: "failed", reason: `signer signed for chain ${signed.chainId}, which is not a known network` };
+  }
+
   // --- submit it -----------------------------------------------------------
   const envelope = {
     paymentPayload: {
       x402Version: X402_VERSION,
       scheme: SCHEME_EXACT,
-      network: NETWORK_BASE_SEPOLIA,
+      network: network.x402Network,
       payload: { signature: signed.signature, authorization: signed.authorization },
     },
     paymentRequirements: {
       scheme: SCHEME_EXACT,
-      network: NETWORK_BASE_SEPOLIA,
+      network: network.x402Network,
       maxAmountRequired: signed.authorization.value,
       resource: `goal:${goalId}/sweep`,
       description: "Return of unspent ephemeral payer balance to the goal owner",

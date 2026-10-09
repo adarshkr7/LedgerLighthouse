@@ -8,27 +8,16 @@
       name="description"
       content="An autonomous AI agent that pays for APIs over x402, with the spending policy enforced by confidential computation in a TEE rather than by the agent itself."
     />
-    <meta name="theme-color" content="#04050a" />
+    <meta name="theme-color" content="#faf9f6" />
 
     <!--
-      Two pages, two type systems, on purpose.
-
-      The console (App.tsx) is pixel/neon and speaks in Inter and JetBrains
-      Mono. The landing page is an editorial agency layout and speaks in Geist
-      for display and Geist Mono for every label, index and tag — a closed
-      two-family system where scale, weight and position carry the decisions
-      a third face would otherwise be brought in to make.
-
-      All four are loaded here since either page can be the first one a
-      visitor lands on. Geist Mono is also what the landing page's canvases
-      draw their glyph grids in, so it has to be resolved before the ASCII
-      hero paints its first frame — hence `preload` on that one stylesheet
-      rather than plain `stylesheet` for everything.
+      Instrument Sans for the interface, Source Serif 4 for titles, and
+      JetBrains Mono for addresses, hashes and amounts. See dashboard.css.
     -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500&family=Inter:wght@400;500;700;800;900&family=JetBrains+Mono:wght@300;400;500;700&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600&family=JetBrains+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
   </head>

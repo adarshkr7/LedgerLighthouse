@@ -76,7 +76,9 @@ export function ModelInput({
 
   const { summary, transcript } = splitReasoning(reasoning?.reasoning ?? "");
 
-  const [showStructured, setShowStructured] = useState(false);
+  // Open by default: the pane has the height for it, and the reasoning is the
+  // thing a viewer came to see. The toggle still folds it away.
+  const [showStructured, setShowStructured] = useState(true);
   const [anchor, setAnchor] = useState({ x: 0, y: 0 });
   const [placed, setPlaced] = useState(false);
 

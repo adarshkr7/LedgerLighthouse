@@ -23,6 +23,7 @@ import {
   type Hex,
 } from "viem";
 import {
+  NETWORKS,
   TRANSFER_WITH_AUTHORIZATION_TYPES,
   USDC_BASE_SEPOLIA,
   USDC_EIP712_NAME,
@@ -298,6 +299,49 @@ describe("AuthorizationSigner", () => {
       },
     });
     expect((await strict.sign({ goalId: 1n, seq: 1n })).ok).toBe(true);
+  });
+
+  /*
+   * Base and Base Sepolia USDC sign under different EIP-712 names. A signer on
+   * Base that kept the testnet name would produce authorizations the token
+   * rejects, so the default has to follow the chain. The name is written out
+   * here rather than read from NETWORKS, so the test pins it independently.
+   */
+  it("signs under Base USDC's own domain on Base", async () => {
+    const base = NETWORKS.base;
+    vault.chain = base.chainId;
+    vault.goals.set("1", makeGoal({ payer, asset: base.usdc.address }));
+    vault.spends.set("1:1", makeSpend(payer, { asset: base.usdc.address }));
+    vault.domainSeparator = domainSeparator({
+      domain: {
+        name: "USD Coin",
+        version: "2",
+        chainId: base.chainId,
+        verifyingContract: base.usdc.address,
+      },
+    });
+    const onBase = new AuthorizationSigner({
+      vault,
+      keys,
+      config: {
+        chainId: base.chainId,
+        usdcAddress: base.usdc.address,
+        verifyDomainOnChain: true,
+        now: () => NOW,
+      },
+    });
+    expect((await onBase.sign({ goalId: 1n, seq: 1n })).ok).toBe(true);
+  });
+
+  it("refuses to start on a chain whose USDC domain it does not know", () => {
+    expect(
+      () =>
+        new AuthorizationSigner({
+          vault,
+          keys,
+          config: { chainId: 1, usdcAddress: USDC_BASE_SEPOLIA },
+        }),
+    ).toThrow(/no USDC EIP-712 domain/);
   });
 
   it("rejects terms in the raw body before it ever reads the chain", async () => {

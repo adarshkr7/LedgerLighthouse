@@ -12,12 +12,19 @@
  * payer key here, the design has drifted (ARCHITECTURE.md).
  */
 
-import { loadDotEnv, optional, required, requiredAddress, requiredHexKey } from "@ntux402/shared/node";
-import { formatUsdc, rpcUrls } from "@ntux402/shared";
-import { Lightning } from "@inco/lightning-js/lite";
+import {
+  loadDotEnv,
+  networkFromEnv,
+  optional,
+  required,
+  requiredAddress,
+  requiredHexKey,
+} from "@ntux402/shared/node";
+import { formatUsdc } from "@ntux402/shared";
 
 import { X402Client } from "./x402/client.js";
 import { IncoDecisionReader } from "./inco/reveal.js";
+import { connectLightning } from "./inco/lightning.js";
 import { PaymentLoop } from "./pay/payment-loop.js";
 import { VaultRelay } from "./pay/relay.js";
 import { SignerClient } from "./pay/signer-client.js";
@@ -34,16 +41,16 @@ function arg(name: string): string | undefined {
 
 const goalId = BigInt(arg("goal") ?? required("DEMO_GOAL_ID"));
 const url = arg("url") ?? `http://127.0.0.1:${process.env["MOCK_API_PORT"] ?? 4021}/resource/honest`;
-const rpcUrl = required("BASE_SEPOLIA_RPC_URL");
+const { network, rpcUrl, usdcAddress } = networkFromEnv();
 
 const relay = new VaultRelay({
   rpcUrl,
   vaultAddress: requiredAddress("POLICY_VAULT_ADDRESS"),
   relayKey: requiredHexKey("ORCHESTRATOR_RELAY_KEY"),
-  chainId: Number(process.env["CHAIN_ID"] ?? 84532),
+  chainId: network.chainId,
 });
 
-const zap = await Lightning.baseSepoliaTestnet({ hostChainRpcUrls: [...rpcUrls(rpcUrl)] });
+const zap = await connectLightning(network, rpcUrl);
 
 const agent = await buildAgent({
   apiKey: optional("LLM_API_KEY"),
@@ -69,11 +76,12 @@ const loop = new PaymentLoop({
     optional("SIGNER_SERVICE_TOKEN") ?? optional("SERVICE_TOKEN"),
   ),
   agent,
-  asset: requiredAddress("USDC_ADDRESS"),
+  asset: usdcAddress,
+  network: network.x402Network,
   onEvent: (event) => console.log(renderEvent(event)),
 });
 
-console.log(`\norchestrator — goal ${goalId}`);
+console.log(`\norchestrator — goal ${goalId} on ${network.label}`);
 console.log(`  relay   ${relay.relayAddress}  (gas only)`);
 console.log(`  target  ${url}\n`);
 

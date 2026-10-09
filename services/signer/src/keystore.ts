@@ -32,7 +32,6 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync, chmodSync } from "node:fs";
 import { dirname } from "node:path";
-import { randomUUID } from "node:crypto";
 import { request as httpRequest } from "node:http";
 
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
@@ -240,14 +239,45 @@ export function normalizePrivateKey(key: string): Hex {
  * applies; the signer still accepts only `(goalId, seq)` and still reads every
  * signed field from the chain. The only difference is where the key came from.
  *
+ * ## Key ids are counted, so a lost index can be rebuilt
+ *
+ * ROFL derivation is deterministic on `key_id` within one app, across machines
+ * and redeployments. This store used to name keys `payer/<random uuid>` and keep
+ * the only copy of each id in an index on the machine's disk. When the rented
+ * machine expired its disk went with it, and every payer it had minted became
+ * unreachable: by 9 October 2026 that was 9.82 test USDC in 30 payers on Base
+ * Sepolia, still derivable by the enclave, under ids nobody knew.
+ *
+ * Ids are now `payer/<namespace>/<n>`, where the namespace is the chain and the
+ * vault and `n` counts up. The index is a cache. When it has no record of the
+ * namespace, `recover()` re-derives `payer/<namespace>/0`, `/1`, … and keeps
+ * every address the vault reports as bound to a goal, until a run of unbound
+ * ids says it is past the last one. A payer that matters is a payer with a goal,
+ * and the payer binding means each has exactly one, so the chain is enough to
+ * rebuild everything worth rebuilding.
+ *
+ * `mint` advances the counter and persists it *before* deriving, so a crash can
+ * skip an id but never hand one out twice. After a rebuild the counter resumes
+ * right after the highest bound id. An id minted but not yet bound when the
+ * index was lost can then be handed out again, which is harmless: the vault
+ * refuses to bind one payer to two goals, so the second openGoal reverts.
+ *
+ * The rebuild stops after a run of unbound ids, so recovery depends on gaps
+ * staying shorter than that run. Gaps come from payers minted and never used
+ * for a goal. The first version of this resumed past the whole scanned window
+ * instead, which made a gap exactly as long as the run: the wipe test on
+ * 9 October 2026 rebuilt nothing, because ids 0 to 24 were unbound and the
+ * payers started at 25. Resuming after the highest bound id leaves no such gap,
+ * and the default run is 50 so that machine's payers are still found.
+ *
+ * Ids minted under the old random scheme are kept when an old index is loaded,
+ * but cannot be rebuilt if it is lost.
+ *
  * ## Why the index is not a secret
  *
- * ROFL derivation is deterministic on `key_id`, so this store persists only
- * `address -> key_id` and re-derives the key on demand. That file contains no
- * key material — the meaningful difference from `FileKeyStore`, which writes
- * private keys to disk. Lose the index and the keys become unreachable, which is
- * a recoverability tradeoff worth stating: it is the price of never writing a
- * secret down.
+ * It maps addresses to key ids. No key material is written anywhere, which is
+ * the meaningful difference from `FileKeyStore`. A key id is useless outside
+ * the app's attested enclave, because only that enclave can derive from it.
  *
  * ## What this does and does not prove
  *
@@ -261,37 +291,107 @@ export function normalizePrivateKey(key: string): Hex {
 export class RoflKeyStore implements KeyStore {
   readonly #appd: RoflAppd;
   readonly #indexPath: string | undefined;
+  readonly #namespace: string;
   /** address (lowercased) -> key_id. No secrets. */
-  #index: Record<string, string>;
+  #keys: Record<string, string>;
+  /** namespace -> next n to mint. Absent means this index has no record of it. */
+  #next: Record<string, number>;
 
-  constructor(appd: RoflAppd, indexPath?: string) {
+  /**
+   * @param namespace scopes key ids to one chain and vault, e.g.
+   *   `84532/0x518b…522c`. Goal ids and payer bindings do not carry across
+   *   vaults, so neither does the counter.
+   */
+  constructor(appd: RoflAppd, indexPath?: string, namespace = "default") {
     this.#appd = appd;
     this.#indexPath = indexPath;
-    this.#index = indexPath !== undefined && existsSync(indexPath)
-      ? (JSON.parse(readFileSync(indexPath, "utf8")) as Record<string, string>)
-      : {};
+    this.#namespace = namespace;
+    const loaded =
+      indexPath !== undefined && existsSync(indexPath)
+        ? (JSON.parse(readFileSync(indexPath, "utf8")) as unknown)
+        : undefined;
+    if (isIndexV2(loaded)) {
+      this.#keys = { ...loaded.keys };
+      this.#next = { ...loaded.next };
+    } else {
+      // The original format: a bare address -> key_id map, random ids only.
+      this.#keys = (loaded as Record<string, string> | undefined) ?? {};
+      this.#next = {};
+    }
   }
 
   #persist(): void {
     if (this.#indexPath === undefined) return;
     mkdirSync(dirname(this.#indexPath), { recursive: true });
-    writeFileSync(this.#indexPath, `${JSON.stringify(this.#index, null, 2)}\n`);
+    const file: IndexV2 = { version: 2, next: this.#next, keys: this.#keys };
+    writeFileSync(this.#indexPath, `${JSON.stringify(file, null, 2)}\n`);
+  }
+
+  #keyId(n: number): string {
+    return `payer/${this.#namespace}/${n}`;
+  }
+
+  async #addressOf(keyId: string): Promise<Address> {
+    return privateKeyToAccount(await this.#appd.generateKey(keyId)).address;
+  }
+
+  /**
+   * Rebuilds this namespace's part of the index from the chain, when the index
+   * has no record of it. Call once at boot, before serving.
+   *
+   * @param isBound whether an address is the payer of a goal on this vault.
+   *   It must throw rather than answer false when it cannot tell: a wrong
+   *   "unbound" ends the scan early and leaves later payers out.
+   * @param gap consecutive unbound ids that end the scan.
+   * @returns undefined when the index already knew the namespace.
+   */
+  async recover(
+    isBound: (address: Address) => Promise<boolean>,
+    gap = 50,
+  ): Promise<{ readonly scanned: number; readonly found: number } | undefined> {
+    if (this.#next[this.#namespace] !== undefined) return undefined;
+
+    let n = 0;
+    let found = 0;
+    let highest = -1;
+    for (let misses = 0; misses < gap; n++) {
+      const keyId = this.#keyId(n);
+      const address = await this.#addressOf(keyId);
+      if (await isBound(address)) {
+        this.#keys[address.toLowerCase()] = keyId;
+        found++;
+        highest = n;
+        misses = 0;
+      } else {
+        misses++;
+      }
+    }
+
+    // Right after the highest bound id, never past the scanned window: skipping
+    // the window would leave a gap as long as `gap`, and the next rebuild would
+    // stop at it. See the class comment.
+    this.#next[this.#namespace] = highest + 1;
+    this.#persist();
+    return { scanned: n, found };
   }
 
   async mint(): Promise<Address> {
-    // Random rather than a counter: a counter would have to be persisted before
-    // the key it names, and a crash between the two would hand out a key_id the
-    // next mint reuses.
-    const keyId = `payer/${randomUUID()}`;
-    const key = await this.#appd.generateKey(keyId);
-    const account = privateKeyToAccount(key);
-    this.#index[account.address.toLowerCase()] = keyId;
+    // Advanced and persisted before deriving: a crash between the two skips n
+    // rather than reusing it. Synchronous up to the persist, so two concurrent
+    // mints cannot read the same n.
+    const n = this.#next[this.#namespace] ?? 0;
+    this.#next[this.#namespace] = n + 1;
     this.#persist();
-    return account.address;
+
+    const keyId = this.#keyId(n);
+    const address = await this.#addressOf(keyId);
+    this.#keys[address.toLowerCase()] = keyId;
+    this.#persist();
+    return address;
   }
 
   async signerFor(address: Address): Promise<LocalAccount | undefined> {
-    const keyId = this.#index[address.toLowerCase()];
+    const keyId = this.#keys[address.toLowerCase()];
     if (keyId === undefined) return undefined;
     // Re-derived per signature rather than cached, so the process holds key
     // material for as short a time as it can.
@@ -299,8 +399,30 @@ export class RoflKeyStore implements KeyStore {
   }
 
   async addresses(): Promise<readonly Address[]> {
-    return Object.keys(this.#index) as Address[];
+    return Object.keys(this.#keys) as Address[];
   }
+
+  /** Where the counter stands for this namespace, for /health. */
+  get nextId(): number | undefined {
+    return this.#next[this.#namespace];
+  }
+}
+
+/** The index as written since key ids became counted. */
+interface IndexV2 {
+  readonly version: 2;
+  readonly next: Record<string, number>;
+  readonly keys: Record<string, string>;
+}
+
+function isIndexV2(value: unknown): value is IndexV2 {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    (value as { version?: unknown }).version === 2 &&
+    typeof (value as { next?: unknown }).next === "object" &&
+    typeof (value as { keys?: unknown }).keys === "object"
+  );
 }
 
 /**
@@ -314,6 +436,8 @@ export class RoflKeyStore implements KeyStore {
 export function openKeyStore(options: {
   roflSocket?: string | undefined;
   roflIndexPath?: string | undefined;
+  /** Chain and vault the ROFL key ids are counted under. See `RoflKeyStore`. */
+  roflNamespace?: string | undefined;
   filePath?: string | undefined;
   /**
    * Refuse to start without an enclave.
@@ -332,7 +456,7 @@ export function openKeyStore(options: {
 }): KeyStore {
   const socket = options.roflSocket;
   if (socket !== undefined && socket !== "") {
-    return new RoflKeyStore(new SocketRoflAppd(socket), options.roflIndexPath);
+    return new RoflKeyStore(new SocketRoflAppd(socket), options.roflIndexPath, options.roflNamespace);
   }
 
   if (options.requireRofl === true) {

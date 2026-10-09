@@ -26,4 +26,16 @@ set -eu
 mkdir -p /data
 chown -R node:node /data
 
+# The enclave's key daemon socket is bind-mounted from the VM too, so its owner
+# and mode also arrive from there, and nothing promises the `node` user can
+# open it. When it cannot, every key derivation fails with EACCES and the signer
+# exits at boot. That is what the first v2 deployment on 9 October 2026 did: the
+# images that ran in the enclave before it ran as root and never needed this.
+# Hand the socket's group to `node`, read-write, before dropping root.
+SOCK="${SIGNER_ROFL_SOCKET:-}"
+if [ -n "$SOCK" ] && [ -S "$SOCK" ]; then
+  chgrp node "$SOCK"
+  chmod g+rw "$SOCK"
+fi
+
 exec su-exec node "$@"

@@ -128,9 +128,24 @@ function withDetail(
       const e = find(events, "spend-requested");
       return e ? { ...stage, detail: `seq ${e.spend.seq}` } : stage;
     }
-    case "evaluate":
+    case "evaluate": {
       // Reported by the orchestrator, not measured here.
-      return reveal ? { ...stage, ms: reveal.latencyMs } : stage;
+      if (reveal) return { ...stage, ms: reveal.latencyMs };
+      if (has(events, "reveal-timeout")) return { ...stage, detail: "no decision from Inco" };
+      /*
+       * While it waits, say on what. "Not processed yet" is Inco working
+       * normally; a 503 or a failed reveal is Inco down, and the difference is
+       * the one a presenter needs to see.
+       */
+      const waiting = events.filter((e) => e.type === "reveal-waiting").at(-1);
+      if (waiting?.type !== "reveal-waiting") return stage;
+      const seconds = Math.round(waiting.elapsedMs / 1000);
+      const outage = /503|unavailable|failed to reveal/i.test(waiting.note ?? "");
+      return {
+        ...stage,
+        detail: outage ? `Inco not answering · ${seconds}s` : `waiting on Inco · ${seconds}s`,
+      };
+    }
     case "reveal":
       return reveal ? { ...stage, detail: reveal.approved ? "approve" : "reject" } : stage;
     case "finalize":

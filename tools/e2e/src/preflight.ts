@@ -1,23 +1,24 @@
 /**
- * Checks everything M2b needs *before* it sends a transaction: right chain,
- * Inco live, keys valid, wallet funded, artifact built.
+ * Checks everything a run needs *before* it sends a transaction: right chain,
+ * Inco able to reveal decisions, keys valid, wallet funded, artifact built.
+ * Run it before a demo; it sends nothing and costs nothing.
  *
  *   pnpm --filter @ntux402/e2e run preflight
  */
 
 import { createPublicClient, formatEther } from "viem";
-import { baseSepolia } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
 
-import { rpcTransport } from "@ntux402/shared/viem";
+import { rpcTransport, viemChain } from "@ntux402/shared/viem";
+import { NETWORKS, type Network } from "@ntux402/shared";
+import { IncoDecisionReader, IncoHealthProbe, connectLightning } from "@ntux402/orchestrator";
 
 import {
-  BASE_SEPOLIA_CHAIN_ID,
   INCO_SINGLETON,
-  USDC_BASE_SEPOLIA,
   loadDotEnv,
+  networkFromEnv,
+  optional,
   policyVaultAbi,
-  required,
   requiredHexKey,
 } from "./config.js";
 
@@ -31,7 +32,7 @@ function check(label: string, ok: boolean, detail: string) {
   if (!ok) problems.push(`${label}: ${detail}`);
 }
 
-console.log("\nM2b preflight\n");
+console.log("\npreflight\n");
 
 // --- artifact -------------------------------------------------------------
 try {
@@ -42,14 +43,20 @@ try {
   check("Foundry artifact", false, e instanceof Error ? e.message : String(e));
 }
 
-// --- credentials ----------------------------------------------------------
+// --- network --------------------------------------------------------------
+// Falls back to Base Sepolia only so the remaining checks can still run and
+// report; a NETWORK the loader refused is already a failure above them.
+let network: Network = NETWORKS["base-sepolia"];
 let rpcUrl = "";
 try {
-  rpcUrl = required("BASE_SEPOLIA_RPC_URL");
-  check("BASE_SEPOLIA_RPC_URL", true, rpcUrl.replace(/\/[A-Za-z0-9_-]{16,}$/, "/<redacted>"));
+  ({ network, rpcUrl } = networkFromEnv());
+  check("NETWORK", true, `${network.label} (chain ${network.chainId})${network.testnet ? "" : " — REAL MONEY"}`);
+  check("RPC", true, rpcUrl.replace(/\/[A-Za-z0-9_-]{16,}$/, "/<redacted>"));
 } catch (e) {
-  check("BASE_SEPOLIA_RPC_URL", false, e instanceof Error ? e.message : String(e));
+  check("NETWORK", false, e instanceof Error ? e.message : String(e));
 }
+
+// --- credentials ----------------------------------------------------------
 
 let deployer: ReturnType<typeof privateKeyToAccount> | undefined;
 try {
@@ -79,11 +86,11 @@ if (process.env["BASESCAN_API_KEY"]) {
 
 // --- chain ----------------------------------------------------------------
 if (rpcUrl) {
-  const client = createPublicClient({ chain: baseSepolia, transport: rpcTransport(rpcUrl) });
+  const client = createPublicClient({ chain: viemChain(network), transport: rpcTransport(rpcUrl) });
 
   try {
     const chainId = await client.getChainId();
-    check("chain id", chainId === BASE_SEPOLIA_CHAIN_ID, `${chainId} (want ${BASE_SEPOLIA_CHAIN_ID})`);
+    check("chain id", chainId === network.chainId, `${chainId} (want ${network.chainId})`);
 
     const incoCode = await client.getCode({ address: INCO_SINGLETON });
     check("Inco singleton deployed", (incoCode?.length ?? 0) > 2, INCO_SINGLETON);
@@ -95,8 +102,35 @@ if (rpcUrl) {
     });
     check("Inco fee", true, `${fee} wei (${formatEther(fee)} ETH) per encrypted input`);
 
-    const usdcCode = await client.getCode({ address: USDC_BASE_SEPOLIA });
-    check("USDC deployed", (usdcCode?.length ?? 0) > 2, USDC_BASE_SEPOLIA);
+    /*
+     * The check that matters on the day. Every run needs Inco to reveal its
+     * decision, and that needs all of Inco's covalidators up. This asks for a
+     * decision already revealed on chain, so a failure here is Inco, not us.
+     */
+    const probeHandle = (optional("INCO_PROBE_HANDLE") as `0x${string}` | undefined) ?? network.incoProbeHandle;
+    if (!probeHandle) {
+      notes.push(
+        `No revealed decision is known on ${network.label}, so Inco could not be probed. ` +
+          "Set INCO_PROBE_HANDLE once a first run has revealed one.",
+      );
+    } else {
+      try {
+        const zap = await connectLightning(network, rpcUrl);
+        const inco = await new IncoHealthProbe(new IncoDecisionReader(zap), { handle: probeHandle }).check();
+        check(
+          "Inco can reveal decisions",
+          inco.status === "ready",
+          inco.status === "ready"
+            ? `answered in ${(inco.latencyMs / 1000).toFixed(1)}s`
+            : `${inco.detail} — runs will stop at the confidential evaluation`,
+        );
+      } catch (e) {
+        check("Inco can reveal decisions", false, e instanceof Error ? e.message : String(e));
+      }
+    }
+
+    const usdcCode = await client.getCode({ address: network.usdc.address });
+    check("USDC deployed", (usdcCode?.length ?? 0) > 2, network.usdc.address);
 
     if (deployer) {
       const balance = await client.getBalance({ address: deployer.address });
@@ -105,7 +139,7 @@ if (rpcUrl) {
       check(
         "deployer funded",
         enough,
-        `${formatEther(balance)} ETH${enough ? "" : " — need ~0.003 ETH; faucet: https://www.alchemy.com/faucets/base-sepolia"}`,
+        `${formatEther(balance)} ETH${enough ? "" : network.testnet ? " — need ~0.003 ETH; faucet: https://www.alchemy.com/faucets/base-sepolia" : ` — need ~0.003 ETH on ${network.label}`}`,
       );
     }
   } catch (e) {

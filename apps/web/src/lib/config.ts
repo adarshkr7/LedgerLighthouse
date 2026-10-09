@@ -1,21 +1,27 @@
 /**
  * Wallet and service wiring for the demo UI.
  *
- * Chain is pinned to Base Sepolia and re-asserted before every write. MetaMask
- * caches a stale `chainId` after a manual network change (ARCHITECTURE.md), so
- * trusting connection-time state is how you write to the wrong chain.
+ * Chain is pinned at build time by VITE_NETWORK (Base Sepolia when unset) and
+ * re-asserted before every write. MetaMask caches a stale `chainId` after a
+ * manual network change (ARCHITECTURE.md), so trusting connection-time state
+ * is how you write to the wrong chain.
  */
 
 import { createConfig } from "wagmi";
-import { baseSepolia } from "wagmi/chains";
 import { injected } from "wagmi/connectors";
-import { rpcUrls } from "@ntux402/shared";
-import { rpcTransport } from "@ntux402/shared/viem";
-
-export const CHAIN = baseSepolia;
-export const CHAIN_ID = baseSepolia.id; // 84532
+import { networkNamed, rpcUrls } from "@ntux402/shared";
+import { rpcTransport, viemChain } from "@ntux402/shared/viem";
 
 const env = import.meta.env;
+
+/**
+ * Build-time, because wagmi's config is built once at module load. The
+ * orchestrator's own chain is checked against it in `fetchOrchestratorConfig`,
+ * so a console built for one network cannot drive services on another.
+ */
+export const NETWORK = networkNamed(env["VITE_NETWORK"] as string | undefined);
+export const CHAIN = viemChain(NETWORK);
+export const CHAIN_ID = CHAIN.id;
 
 /**
  * RPC endpoints for the browser.
@@ -31,16 +37,15 @@ const env = import.meta.env;
  * chain's own endpoint as a second choice rather than the only one.
  */
 export const RPC_URL: string =
-  (env["VITE_RPC_URL"] as string | undefined) ??
-  "https://base-sepolia-rpc.publicnode.com,https://sepolia.base.org";
+  (env["VITE_RPC_URL"] as string | undefined) ?? NETWORK.defaultRpcUrls.join(",");
 
 /** For SDKs that want the list rather than a transport — Inco's, in particular. */
 export const RPC_URLS: readonly string[] = rpcUrls(RPC_URL);
 
 export const wagmiConfig = createConfig({
-  chains: [baseSepolia],
+  chains: [CHAIN],
   connectors: [injected()],
-  transports: { [baseSepolia.id]: rpcTransport(RPC_URL) },
+  transports: { [CHAIN.id]: rpcTransport(RPC_URL) },
 });
 
 export const ORCHESTRATOR_URL: string =
@@ -53,17 +58,6 @@ export interface OrchestratorConfig {
   readonly relayAddress: `0x${string}`;
   readonly signerUrl: string;
   readonly mockApiUrl: string;
-  /** Live-search vendor. Absent when it is not configured — the picker greys those goals out. */
-  readonly vendorSearchUrl?: string | undefined;
-  /**
-   * The live vendor's payee, which is **not** in the shared catalog.
-   *
-   * It is the operator's own address, so it cannot be compiled into this
-   * bundle. It has to be unioned into the allowlist when a goal is opened, or
-   * every live spend reverts `PayeeNotAllowlisted` — the correct failure, and a
-   * thoroughly confusing one to watch.
-   */
-  readonly vendorSearchPayee?: `0x${string}` | undefined;
   /** "stub" means payloads are validated but no money moves. Shown, never hidden. */
   readonly settlement: "live" | "stub";
   readonly agent: "llm" | "scripted";
@@ -76,7 +70,31 @@ export async function fetchOrchestratorConfig(): Promise<OrchestratorConfig> {
   if (!response.ok) {
     throw new Error(`orchestrator /config returned ${response.status}`);
   }
-  return (await response.json()) as OrchestratorConfig;
+  const config = (await response.json()) as OrchestratorConfig;
+  if (config.chainId !== CHAIN_ID) {
+    throw new Error(
+      `the orchestrator is on chain ${config.chainId}, but this console was built for ` +
+        `${NETWORK.label} (${CHAIN_ID}). Set VITE_NETWORK to match NETWORK and rebuild.`,
+    );
+  }
+  return config;
+}
+
+/**
+ * Whether Inco can reveal a decision right now, as the orchestrator last saw it.
+ *
+ * A run cannot finish without that, so the console pauses Buy while it is
+ * unavailable instead of letting a run commit and then wait on stage.
+ */
+export type IncoHealth =
+  | { readonly status: "ready"; readonly latencyMs: number; readonly checkedAt: number }
+  | { readonly status: "unavailable"; readonly detail: string; readonly checkedAt: number }
+  | { readonly status: "unchecked" };
+
+export async function fetchIncoHealth(): Promise<IncoHealth> {
+  const response = await fetch(`${ORCHESTRATOR_URL}/health/inco`);
+  if (!response.ok) throw new Error(`orchestrator /health/inco returned ${response.status}`);
+  return (await response.json()) as IncoHealth;
 }
 
 /** 6-decimal USDC, for display only. */
@@ -99,6 +117,6 @@ export function truncate(hex: string, lead = 10, tail = 8): string {
 }
 
 export const explorer = {
-  address: (a: string) => `https://sepolia.basescan.org/address/${a}`,
-  tx: (h: string) => `https://sepolia.basescan.org/tx/${h}`,
+  address: (a: string) => `${NETWORK.explorer}/address/${a}`,
+  tx: (h: string) => `${NETWORK.explorer}/tx/${h}`,
 };

@@ -44,6 +44,9 @@ import { pollForDecision } from "../inco/reveal.js";
 import type { VaultRelay, SpendRequested } from "./relay.js";
 import type { AuthorizeOutcome, SignerClient } from "./signer-client.js";
 
+/** How often a pending reveal reports that it is still waiting. */
+const REVEAL_WAITING_EVERY_MS = 5_000;
+
 // ------------------------------------------------------------------- events
 
 /**
@@ -71,6 +74,17 @@ export type PaymentEvent =
       readonly attempts: number;
       readonly latencyMs: number;
       readonly approved: boolean;
+    }
+  /**
+   * Still waiting on Inco, at most every five seconds. `note` is the last thing
+   * Inco said, so a dead covalidator shows up as its error while it happens and
+   * not only as a timeout minutes later.
+   */
+  | {
+      readonly type: "reveal-waiting";
+      readonly attempts: number;
+      readonly elapsedMs: number;
+      readonly note?: string;
     }
   | { readonly type: "reveal-timeout"; readonly attempts: number; readonly elapsedMs: number }
   | {
@@ -321,8 +335,20 @@ export class PaymentLoop {
     emit({ type: "spend-requested", goalId, spend });
 
     // --- retrieve the decision ---------------------------------------------
+    let reportedAt = 0;
     const poll = await pollForDecision(this.#config.decisions, spend.decisionHandle, {
       ...this.#config.poll,
+      onAttempt: (attempt, elapsedMs, note) => {
+        this.#config.poll?.onAttempt?.(attempt, elapsedMs, note);
+        if (elapsedMs - reportedAt < REVEAL_WAITING_EVERY_MS) return;
+        reportedAt = elapsedMs;
+        emit({
+          type: "reveal-waiting",
+          attempts: attempt,
+          elapsedMs,
+          ...(note === undefined ? {} : { note }),
+        });
+      },
     });
 
     if (poll.kind === "timeout") {

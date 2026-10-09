@@ -9,23 +9,22 @@
  */
 
 import { createPublicClient, createWalletClient, formatEther, parseEther } from "viem";
-import { baseSepolia } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
 
-import { rpcTransport } from "@ntux402/shared/viem";
+import { rpcTransport, sendingAccount, viemChain } from "@ntux402/shared/viem";
 
-import { loadDotEnv, optional, required, requiredHexKey } from "./config.js";
+import { loadDotEnv, optional, requiredHexKey, networkFromEnv } from "./config.js";
 
 loadDotEnv();
 
 /** Enough for many requestSpend/finalize/settle cycles; small enough to be disposable. */
 const TARGET = parseEther("0.005");
 
-const rpcUrl = required("BASE_SEPOLIA_RPC_URL");
-const user = privateKeyToAccount(requiredHexKey("DEPLOYER_PRIVATE_KEY"));
+const { network, rpcUrl } = networkFromEnv();
+const user = sendingAccount(requiredHexKey("DEPLOYER_PRIVATE_KEY"));
 
-const publicClient = createPublicClient({ chain: baseSepolia, transport: rpcTransport(rpcUrl) });
-const wallet = createWalletClient({ account: user, chain: baseSepolia, transport: rpcTransport(rpcUrl) });
+const publicClient = createPublicClient({ chain: viemChain(network), transport: rpcTransport(rpcUrl) });
+const wallet = createWalletClient({ account: user, chain: viemChain(network), transport: rpcTransport(rpcUrl) });
 
 const roles = [
   ["relay", optional("ORCHESTRATOR_RELAY_KEY")],

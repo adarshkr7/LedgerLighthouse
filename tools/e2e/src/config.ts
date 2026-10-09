@@ -6,6 +6,7 @@ import type { Abi } from "viem";
 
 export {
   loadDotEnv,
+  networkFromEnv,
   optional,
   required,
   requiredAddress,

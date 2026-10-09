@@ -13,18 +13,25 @@
  * scroll actually lives. Setup, goal detail, guarantees and evidence are all
  * real content; they are simply not what you look at while a run is in flight.
  *
- * Motion matches the landing page: same `--gf-ease-quart`, same short rise.
  * `@starting-style` plus `transition-behavior: allow-discrete` in the
  * stylesheet is what lets a `display: none` element animate in *and* out
  * natively; where that is unsupported the dialog simply appears, which is the
  * correct degradation for a control surface.
+ *
+ * ## A dialog with no way out
+ *
+ * Leave out `onClose` and the dialog cannot be dismissed: no close button,
+ * Escape does nothing, and a click on the backdrop does nothing. The wallet
+ * gate is the one user of this. It stays open until the condition behind it
+ * changes, and the caller closes it by setting `open` to false.
  */
 
 import { useEffect, useRef, type ReactNode } from "react";
 
 export interface ModalProps {
   readonly open: boolean;
-  readonly onClose: () => void;
+  /** Absent means the dialog cannot be dismissed. See above. */
+  readonly onClose?: (() => void) | undefined;
   readonly title: string;
   /** Mono kicker above the title — the console's section marker. */
   readonly tag?: string | undefined;
@@ -56,14 +63,24 @@ export function Modal({ open, onClose, title, tag, wide, children }: ModalProps)
       // element closing itself while React still thinks it is open.
       onCancel={(e) => {
         e.preventDefault();
-        onClose();
+        onClose?.();
       }}
-      onClose={onClose}
+      onClose={() => {
+        if (onClose) {
+          onClose();
+          return;
+        }
+        // Chrome closes a dialog on a second Escape without letting `cancel`
+        // be prevented. Nothing about why this one is open has changed, so
+        // it goes straight back up.
+        const el = ref.current;
+        if (open && el && !el.open) el.showModal();
+      }}
       // A click that lands on the dialog element itself — rather than on the
       // inner panel — is a click on the backdrop, since the panel covers the
       // dialog's entire painted area.
       onClick={(e) => {
-        if (e.target === ref.current) onClose();
+        if (onClose && e.target === ref.current) onClose();
       }}
     >
       <div className="d-modal-panel">
@@ -74,16 +91,18 @@ export function Modal({ open, onClose, title, tag, wide, children }: ModalProps)
               {title}
             </h2>
           </div>
-          <button type="button" className="d-modal-x" onClick={onClose} aria-label="Close">
-            <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
-              <path
-                d="M3 3 L13 13 M13 3 L3 13"
-                stroke="currentColor"
-                strokeWidth="1.4"
-                strokeLinecap="round"
-              />
-            </svg>
-          </button>
+          {onClose ? (
+            <button type="button" className="d-modal-x" onClick={onClose} aria-label="Close">
+              <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+                <path
+                  d="M3 3 L13 13 M13 3 L3 13"
+                  stroke="currentColor"
+                  strokeWidth="1.4"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </button>
+          ) : null}
         </header>
         {/* The one scrolling region in the console. Long evidence lists and the
             setup flow can exceed the viewport; the frame behind them may not. */}

@@ -13,16 +13,18 @@ import {
   describeGuard,
   exposedWithoutToken,
   loadDotEnv,
+  networkFromEnv,
   optional,
   optionalAddress,
-  required,
   requiredAddress,
   requiredHexKey,
 } from "@ntux402/shared/node";
-import { Lightning } from "@inco/lightning-js/lite";
+import type { Hex } from "viem";
 
 import { X402Client } from "./x402/client.js";
 import { IncoDecisionReader } from "./inco/reveal.js";
+import { IncoHealthProbe } from "./inco/health.js";
+import { connectLightning } from "./inco/lightning.js";
 import { PaymentLoop } from "./pay/payment-loop.js";
 import { VaultRelay } from "./pay/relay.js";
 import { SignerClient } from "./pay/signer-client.js";
@@ -31,39 +33,17 @@ import { buildAgent, llmConfigured, probeAgent } from "./agent/factory.js";
 import { createOrchestratorServer } from "./server.js";
 import { TraceAnchorClient } from "./pay/anchor.js";
 import { renderEvent } from "./render.js";
-import { assertPayoutAddress, rpcUrls } from "@ntux402/shared";
 
 loadDotEnv();
 
 const log = createLogger("orchestrator");
 
 const port = Number(process.env["ORCHESTRATOR_PORT"] ?? 8404);
-const chainId = Number(process.env["CHAIN_ID"] ?? 84532);
-const rpcUrl = required("BASE_SEPOLIA_RPC_URL");
+const { network, rpcUrl, usdcAddress } = networkFromEnv();
+const chainId = network.chainId;
 const vaultAddress = requiredAddress("POLICY_VAULT_ADDRESS");
-const usdcAddress = requiredAddress("USDC_ADDRESS");
 const signerUrl = optional("SIGNER_URL") ?? `http://127.0.0.1:${process.env["SIGNER_PORT"] ?? 8402}`;
 const mockApiUrl = optional("MOCK_API_URL") ?? `http://127.0.0.1:${process.env["MOCK_API_PORT"] ?? 4021}`;
-
-/*
- * Live search is opt-in, and its absence is a first-class state rather than a
- * broken one. The gate is the *payee*, not the URL: without an address to pay,
- * a goal opened by the console would not allowlist the vendor and every spend
- * would revert with `PayeeNotAllowlisted` — correct, and baffling. Better to
- * report live search as unavailable and let the console grey it out.
- *
- * Note what is deliberately absent: the vendor's API key. This service reads
- * the payee and the URL and nothing else. `scripts/check-boundary.mjs` fails CI
- * if that credential's name appears anywhere in this source tree — including in
- * a comment, which is why this one does not spell it out.
- */
-const vendorSearchPayeeRaw = optionalAddress("VENDOR_SEARCH_PAYEE");
-const vendorSearchPayee = vendorSearchPayeeRaw
-  ? assertPayoutAddress("VENDOR_SEARCH_PAYEE", vendorSearchPayeeRaw)
-  : undefined;
-const vendorSearchUrl = vendorSearchPayee
-  ? (optional("VENDOR_SEARCH_URL") ?? `http://127.0.0.1:${process.env["VENDOR_SEARCH_PORT"] ?? 4022}`)
-  : undefined;
 
 /*
  * Anchoring is opt-in on the address being set. Absent, traces stay
@@ -119,9 +99,7 @@ async function withRetry<T>(what: string, attempt: () => Promise<T>): Promise<T>
   }
 }
 
-const zap = await withRetry("Inco Lightning handshake", () =>
-  Lightning.baseSepoliaTestnet({ hostChainRpcUrls: [...rpcUrls(rpcUrl)] }),
-);
+const zap = await withRetry("Inco Lightning handshake", () => connectLightning(network, rpcUrl));
 
 const apiKey = optional("LLM_API_KEY");
 const model = optional("LLM_MODEL");
@@ -161,13 +139,26 @@ const signer = new SignerClient(
   optional("SIGNER_SERVICE_TOKEN") ?? optional("SERVICE_TOKEN"),
 );
 
+const decisions = new IncoDecisionReader(zap);
+
+/*
+ * The probe needs a decision that is already revealed on this network. A
+ * network nobody has run on yet has none, and refusing every run until one
+ * exists would make the first run impossible. So the probe is skipped and
+ * /health/inco says "unchecked", which the console shows as such.
+ * INCO_PROBE_HANDLE fills the gap once a first run has produced a handle.
+ */
+const probeHandle = (optional("INCO_PROBE_HANDLE") as Hex | undefined) ?? network.incoProbeHandle;
+const incoHealth = probeHandle ? new IncoHealthProbe(decisions, { handle: probeHandle }) : undefined;
+
 const loop = new PaymentLoop({
   client: new X402Client(),
   relay,
-  decisions: new IncoDecisionReader(zap),
+  decisions,
   signer,
   agent,
   asset: usdcAddress,
+  network: network.x402Network,
   onEvent: (event) => log.info(renderEvent(event)),
 });
 
@@ -178,8 +169,7 @@ const server = createOrchestratorServer({
   usdcAddress,
   chainId,
   mockApiUrl,
-  vendorSearchUrl,
-  vendorSearchPayee,
+  incoHealth,
   signerUrl,
   signer,
   anchors,
@@ -194,6 +184,22 @@ const server = createOrchestratorServer({
 
 server.listen(port, bindHost(), () => {
   log.info(`listening on http://${bindHost()}:${port}`, { guard: describeGuard() });
+  // In the terminal at boot, where it is cheapest to act on: minutes before a
+  // demo rather than in the middle of one.
+  log.info("network", { name: network.label, chainId, vault: vaultAddress });
+  if (!network.testnet) log.warn(`${network.label} is mainnet: USDC and gas here are real money`);
+  if (incoHealth) {
+    void incoHealth.check().then((inco) => {
+      if (inco.status === "ready") log.info("inco", { status: "ready", latencyMs: inco.latencyMs });
+      else log.warn(`inco is UNAVAILABLE, runs will be refused until it recovers: ${inco.detail}`);
+    });
+  } else {
+    log.warn(
+      `inco is UNCHECKED: no revealed decision is known on ${network.label} to probe with. ` +
+        "Runs are allowed but may stall at the confidential evaluation. Set INCO_PROBE_HANDLE " +
+        "to a revealed decision handle once one exists.",
+    );
+  }
   /*
    * Said at boot rather than discovered at the download button. The trace route
    * refuses in this combination, and an operator who bound the service outward
@@ -218,15 +224,6 @@ server.listen(port, bindHost(), () => {
     log.warn("settlement is STUBBED — payloads are validated but no money moves");
   }
   log.info("trace anchoring", { contract: anchorAddress ?? "not configured" });
-  log.info("live search", {
-    vendor: vendorSearchUrl ?? "not configured",
-    ...(vendorSearchPayee ? { payee: vendorSearchPayee } : {}),
-  });
-  if (!vendorSearchPayee) {
-    log.warn(
-      "live search is unavailable — set VENDOR_SEARCH_PAYEE (and run @ntux402/vendor-search)",
-    );
-  }
 
   /*
    * Fire-and-forget on purpose. The answer changes nothing about how the server

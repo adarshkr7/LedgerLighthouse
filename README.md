@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="https://sepolia.basescan.org/address/0x0C759D06a1c14F43852D7b078Db2f8C342F15921"><img alt="PolicyVault on Base Sepolia" src="https://img.shields.io/badge/PolicyVault-Base%20Sepolia-0052ff" /></a>
+  <a href="https://sepolia.basescan.org/address/0x518B8701484ba99A38f60090cd4a2cc710d3522c"><img alt="PolicyVault on Base Sepolia" src="https://img.shields.io/badge/PolicyVault-Base%20Sepolia-0052ff" /></a>
   <img alt="368 tests passing" src="https://img.shields.io/badge/tests-368%20passing-2f5c4a" />
   <img alt="x402 v1" src="https://img.shields.io/badge/x402-v1-16150f" />
   <img alt="Inco Lightning 1.0.2" src="https://img.shields.io/badge/Inco%20Lightning-1.0.2-7c382e" />
@@ -43,12 +43,14 @@ spending authority never reads the attacker's text.
 
 ## What is deployed
 
-Base Sepolia, chain id `84532`. Both contracts are source-verified.
+Base Sepolia, chain id `84532`.
 
 | Contract | Address | Deployment tx |
 |---|---|---|
-| `PolicyVault` | [`0x0C759D06a1c14F43852D7b078Db2f8C342F15921`](https://sepolia.basescan.org/address/0x0C759D06a1c14F43852D7b078Db2f8C342F15921) | [`0xcbf4da83…c013ee`](https://sepolia.basescan.org/tx/0xcbf4da835639699cf7ae7d472fed635a145c6df97381300941ddc9ba7fc013ee) |
+| `PolicyVault` | [`0x518B8701484ba99A38f60090cd4a2cc710d3522c`](https://sepolia.basescan.org/address/0x518B8701484ba99A38f60090cd4a2cc710d3522c) | [`0xc7926dc0…fb300b`](https://sepolia.basescan.org/tx/0xc7926dc0110604ec1a8cec636343a2d344f1c29a3754f9ad8e86ff4c80fb300b) |
 | `TraceAnchor` | [`0x065d5E16160159cAB7D841818aBc92b4E85D5818`](https://sepolia.basescan.org/address/0x065d5E16160159cAB7D841818aBc92b4E85D5818) | [`0x068c2d88…2f9900`](https://sepolia.basescan.org/tx/0x068c2d8883bfe2a294164da805274905aa33c85f2a68a27ab1c06892972f9900) |
+
+The PolicyVault was redeployed on 9 October 2026. The previous one, [`0x0C759D06…F15921`](https://sepolia.basescan.org/address/0x0C759D06a1c14F43852D7b078Db2f8C342F15921), was deployed before each payer was bound to one goal (`48805e9`), and the adversary campaign's payer-capture attack succeeded against it. Runs logged before that date used the old vault. The new vault is not yet source-verified on Basescan; TraceAnchor is.
 
 Settlement asset: USDC at [`0x036CbD53842c5426634e7929541eC2318f3dCF7e`](https://sepolia.basescan.org/address/0x036CbD53842c5426634e7929541eC2318f3dCF7e).
 
@@ -209,7 +211,6 @@ cp .env.example .env
 | `SIGNER_ROFL_SOCKET` | `/run/rofl-appd.sock`. Set **only** inside a deployed enclave |
 | `SIGNER_REQUIRE_ROFL` | `true` refuses to boot the signer without an enclave, so the file-store fallback cannot be enabled by accident |
 | `SIGNER_SERVICE_TOKEN` | What the orchestrator *presents* to the signer. Distinct from `SERVICE_TOKEN`, which is what a service *demands* of its own callers |
-| `SEARCH_VENDOR_KEY` | Deliberately a different credential from the inference key. CI fails if the orchestrator so much as names it |
 
 Then generate and fund the two gas-only roles:
 
@@ -235,6 +236,21 @@ pnpm dev
 Starts the signer (`8402`), mock resource server (`4021`), orchestrator (`8404`) and web console
 (`5173`). Open <http://127.0.0.1:5173>, connect MetaMask on Base Sepolia, and walk the five steps —
 connect, mint payer, open goal, fund, run.
+
+### Get the money back
+
+A goal's payer keeps whatever its runs did not spend until the goal is closed and swept. The console
+does both for its own goal. For everything else:
+
+```bash
+pnpm --filter @ntux402/e2e run sweep
+```
+
+That lists every goal on the vault whose payer still holds USDC, and what it would do with each. It
+sends nothing. Add `-- --execute` to close the goals `DEPLOYER_PRIVATE_KEY` owns and return every
+balance the signer holds a key for to the goal's owner. Goals owned by another wallet have to be
+closed by that wallet in the console first. `-- --vault 0x…` targets another vault, and the signer
+must be running against that same vault.
 
 ### Verify
 
@@ -267,19 +283,18 @@ Two traps worth knowing: `oasis rofl build` will not run on native Windows, and 
 | `services/signer/` | Authorization Signer. Runs in the ROFL enclave; holds the payer keys |
 | `services/trace/` | Trace builder, Merkle accumulator, and the standalone verifier |
 | `services/facilitator/` | Self-hosted x402 v1 facilitator. Outside the trust boundary |
-| `services/vendor-search/` | Live search vendor — real upstream calls, priced and sold over x402 |
 | `packages/shared/` | Types, the x402 client, chain helpers, the shared HTTP guard |
 | `apps/web/` | Console — MetaMask goal opening, funding, run visualisation |
 | `mock-api/` | Mock resource server — fabricated data at chosen prices |
-| `tools/e2e/` | Keygen, funding, and the end-to-end demo runner |
+| `tools/e2e/` | Keygen, funding, the end-to-end demo and adversary runners, and the sweep tool |
 | `scripts/` | `dev`, `verify`, ABI sync, and the CI import-boundary check |
 | `docs/` | Architecture, and recorded runs |
 
 The standalone verifier referenced above lives in [`services/trace/`](services/trace/): it needs only
 a trace file and a public RPC, and depends on no service in this repository.
 
-The import boundary is enforced in CI: `pnpm check:boundary` asserts that the orchestrator can reach
-neither the signer nor the vendor credential.
+The import boundary is enforced in CI: `pnpm check:boundary` asserts that the orchestrator cannot
+import the signer.
 
 ---
 

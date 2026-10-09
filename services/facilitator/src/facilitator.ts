@@ -36,19 +36,16 @@ import {
   type PublicClient,
   type WalletClient,
 } from "viem";
-import { baseSepolia } from "viem/chains";
-import { privateKeyToAccount } from "viem/accounts";
 import {
   TRANSFER_WITH_AUTHORIZATION_TYPES,
-  USDC_EIP712_NAME,
-  USDC_EIP712_VERSION,
+  networkForChainId,
   usdcAbi,
   type PaymentPayload,
   type PaymentRequirements,
   type SettleResponse,
   type VerifyResponse,
 } from "@ntux402/shared";
-import { rpcTransport } from "@ntux402/shared/viem";
+import { rpcTransport, sendingAccount, viemChainForId } from "@ntux402/shared/viem";
 
 export interface FacilitatorConfig {
   readonly rpcUrl: string;
@@ -58,6 +55,10 @@ export interface FacilitatorConfig {
   readonly network: string;
   /** Gas key. Holds no user funds and authorizes no payment. */
   readonly settlerKey: Hex;
+  /**
+   * USDC's EIP-712 domain. Defaults to the values for `chainId`, which differ
+   * between Base and Base Sepolia; see `NETWORKS` in the shared package.
+   */
   readonly eip712Name?: string;
   readonly eip712Version?: string;
   readonly now?: () => number;
@@ -68,18 +69,26 @@ export class Facilitator {
   readonly #wallet: WalletClient;
   readonly #config: FacilitatorConfig;
   readonly #settler: Address;
+  readonly #chain: ReturnType<typeof viemChainForId>;
+  readonly #eip712: { readonly name: string; readonly version: string };
 
   constructor(config: FacilitatorConfig) {
     this.#config = config;
-    const account = privateKeyToAccount(config.settlerKey);
+    this.#chain = viemChainForId(config.chainId);
+    const usdc = networkForChainId(config.chainId)?.usdc;
+    const name = config.eip712Name ?? usdc?.eip712Name;
+    const version = config.eip712Version ?? usdc?.eip712Version;
+    if (!name || !version) throw new Error(`no USDC EIP-712 domain known for chain ${config.chainId}`);
+    this.#eip712 = { name, version };
+    const account = sendingAccount(config.settlerKey);
     this.#settler = account.address;
     this.#public = createPublicClient({
-      chain: baseSepolia,
+      chain: this.#chain,
       transport: rpcTransport(config.rpcUrl),
     }) as PublicClient;
     this.#wallet = createWalletClient({
       account,
-      chain: baseSepolia,
+      chain: this.#chain,
       transport: rpcTransport(config.rpcUrl),
     });
   }
@@ -144,8 +153,8 @@ export class Facilitator {
     try {
       recovered = await recoverTypedDataAddress({
         domain: {
-          name: this.#config.eip712Name ?? USDC_EIP712_NAME,
-          version: this.#config.eip712Version ?? USDC_EIP712_VERSION,
+          name: this.#eip712.name,
+          version: this.#eip712.version,
           chainId: this.#config.chainId,
           verifyingContract: this.#config.asset,
         },
@@ -253,7 +262,7 @@ export class Facilitator {
           auth.nonce,
           payment.payload.signature,
         ],
-        chain: baseSepolia,
+        chain: this.#chain,
         account: this.#wallet.account!,
       });
 

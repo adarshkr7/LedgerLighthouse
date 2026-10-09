@@ -531,4 +531,14 @@ describe("vendor-attested steps", () => {
     expect(result.valid).toBe(false);
     expect(result.findings.some((f) => f.check === "chain.vendor-attested")).toBe(true);
   });
+
+  it("refuses to check a trace from a chain it does not know against an RPC", async () => {
+    // Checked before any client exists, so the unreachable URL is never dialled.
+    const result = await verifyTrace(
+      { ...buildTrace(), chainId: 1 },
+      { rpcUrl: "http://127.0.0.1:1" },
+    );
+    expect(result.valid).toBe(false);
+    expect(result.findings.some((f) => f.check === "onchain.chainId")).toBe(true);
+  });
 });
