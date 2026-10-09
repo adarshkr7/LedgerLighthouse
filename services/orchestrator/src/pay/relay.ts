@@ -195,6 +195,17 @@ export class VaultRelay {
       | undefined;
     if (!args) throw new Error(`requestSpend emitted no SpendRequested event (${hash})`);
 
+    // The next write on this spend is a finalize, and a node that has not seen
+    // this block yet refuses it with `UnknownSpend`. The adversary campaign hit
+    // that on 9 October 2026, when C8 finalized straight after its commit. So
+    // return once the spend is readable. Best effort: the receipt is already
+    // proof of the commit, and losing it to a slow node would orphan the spend.
+    await this.waitUntilVisible(
+      `spend ${goalId}:${args.seq}`,
+      async () => (await this.pendingSeq(goalId)) === args.seq,
+      30_000,
+    ).catch(() => undefined);
+
     return {
       seq: args.seq,
       decisionHandle: args.decisionHandle,
