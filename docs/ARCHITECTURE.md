@@ -266,6 +266,13 @@ entirely, the loss ceiling is the funded amount. Fund it slightly **above** the 
 the policy binds first — if the two numbers are equal, an observer cannot tell which control stopped
 the payment.
 
+**The user's own wallet is never exposed.** It signs only what the user does themselves: `openGoal`,
+a plain USDC `transfer` that funds the payer, and `closeGoal`. It grants no `approve`, `permit` or
+other allowance, so nothing in the system can draw on it later, and its key never enters the system.
+Every payment is signed by the payer key instead. If that key were exposed, through a compromised
+enclave or a fallback to the local key store, the loss is what the payer holds, and the user's wallet
+is untouched. [BUILD]
+
 ### 5.6 Payer keys survive a lost machine
 
 Inside ROFL a payer key is derived by the enclave from `(app, key_id)`, the same on every machine
