@@ -24,23 +24,32 @@ The PolicyVault was redeployed on 9 October 2026. The previous one, [`0x0C759D06
 
 Settlement asset: USDC at [`0x036CbD53842c5426634e7929541eC2318f3dCF7e`](https://sepolia.basescan.org/address/0x036CbD53842c5426634e7929541eC2318f3dCF7e).
 
+**Network.** One `NETWORK` setting chooses Base Sepolia, the default, or Base. The chain id, the USDC
+address, USDC's EIP-712 name and the x402 network string all follow from it
+(`packages/shared/src/chain/network.ts`). A `.env` that names two networks at once, such as
+`CHAIN_ID=84532` next to `NETWORK=base`, stops every service at boot. Nothing is deployed on Base.
+
 Sapphire testnet: ROFL app `rofl1qr0fv0qs2u8vmmah0ucmwegcj2cdz7kj4qzjduhp` is registered, 100 TEST
 staked, with both enclave measurements whitelisted in its on-chain policy — permanent state,
 checkable with `oasis rofl show`. [CHAIN]
 
-A *running* replica is separate. ROFL compute is rented by the hour and no machine is rented at
-present, so the deployment is reproducible from the manifest rather than currently live. A run made
-without one falls back to the local key store, which writes private keys to disk and is exactly the
-assumption the enclave exists to retire. Treat every custody claim below as conditional on a rented,
-attested replica. [OASIS]
+A *running* replica is separate. ROFL compute is rented by the hour. On 9 October 2026 machine
+`00000000000006ea` ran signer image v4 (`docker.io/schwarzite/totem-signer@sha256:ad385c57…`), and
+the enclave runs in `docs/runs/` used it. Whether a machine is rented now is `oasis rofl machine
+show`, and `pnpm diagnose` reports the time left on it. A run made without one falls back to the
+local key store, which writes private keys to disk and is exactly the assumption the enclave exists
+to retire. Treat every custody claim below as conditional on a rented, attested replica. [OASIS]
 
-Live transactions produced by the deployed system:
+Live transactions produced by the deployed system, with the signer in the enclave, on 9 October
+2026 (`docs/runs/demo-2026-10-09-enclave-passing.log`; earlier runs on the retired vault are in the
+same folder):
 
 | What | Transaction |
 |---|---|
-| `finalizeDecision` — APPROVED | [`0xd38c86d5…284d95`](https://sepolia.basescan.org/tx/0xd38c86d5e327c80294f444598a00e1c3cd2ea90659194d82b74a006bbd284d95) |
-| `finalizeDecision` — REJECTED | [`0x407f36fd…3e704c`](https://sepolia.basescan.org/tx/0x407f36fdabaa6f8d5763dc1310ab672d3ed24b3ce2300adad37e14d35b3e704c) |
-| `transferWithAuthorization` — settled | [`0x0bf0a2ff…117b8d`](https://sepolia.basescan.org/tx/0x0bf0a2ffae8b5ffdaba66b5dd4768b6c05d792f2830d35e3635f12d07e117b8d) |
+| `finalizeDecision` — APPROVED | [`0x7bf3263d…e916d6`](https://sepolia.basescan.org/tx/0x7bf3263d2561eb921bf5b3747802d5244016ae137b9a784a1d20289bf7e916d6) |
+| `finalizeDecision` — REJECTED | [`0xe0b82dac…cf8b31`](https://sepolia.basescan.org/tx/0xe0b82dacf98545b68ebd4a6164a9703beb7985291e1a1367f5980568db7f8b31) |
+| `transferWithAuthorization` — settled | [`0x28881daf…58cd3e`](https://sepolia.basescan.org/tx/0x28881daf15a31f3c549da36982b83cdaa1dd7a98dda0c7ed76ff49eef758cd3e) |
+| Sweep after the enclave's disk was wiped | [`0x64ec2236…feb76f`](https://sepolia.basescan.org/tx/0x64ec22362e11dab825c22b606b17e72080cc06b49eaec1780335a3233bfeb76f) |
 
 The rejection is on chain deliberately. An over-cap request lands and bounces visibly rather than
 reverting into silence.
@@ -257,6 +266,27 @@ entirely, the loss ceiling is the funded amount. Fund it slightly **above** the 
 the policy binds first — if the two numbers are equal, an observer cannot tell which control stopped
 the payment.
 
+### 5.6 Payer keys survive a lost machine
+
+Inside ROFL a payer key is derived by the enclave from `(app, key_id)`, the same on every machine
+that runs the app. [OASIS] Key ids are counted per chain and vault, `payer/<chainId>/<vault>/<n>`,
+and the signer's map from address to key id is a cache on the machine's disk. When that map has no
+record of the current vault, as on a fresh machine, the signer re-derives ids from 0 at boot and keeps
+every address the vault reports as bound in `payerGoal`, stopping after 50 unbound ids in a row. The
+counter then resumes after the highest bound id. Because §5.3's binding gives each payer exactly one
+goal, the chain alone is enough to rebuild every key that controls money. [BUILD]
+
+`mint` advances the counter on disk before it derives, so a crash can skip an id but never reuse one.
+An id minted but not yet bound when the map was lost can be handed out again after a rebuild, and the
+binding makes that harmless: the second `openGoal` naming it reverts. If the vault cannot answer
+`payerGoal`, the signer refuses to start rather than guess its counter.
+
+Tested on 9 October 2026. With the machine's storage wiped, the signer rebuilt five payer keys from
+the chain and swept goal 9's balance back. The first attempt failed, and is why the counter resumes
+after the highest bound id: an earlier version skipped past its whole scanned window, leaving a gap
+the next rebuild stopped at. Keys minted before this scheme used random ids and cannot be rebuilt;
+9.82 test USDC on the retired vault sits behind them.
+
 ---
 
 ## 6. Authorization
@@ -384,6 +414,18 @@ rather than cryptographic.
 Every caller reaches the signer through `SignerClient`, which is the single place the service token
 is read. A caller takes the client, never a URL.
 
+**What the signer says about itself.** `GET /health` reports the chain and vault it reads, and its
+custody as counts only: the key store (`rofl`, `file` or `memory`), how many payer keys it can
+reach, and the ROFL counter. Goal ids repeat across vaults, so callers that act on goal ids, such as
+the sweep tool, check the vault there first.
+
+A signer that cannot boot does not exit. It keeps its port, answers `/health` with `503`, the step
+that failed, the first line of the error with URL paths cut (RPC URLs carry API keys) and a hint, and
+answers every other route with `503` and the same reason. It holds no key and signs nothing in that
+state, and it retries boot every 30 seconds. Inside ROFL a container that crash-loops looks like
+nothing but "connection refused" from outside, which is how a root-only key socket hid on 9 October
+2026; the entrypoint now hands that socket to the unprivileged user before dropping root.
+
 ### 6.7 Failure modes
 
 | Situation | Handling |
@@ -397,6 +439,10 @@ is read. A caller takes the client, never a URL.
 | Two concurrent `requestSpend` calls | Rejected: `pendingSeq` must be zero. Strictly sequential per goal, because the public call counter is only decremented at finalisation |
 | Missing `allowThis` after debit [INCO] | Vault can never compute over the budget again. Covered by cheatcode tests |
 | Revealing the wrong handle [INCO] | Reveals are permanent. Only ever the per-request decision handle |
+| Inco cannot reveal decisions, e.g. a covalidator down [INCO] | `POST /runs` is refused with `503` *before* `requestSpend`, so nothing commits; the console pauses Buy. `IncoHealthProbe` asks Inco to reveal a decision that is already public |
+| RPC answers from a node behind its own receipts | Every sending key uses viem's nonce manager, so a stale nonce count cannot reuse a nonce. A `SpendPending` whose pending seq this relay already finalized, or is zero, is a stale estimate and is retried; any other is real and returned. A sweep refused as "still open" right after `closeGoal` is retried for a bounded time |
+| Enclave machine expires or its disk is wiped [OASIS] | Payer keys are rebuilt from the chain at boot, §5.6 |
+| Signer cannot boot | `/health` reports the step and the error; boot is retried every 30 s, §6.6 |
 
 ---
 
@@ -461,26 +507,27 @@ Recorded on Base Sepolia against the deployed vault.
 
 | Operation | Cost |
 |---|---|
-| Client-side encryption | 28–52 ms |
-| `openGoal` | ~336,600 gas + `1e12` wei Inco fee — stale, see below |
+| Client-side encryption | 28–75 ms |
+| `openGoal` | ~429,300 gas + `1e12` wei Inco fee |
 | `requestSpend` | ~296,600 gas |
 | `finalizeDecision` | ~101,400–106,800 gas |
 | `closeGoal` | ~30,000 gas |
-| `attestedReveal` after commit | 7–12 s, 1–2 poll attempts, 2 signatures |
+| `attestedReveal` after commit | 5–12 s, 1–2 poll attempts, 2 signatures |
 
 A rejected decision resolves consistently faster than an approved one.
 
-The `openGoal` figure predates the `payerGoal` write added on 19 September 2026, which costs one
-cold `SSTORE` plus one cold `SLOAD`, so roughly 22,100 gas more. It has not been re-measured on
-chain and the number above is not adjusted, because a measured figure and an arithmetic guess
-should not sit in the same column. Re-record it on the next deployment.
+The `openGoal` figure was re-measured on 9 October 2026 against the redeployed vault, which includes
+the `payerGoal` write, with a four-payee allowlist. Each allowlisted payee is one storage write, so
+the figure grows with the list.
 
 ---
 
 ## 10. Limitations
 
 **Not built:** encrypted allowlists, escrow-based x402 schemes, refund-on-timeout accounting,
-multi-goal concurrency, mainnet deployment, on-Sapphire publication of the enclave-to-payer binding.
+multi-goal concurrency, mainnet deployment, on-Sapphire publication of the enclave-to-payer binding,
+and a real vendor for mainnet. The mock vendor's payees are placeholder addresses nobody holds a key
+for, so it refuses live settlement on Base.
 
 **Assumptions carried:**
 
@@ -493,6 +540,9 @@ multi-goal concurrency, mainnet deployment, on-Sapphire publication of the encla
    already committed.
 5. **Amount visibility.** Per-payment amounts are public by design. An observer learns what the agent
    paid, not what it could pay.
+6. **RPC consistency.** Public Base endpoints are load balanced, and a read right after a write can
+   land on a node that has not seen it. The cases met so far are handled (§6.7); others may not be.
+   A dedicated RPC provider removes the cause, and mainnet should use one.
 
 ---
 
@@ -507,3 +557,24 @@ spending agent.
 Which component provides which guarantee: **Inco proves the decision. The chain proves the decision
 was committed before it was knowable. The signer is bounded to decisions already on the chain. Oasis
 holds the key that acts on it.**
+
+---
+
+## 12. Operating it
+
+| Command | What it is for |
+|---|---|
+| `pnpm diagnose` | Checks the running system and says what is wrong: configuration, every RPC endpoint and whether they agree, the vault's payer binding, USDC's signing domain, gas, Inco, the signer (health, boot failure, vault, token, custody), the other services, the ROFL machine's time left, stuck spends and USDC left in payers. Every WARN and FAIL prints its fix; any FAIL exits non-zero. `pnpm dev` runs it once the services are up and prints the summary |
+| `pnpm --filter @ntux402/e2e run preflight` | Before deploying or a demo: the artifact, the keys, the chain and Inco |
+| `pnpm --filter @ntux402/e2e run demo` | The end-to-end demo against the configured network |
+| `pnpm --filter @ntux402/e2e run adversary` | The A2 campaign; every finding links its transactions |
+| `pnpm --filter @ntux402/e2e run sweep` | Lists goals whose payers still hold USDC and, with `-- --execute`, closes and sweeps them back to their owners. `-- --vault` targets another vault; the signer must be running against the same one |
+
+**Deploying the signer to ROFL.** Build the image with `--provenance=false` so it is a single
+`linux/amd64` manifest, push it, and pin its digest in `services/signer/compose.yaml`. Run `oasis
+rofl build` under WSL with Docker's WSL integration on, so it uses Oasis's pinned builder container;
+it writes the new enclave identities into `rofl.yaml`. Change a secret with `oasis rofl secret rm`
+then `oasis rofl secret set`. `oasis rofl update` puts the policy and secrets on chain, and `oasis
+rofl deploy` uploads the bundle and installs it, renting a new machine with `--replace-machine` when
+the old one has expired. The bundle upload to Oasis's registry ranged from about 12 minutes to over
+an hour on 9 October 2026.
