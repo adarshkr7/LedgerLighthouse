@@ -82,7 +82,7 @@ loadDotEnv();
 // demo with a coin flip in it. This one depends on the model being *convinced*,
 // which is the easy direction, and on the budget refusing anyway.
 const BUDGET = 200_000n; // 0.20 USDC, encrypted
-const PER_CALL_CAP = 6_000_000n; // 6.00 USDC, public — deliberately above run 2's price
+const PER_CALL_CAP = 6_000_000n; // 6.00 USDC, encrypted — deliberately above run 2's price
 const CALLS_REMAINING = 5;
 /**
  * Above the encrypted budget so Inco binds first (ARCHITECTURE.md), and
@@ -171,7 +171,12 @@ const budgetCiphertext = (await zap.encrypt(BUDGET, {
   dappAddress: vaultAddress,
   handleType: handleTypes.euint256,
 })) as Hex;
-console.log(`  encrypted the budget client-side in ${fmt(ms(t))}`);
+const perCallCapCiphertext = (await zap.encrypt(PER_CALL_CAP, {
+  accountAddress: user.address,
+  dappAddress: vaultAddress,
+  handleType: handleTypes.euint256,
+})) as Hex;
+console.log(`  encrypted the budget and the per-call cap client-side in ${fmt(ms(t))}`);
 console.log(`  (in the browser this is the identical call — only the wallet differs)`);
 
 const incoFee = (await publicClient.readContract({
@@ -188,7 +193,7 @@ const openHash = await userWallet.writeContract({
   args: [
     {
       budgetCiphertext,
-      perCallCap: PER_CALL_CAP,
+      perCallCapCiphertext,
       callsRemaining: CALLS_REMAINING,
       payer,
       relay: relayAddress,
@@ -197,7 +202,8 @@ const openHash = await userWallet.writeContract({
       allowlist: [...DEMO_PAYEES],
     },
   ],
-  value: incoFee,
+  // One Inco fee per encrypted input: the budget and the cap.
+  value: 2n * incoFee,
 });
 const openReceipt = await publicClient.waitForTransactionReceipt({ hash: openHash });
 const opened = parseEventLogs({ abi, eventName: "GoalOpened", logs: openReceipt.logs })[0];
@@ -208,8 +214,8 @@ console.log(`  openGoal confirmed in ${fmt(ms(t))}  gas ${openReceipt.gasUsed}`)
 console.log(`  goalId        ${goalId}`);
 console.log(`  budget handle ${budgetHandle}`);
 console.log(`  budget        ${formatUsdc(BUDGET)} USDC — encrypted; the handle above reveals nothing`);
-console.log(`  perCallCap    ${formatUsdc(PER_CALL_CAP)} USDC — public, and deliberately ABOVE the`);
-console.log(`                malicious price, so the bounce comes from Inco and not from a require()`);
+console.log(`  perCallCap    ${formatUsdc(PER_CALL_CAP)} USDC — encrypted too, and deliberately ABOVE the`);
+console.log(`                malicious price, so the bounce comes from the budget and not the cap`);
 console.log(`\n  Basescan: ${network.explorer}/address/${vaultAddress}`);
 
 // Every mock payee is allowlisted on purpose: run 2 must fail the *confidential*

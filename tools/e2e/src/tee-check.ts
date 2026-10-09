@@ -19,13 +19,14 @@
  * true decision, once for a false one, and then once more with the plaintext
  * deliberately flipped. If a lie verified, the attestation would be decoration.
  *
- * The second spend is the interesting one. It is under the public per-call cap
+ * The second spend is the interesting one. It is under the encrypted per-call cap
  * and its payee is allowlisted, so every plaintext precondition passes. The only
  * thing in the system that can refuse it is the encrypted remaining budget —
  * which by then has already been debited by the first spend, inside the enclave,
  * without this process ever learning the balance.
  *
- * Costs one Inco fee (~0.000001 ETH) plus gas for five transactions.
+ * Costs two Inco fees (~0.000002 ETH), one per encrypted input, plus gas for
+ * five transactions.
  */
 
 import {
@@ -36,6 +37,7 @@ import {
   type Address,
   type Hex,
 } from "viem";
+import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { handleTypes } from "@inco/lightning-js";
 
 import { rpcTransport, sendingAccount, viemChain } from "@ntux402/shared/viem";
@@ -60,8 +62,8 @@ loadDotEnv();
 // 0.10 USDC encrypted. Small on purpose: this budget is never spent against
 // real money, it only has to be a number the enclave can compare.
 const BUDGET = 100_000n;
-// Deliberately far above both spends, so neither can be refused in plaintext.
-// A bounce here has exactly one possible source.
+// Encrypted too, and far above both spends, so the cap cannot be what refuses
+// either of them. A bounce here has exactly one possible source: the budget.
 const PER_CALL_CAP = 6_000_000n;
 const FIRST_SPEND = 40_000n; // 0.04 — inside the budget
 const SECOND_SPEND = 90_000n; // 0.09 — inside the *cap*, past what the budget has left
@@ -71,6 +73,9 @@ const vaultAddress = requiredAddress("POLICY_VAULT_ADDRESS");
 
 const user = sendingAccount(requiredHexKey("DEPLOYER_PRIVATE_KEY"));
 const relay = sendingAccount(requiredHexKey("ORCHESTRATOR_RELAY_KEY"));
+// The vault binds a payer to one goal for good, so reusing an address would
+// make this script pass once per vault and then revert `PayerAlreadyBound`.
+const throwawayPayer = privateKeyToAccount(generatePrivateKey()).address;
 
 const publicClient = createPublicClient({ chain: viemChain(network), transport: rpcTransport(rpcUrl) });
 const userWallet = createWalletClient({ account: user, chain: viemChain(network), transport: rpcTransport(rpcUrl) });
@@ -153,6 +158,11 @@ const budgetCiphertext = (await zap.encrypt(BUDGET, {
   handleType: handleTypes.euint256,
 })) as Hex;
 const encryptMs = ms(t);
+const perCallCapCiphertext = (await zap.encrypt(PER_CALL_CAP, {
+  accountAddress: user.address,
+  dappAddress: vaultAddress,
+  handleType: handleTypes.euint256,
+})) as Hex;
 
 check("encrypted", budgetCiphertext.startsWith("0x"), `${formatUsdc(BUDGET)} USDC in ${fmt(encryptMs)}`);
 check("ciphertext is opaque", !budgetCiphertext.includes(BUDGET.toString(16)), `${budgetCiphertext.length} hex chars`);
@@ -168,17 +178,19 @@ const openHash = await userWallet.writeContract({
   args: [
     {
       budgetCiphertext,
-      perCallCap: PER_CALL_CAP,
+      perCallCapCiphertext,
       callsRemaining: 5,
-      // Never used: nothing here settles. The field only has to be non-zero.
-      payer: user.address,
+      // Never funded and never signs: nothing here settles. It only has to be
+      // an address no goal has bound yet, so a fresh one each run.
+      payer: throwawayPayer,
       relay: relay.address,
       asset: usdcAddress,
       expiry: BigInt(Math.floor(Date.now() / 1000) + 3600),
       allowlist: [relay.address],
     },
   ],
-  value: incoFee,
+  // One Inco fee per encrypted input: the budget and the cap.
+  value: 2n * incoFee,
 });
 const openReceipt = await publicClient.waitForTransactionReceipt({ hash: openHash });
 check("openGoal confirmed", openReceipt.status === "success", `${fmt(ms(t))}  gas ${openReceipt.gasUsed}`);
@@ -188,6 +200,14 @@ if (!opened) throw new Error("GoalOpened not emitted");
 const { goalId, budgetHandle } = opened.args as unknown as { goalId: bigint; budgetHandle: Hex };
 
 check("goalId", true, `${goalId}`);
+
+// The relay simulates `requestSpend` before sending it, and a lagging node that
+// has not seen this goal yet answers `UnknownGoal`. Wait until it is visible.
+const bound = await readUntil(
+  () => publicClient.readContract({ address: vaultAddress, abi, functionName: "payerGoal", args: [throwawayPayer] }) as Promise<bigint>,
+  goalId,
+);
+check("goal visible to the RPC", bound === goalId, `payerGoal = ${bound}`);
 check("budget handle", budgetHandle !== `0x${"0".repeat(64)}`, budgetHandle);
 console.log(`\n  The handle above is the whole point: it is what the chain stores instead`);
 console.log(`  of ${formatUsdc(BUDGET)}. Reading it back tells you nothing.`);
@@ -281,8 +301,8 @@ await spend(FIRST_SPEND, "tee-check/inside-budget", true);
 
 // --------------------------------------------------------------- refused path
 rule(`4. spend ${formatUsdc(SECOND_SPEND)} — inside the cap, past the budget`);
-console.log(`  Public cap is ${formatUsdc(PER_CALL_CAP)} and the payee is allowlisted, so nothing in`);
-console.log(`  plaintext can refuse this. The enclave already debited ${formatUsdc(FIRST_SPEND)},`);
+console.log(`  The encrypted cap is ${formatUsdc(PER_CALL_CAP)} and the payee is allowlisted, so only`);
+console.log(`  the budget can refuse this. The enclave already debited ${formatUsdc(FIRST_SPEND)},`);
 console.log(`  leaving ${formatUsdc(BUDGET - FIRST_SPEND)} — a figure this process never saw.\n`);
 await spend(SECOND_SPEND, "tee-check/past-budget", false);
 

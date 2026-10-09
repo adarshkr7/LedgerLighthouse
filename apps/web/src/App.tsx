@@ -73,9 +73,10 @@ const DEFAULT_BUDGET = MIN_BUDGET;
 const FUNDING_HEADROOM = 100_000n; // 0.10 USDC
 
 /**
- * Public, and deliberately above every price in the catalog — including the
- * 5.00 injection ask and the largest possible overcharge (MAX_BUDGET + 0.05).
- * A hostile call must fail the *confidential* check, never this one.
+ * Encrypted like the budget, and deliberately above every price in the
+ * catalog — including the 5.00 injection ask and the largest possible
+ * overcharge (MAX_BUDGET + 0.05) — so in this demo a hostile call is stopped by
+ * the budget, and the cap is the backstop.
  */
 const PER_CALL_CAP = 6_000_000n; // 6.00 USDC
 const CALLS_REMAINING = 5;
@@ -88,7 +89,7 @@ const OVERCHARGE_MARGIN = 50_000n; // 0.05 USDC
  *
  * Fixed for three of the four. The overcharge vendor is the exception: its
  * entire purpose is to sit *just* above the confidential budget while staying
- * far below the public cap, and the budget is now chosen by the viewer — so a
+ * far below the per-call cap, and the budget is now chosen by the viewer — so a
  * hardcoded 0.35 would simply be affordable at any budget above it, and the
  * case it exists to demonstrate would silently stop demonstrating anything.
  *
@@ -348,6 +349,8 @@ export default function App() {
   const [error, setError] = useState<string>();
   /** Undefined until read. Checked so the UI never offers a transaction that must revert. */
   const [usdcBalance, setUsdcBalance] = useState<bigint>();
+  /** What the payer actually holds, read from the chain. Undefined until read. */
+  const [payerBalance, setPayerBalance] = useState<bigint>();
   /**
    * The goal record, straight from the vault.
    *
@@ -456,6 +459,39 @@ export default function App() {
     };
   }, [config, address, funded]);
 
+  // Read the payer's USDC for the ring. The ring used to show the amount this
+  // page meant to fund, so a payer that was never funded showed 0.40 left and
+  // the first sign of trouble was the vendor refusing settlement. Re-read on a
+  // timer as well, because settlement is the facilitator's transaction, not
+  // this page's, and a node behind the last receipt can answer stale once.
+  useEffect(() => {
+    if (!config || !payer) {
+      setPayerBalance(undefined);
+      return;
+    }
+    let cancelled = false;
+    const read = () =>
+      void reader
+        .readContract({
+          address: config.usdcAddress,
+          abi: usdcAbi,
+          functionName: "balanceOf",
+          args: [payer],
+        })
+        .then((balance) => {
+          if (!cancelled) setPayerBalance(balance);
+        })
+        .catch(() => {
+          // Unreadable is not zero; keep the last value rather than inventing one.
+        });
+    read();
+    const timer = setInterval(read, 15_000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [config, payer, funded, sessionSpent, closed]);
+
   /* `!== undefined` matters: a locked wallet answers nothing, and reporting
      that as the wrong network would send the user off to switch a network that
      is already correct. */
@@ -562,10 +598,18 @@ export default function App() {
         dappAddress: config.vaultAddress,
         handleType: handleTypes.euint256,
       })) as Hex;
+      // The cap is encrypted the same way, so no vendor can read the most a
+      // single call will pay and price to it.
+      const perCallCapCiphertext = (await zap.encrypt(PER_CALL_CAP, {
+        accountAddress: address,
+        dappAddress: config.vaultAddress,
+        handleType: handleTypes.euint256,
+      })) as Hex;
 
       // Converting a client ciphertext into a handle is the one operation here
-      // that charges the Inco fee, which is why `openGoal` is payable.
-      const fee = await readIncoFee();
+      // that charges the Inco fee, which is why `openGoal` is payable. Two
+      // ciphertexts, two fees.
+      const fee = 2n * (await readIncoFee());
 
       const hash = await wallet.writeContract({
         address: config.vaultAddress,
@@ -574,7 +618,7 @@ export default function App() {
         args: [
           {
             budgetCiphertext,
-            perCallCap: PER_CALL_CAP,
+            perCallCapCiphertext,
             callsRemaining: CALLS_REMAINING,
             payer,
             relay: config.relayAddress,
@@ -779,6 +823,13 @@ export default function App() {
 
   /** Public, and the honest basis for the ring: what actually left the payer. */
   const spent = sessionSpent;
+  /*
+   * The ring's whole is what the payer holds plus what this session spent, so
+   * its "left" figure is the on-chain balance. Before the first read it falls
+   * back to the transfer this page confirmed, and to zero when there was none.
+   */
+  const ringFunded =
+    payerBalance !== undefined ? payerBalance + spent : funded ? funding : 0n;
 
   /*
    * Clears the run view only.
@@ -873,7 +924,7 @@ export default function App() {
             <>
               <Ring
                 spent={spent}
-                funded={funding}
+                funded={ringFunded}
                 size={84}
                 caption="Share of the funded payer balance already spent"
               />
@@ -886,8 +937,10 @@ export default function App() {
                   </button>
                 </div>
                 <p className="d-caption">
-                  Of the funded payer balance. The encrypted budget itself is not readable — by
-                  anyone, including this page.
+                  {payerBalance === 0n && spent === 0n
+                    ? "The payer holds nothing yet, so a paid run will be refused at settlement. Fund it first."
+                    : "What the payer holds on chain."}{" "}
+                  The encrypted budget itself is not readable — by anyone, including this page.
                 </p>
               </div>
 
@@ -1334,7 +1387,7 @@ export default function App() {
               <span className="d-muted">set in another session</span>
             )}
           </Field>
-          <Field label="Per-call cap">{formatUsdc(PER_CALL_CAP)} USDC · public</Field>
+          <Field label="Per-call cap">{formatUsdc(PER_CALL_CAP)} USDC · encrypted</Field>
           <Field label="Calls remaining">
             {goalState ? (
               `${goalState.callsRemaining} of ${CALLS_REMAINING}`

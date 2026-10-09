@@ -279,9 +279,9 @@ export const policyVaultAbi = [
             "internalType": "bytes"
           },
           {
-            "name": "perCallCap",
-            "type": "uint256",
-            "internalType": "uint256"
+            "name": "perCallCapCiphertext",
+            "type": "bytes",
+            "internalType": "bytes"
           },
           {
             "name": "callsRemaining",
@@ -365,7 +365,7 @@ export const policyVaultAbi = [
   },
   {
     "type": "function",
-    "name": "perCallCap",
+    "name": "perCallCapHandle",
     "inputs": [
       {
         "name": "goalId",
@@ -376,8 +376,8 @@ export const policyVaultAbi = [
     "outputs": [
       {
         "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
+        "type": "bytes32",
+        "internalType": "euint256"
       }
     ],
     "stateMutability": "view"
@@ -560,12 +560,6 @@ export const policyVaultAbi = [
         "internalType": "address"
       },
       {
-        "name": "perCallCap",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      },
-      {
         "name": "callsRemaining",
         "type": "uint32",
         "indexed": false,
@@ -579,6 +573,12 @@ export const policyVaultAbi = [
       },
       {
         "name": "budgetHandle",
+        "type": "bytes32",
+        "indexed": false,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "perCallCapHandle",
         "type": "bytes32",
         "indexed": false,
         "internalType": "bytes32"
@@ -715,11 +715,6 @@ export const policyVaultAbi = [
   {
     "type": "error",
     "name": "InvalidCallCount",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "InvalidCap",
     "inputs": []
   },
   {

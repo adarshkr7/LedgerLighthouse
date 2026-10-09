@@ -63,6 +63,14 @@
  * existing keystore starts with an empty mapping while every payer it ever
  * minted still exists. Only a run against the live address says whether *this*
  * vault is bound.
+ *
+ * ## The encrypted cap
+ *
+ * C13 asks one unit over the per-call cap on a goal whose budget and call count
+ * would both allow it, so the cap is the only thing that can refuse. Until 9
+ * October 2026 the cap was public and that refusal happened in plaintext. It is
+ * now a comparison inside Inco, and Foundry only checks it against Inco's test
+ * double. This is the live check that it binds.
  */
 
 import {
@@ -119,10 +127,14 @@ const GOAL_BUDGET_BOUND = {
 } as const;
 
 /**
- * Goal B — the public controls bind first.
+ * Goal B — the cap and the call count bind first.
  *
  * cap × calls = 0.20, budget = 1.00. Extraction should stop at 0.20 with budget
  * left over, which is the case ARCHITECTURE.md §6.2's formula actually describes.
+ *
+ * C13 runs here first, for the same reason: with this much budget left, the cap
+ * is the only limit that can refuse an ask just above it. A rejected spend
+ * debits nothing and leaves the call count alone, so C1's ceiling is unchanged.
  */
 const GOAL_CAP_BOUND = {
   label: "cap-bound",
@@ -385,6 +397,11 @@ async function openGoal(spec: {
     dappAddress: vaultAddress,
     handleType: handleTypes.euint256,
   })) as Hex;
+  const perCallCapCiphertext = (await zap.encrypt(spec.perCallCap, {
+    accountAddress: user.address,
+    dappAddress: vaultAddress,
+    handleType: handleTypes.euint256,
+  })) as Hex;
 
   const incoFee = (await publicClient.readContract({
     address: INCO_SINGLETON,
@@ -399,7 +416,7 @@ async function openGoal(spec: {
     args: [
       {
         budgetCiphertext,
-        perCallCap: spec.perCallCap,
+        perCallCapCiphertext,
         callsRemaining: spec.calls,
         payer,
         relay: relayAddress,
@@ -408,7 +425,8 @@ async function openGoal(spec: {
         allowlist: [...DEMO_PAYEES],
       },
     ],
-    value: incoFee,
+    // One Inco fee per encrypted input: the budget and the cap.
+    value: 2n * incoFee,
   });
   const receipt = await publicClient.waitForTransactionReceipt({ hash });
   const opened = parseEventLogs({ abi, eventName: "GoalOpened", logs: receipt.logs })[0];
@@ -420,7 +438,7 @@ async function openGoal(spec: {
   console.log(
     `    cap x calls ${formatUsdc(spec.perCallCap)} x ${spec.calls} = ${formatUsdc(
       spec.perCallCap * BigInt(spec.calls),
-    )} USDC  (public)`,
+    )} USDC  (encrypted cap, public call count)`,
   );
   console.log(`    payer       ${payer}`);
   console.log(`    opened      ${network.explorer}/tx/${hash}`);
@@ -468,6 +486,13 @@ async function c11PayerCapture(victim: OpenedGoal): Promise<void> {
     dappAddress: vaultAddress,
     handleType: handleTypes.euint256,
   })) as Hex;
+  // Generous, because the attacker sets it and nothing in the victim's goal
+  // constrains a different goal's fields.
+  const ownCapCiphertext = (await zap.encrypt(50_000_000n, {
+    accountAddress: user.address,
+    dappAddress: vaultAddress,
+    handleType: handleTypes.euint256,
+  })) as Hex;
 
   const incoFee = (await publicClient.readContract({
     address: INCO_SINGLETON,
@@ -488,9 +513,7 @@ async function c11PayerCapture(victim: OpenedGoal): Promise<void> {
         args: [
           {
             budgetCiphertext: ownCiphertext,
-            // Generous, because the attacker sets them and nothing in the
-            // victim's goal constrains a different goal's fields.
-            perCallCap: 50_000_000n,
+            perCallCapCiphertext: ownCapCiphertext,
             callsRemaining: 255,
             payer: victim.payer,
             relay: relayAddress,
@@ -499,7 +522,7 @@ async function c11PayerCapture(victim: OpenedGoal): Promise<void> {
             allowlist: [UNALLOWLISTED],
           },
         ],
-        value: incoFee,
+        value: 2n * incoFee,
       }),
     undefined,
     [{ label: `open goal ${victim.goalId} (binds payer)`, hash: victim.openTx }],
@@ -604,6 +627,32 @@ async function attemptSpend(
       (authorized > 0n ? ` (${formatUsdc(authorized)} authorized)` : ""),
   );
   return { authorized, seq: requested.seq, decision: outcome.decision, txs };
+}
+
+// ----------------------------------------------------------------- C13
+
+/** One atomic unit over the encrypted cap, well inside the budget. */
+async function c13CapAlone(goal: OpenedGoal): Promise<void> {
+  const ask = goal.perCallCap + 1n;
+  console.log(
+    `\n  C13 on goal ${goal.goalId} (${goal.label}) — asking ${formatUsdc(ask)}, one unit over the cap`,
+  );
+  const result = await attemptSpend(goal, ask, DEMO_PAYEES[0]!);
+  const decision = result.decision;
+  record({
+    id: "C13",
+    name: "one unit over the encrypted cap, inside the budget",
+    targets: "the encrypted per-call cap",
+    expected: "REJECTED on chain, not reverted",
+    observed:
+      decision === undefined
+        ? "no decision: Inco did not answer in time"
+        : decision.approved
+          ? `APPROVED, ${formatUsdc(result.authorized)} authorized — the cap did not bind`
+          : `REJECTED on chain at seq ${result.seq}`,
+    verdict: decision === undefined ? "inconclusive" : decision.approved ? "deviated" : "held",
+    txs: [{ label: "open goal", hash: goal.openTx }, ...result.txs],
+  });
 }
 
 // ------------------------------------------------------------------ C1
@@ -916,6 +965,9 @@ rule("opening goals");
 const budgetBound = await openGoal(GOAL_BUDGET_BOUND);
 const capBound = await openGoal(GOAL_CAP_BOUND);
 const refusals = await openGoal(GOAL_REFUSALS);
+
+rule("C13 — the encrypted cap alone");
+await c13CapAlone(capBound);
 
 rule("C1 — maximum extraction");
 const extractedA = await c1MaxExtraction(budgetBound);

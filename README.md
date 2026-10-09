@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="https://sepolia.basescan.org/address/0x518B8701484ba99A38f60090cd4a2cc710d3522c"><img alt="PolicyVault on Base Sepolia" src="https://img.shields.io/badge/PolicyVault-Base%20Sepolia-0052ff" /></a>
+  <a href="https://sepolia.basescan.org/address/0x052E52a28AA15e0B556de4FCe3d0BEBb7EB4feD8"><img alt="PolicyVault on Base Sepolia" src="https://img.shields.io/badge/PolicyVault-Base%20Sepolia-0052ff" /></a>
   <img alt="368 tests passing" src="https://img.shields.io/badge/tests-368%20passing-2f5c4a" />
   <img alt="x402 v1" src="https://img.shields.io/badge/x402-v1-16150f" />
   <img alt="Inco Lightning 1.0.2" src="https://img.shields.io/badge/Inco%20Lightning-1.0.2-7c382e" />
@@ -47,10 +47,10 @@ Base Sepolia, chain id `84532`.
 
 | Contract | Address | Deployment tx |
 |---|---|---|
-| `PolicyVault` | [`0x518B8701484ba99A38f60090cd4a2cc710d3522c`](https://sepolia.basescan.org/address/0x518B8701484ba99A38f60090cd4a2cc710d3522c) | [`0xc7926dc0…fb300b`](https://sepolia.basescan.org/tx/0xc7926dc0110604ec1a8cec636343a2d344f1c29a3754f9ad8e86ff4c80fb300b) |
+| `PolicyVault` | [`0x052E52a28AA15e0B556de4FCe3d0BEBb7EB4feD8`](https://sepolia.basescan.org/address/0x052E52a28AA15e0B556de4FCe3d0BEBb7EB4feD8) | [`0x6960e625…eceff`](https://sepolia.basescan.org/tx/0x6960e625cc7bf16fc361b43f95f70356458ab671c15b2c09c65589352cbeceff) |
 | `TraceAnchor` | [`0x065d5E16160159cAB7D841818aBc92b4E85D5818`](https://sepolia.basescan.org/address/0x065d5E16160159cAB7D841818aBc92b4E85D5818) | [`0x068c2d88…2f9900`](https://sepolia.basescan.org/tx/0x068c2d8883bfe2a294164da805274905aa33c85f2a68a27ab1c06892972f9900) |
 
-The PolicyVault was redeployed on 9 October 2026. The previous one, [`0x0C759D06…F15921`](https://sepolia.basescan.org/address/0x0C759D06a1c14F43852D7b078Db2f8C342F15921), was deployed before each payer was bound to one goal (`48805e9`), and the adversary campaign's payer-capture attack succeeded against it. Runs logged before that date used the old vault. The new vault is not yet source-verified on Basescan; TraceAnchor is.
+The PolicyVault was redeployed twice on 9 October 2026. [`0x0C759D06…F15921`](https://sepolia.basescan.org/address/0x0C759D06a1c14F43852D7b078Db2f8C342F15921) was deployed before each payer was bound to one goal (`48805e9`), and the adversary campaign's payer-capture attack succeeded against it. [`0x518B8701…3522c`](https://sepolia.basescan.org/address/0x518B8701484ba99A38f60090cd4a2cc710d3522c) added the binding but kept the per-call cap public. The current vault encrypts the cap. Each log in `docs/runs` names the vault it ran against. The current vault is not yet source-verified on Basescan; TraceAnchor is.
 
 Settlement asset: USDC at [`0x036CbD53842c5426634e7929541eC2318f3dCF7e`](https://sepolia.basescan.org/address/0x036CbD53842c5426634e7929541eC2318f3dCF7e).
 
@@ -107,6 +107,9 @@ against the 402 body, because the vault never sees the 402. The bound is the con
 loss ceiling = perCallCap × callsRemaining, paid only to an allowlisted payee
 ```
 
+The cap is encrypted, so neither a vendor nor a compromised orchestrator can read this ceiling.
+Each approved amount only tells them the cap is at least that much.
+
 **This is a design property, not a theorem.** It has not been formally modelled and no proof is
 claimed for it. Establishing a threat model in which the adversary's channel is natural language, and
 stating this bound precisely against it, is open work rather than finished work.
@@ -160,8 +163,9 @@ Each is derived and justified in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 Stated here rather than deferred to a roadmap.
 
-- **`perCallCap` and `callsRemaining` are public plaintext**, and allowlist membership is a public
-  mapping. A vendor can read the per-call ceiling and price immediately beneath it.
+- **`callsRemaining` is public plaintext**, and allowlist membership is a public mapping. The
+  per-call cap is encrypted (it was public until 9 October 2026), but every approved amount is
+  public, so each approval is a lower bound on the cap.
 - **On-Base provability of custody is absent.** Base cannot verify Oasis attestations, so the binding
   between payer address and enclave identity is asserted by the app, not checkable by a third party
   from Base. Custody is real; its provability from Base is not.
