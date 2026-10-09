@@ -24,8 +24,8 @@ import { NETWORKS } from "@ntux402/shared";
 import type { DecisionReader } from "./reveal.js";
 
 /**
- * Decision handle of goal 47, seq 1 on the Base Sepolia PolicyVault: approved,
- * finalized. Other networks carry their own in `NETWORKS`, or none yet.
+ * Decision handle of goal 47, seq 1 on the previous Base Sepolia vault
+ * (0x0C759D06…): approved, finalized. Still revealable after that vault's retirement. Other networks carry their own in `NETWORKS`, or none yet.
  */
 export const INCO_PROBE_HANDLE: Hex = NETWORKS["base-sepolia"].incoProbeHandle!;
 

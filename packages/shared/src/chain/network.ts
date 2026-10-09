@@ -74,7 +74,8 @@ export const NETWORKS: Readonly<Record<NetworkName, Network>> = {
     },
     defaultRpcUrls: ["https://base-sepolia-rpc.publicnode.com", "https://sepolia.base.org"],
     explorer: "https://sepolia.basescan.org",
-    // Goal 47, seq 1 on the Base Sepolia PolicyVault: approved and finalized.
+    // Goal 47, seq 1 on the previous Base Sepolia vault (0x0C759D06…): approved and finalized.
+    // Inco keeps a revealed handle after the vault that made it is retired, so it still probes.
     incoProbeHandle: "0xc76c2592384d77ec2b8b85b1a4924b4edaf089266ee6798e3eefbae279df0000",
   },
   base: {
