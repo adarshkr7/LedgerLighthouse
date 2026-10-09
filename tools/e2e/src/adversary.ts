@@ -24,6 +24,16 @@
  * failed. So each strategy records a verdict and the run continues. The exit
  * code is non-zero if anything deviated, so CI can still gate on it.
  *
+ * ## Every finding names its transactions
+ *
+ * Each verdict is printed with explorer links for the transactions it rests
+ * on: the goal's `openGoal`, each `requestSpend` commit and `finalizeDecision`,
+ * and the attack itself when it reached the chain. Most structural refusals
+ * revert during gas estimation and are never broadcast, so they have no hash
+ * of their own; the report says so and links the transaction that set up the
+ * state they were refused against. Without this a reader could check the
+ * strategies only from the goal state they left behind.
+ *
  * ## What it measures
  *
  * ARCHITECTURE.md §6.2 states the residual bound as
@@ -66,7 +76,7 @@ import {
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { handleTypes } from "@inco/lightning-js";
-import { rpcTransport, viemChain } from "@ntux402/shared/viem";
+import { rpcTransport, sendingAccount, viemChain } from "@ntux402/shared/viem";
 import { DEMO_PAYEES } from "@ntux402/shared";
 import {
   IncoDecisionReader,
@@ -153,6 +163,12 @@ const UNALLOWLISTED = "0x000000000000000000000000000000000000dEaD" as Address;
 
 type Verdict = "held" | "deviated" | "inconclusive";
 
+/** A transaction a finding rests on, labelled by the part it played. */
+interface Tx {
+  readonly label: string;
+  readonly hash: Hex;
+}
+
 interface Finding {
   readonly id: string;
   readonly name: string;
@@ -160,6 +176,19 @@ interface Finding {
   readonly expected: string;
   readonly observed: string;
   readonly verdict: Verdict;
+  /**
+   * The transactions the verdict rests on: the one that set up the state under
+   * attack, and the attack itself when it reached the chain. Printed as
+   * explorer links, so a reader can check a finding on chain instead of
+   * trusting the summary. Absent for strategies that never touch the chain.
+   */
+  readonly txs?: readonly Tx[];
+  /**
+   * Why a refusal has no transaction of its own. Most structural refusals
+   * revert during gas estimation and are never broadcast, and the report says
+   * so rather than leaving a gap that reads as an omission.
+   */
+  readonly noTx?: string;
 }
 
 const findings: Finding[] = [];
@@ -170,6 +199,23 @@ function record(f: Finding): void {
   console.log(`[${mark}] ${f.id.padEnd(4)} ${f.name}`);
   console.log(`         expected: ${f.expected}`);
   console.log(`         observed: ${f.observed}`);
+  for (const tx of f.txs ?? []) {
+    console.log(`         tx:       ${tx.label.padEnd(26)} ${network.explorer}/tx/${tx.hash}`);
+  }
+  if (f.noTx) console.log(`         no tx:    ${f.noTx}`);
+}
+
+const TX_HASH = /^0x[0-9a-fA-F]{64}$/;
+
+/** The hash a call returned, whether bare (`writeContract`) or in a relay result. */
+function hashOf(result: unknown): Hex | undefined {
+  if (typeof result === "string" && TX_HASH.test(result)) return result as Hex;
+  if (typeof result === "object" && result !== null) {
+    const r = result as { commitTx?: unknown; txHash?: unknown };
+    const hash = r.commitTx ?? r.txHash;
+    if (typeof hash === "string" && TX_HASH.test(hash)) return hash as Hex;
+  }
+  return undefined;
 }
 
 /**
@@ -228,9 +274,12 @@ async function expectRefusal(
   attempt: () => Promise<unknown>,
   /** Replayed via `eth_call` only when the primary attempt's error does not match. */
   probe?: { functionName: "requestSpend" | "finalizeDecision"; args: readonly unknown[] },
+  /** The transactions that set up the state under attack, reported with the verdict. */
+  context: readonly Tx[] = [],
 ): Promise<void> {
   try {
-    await attempt();
+    const result = await attempt();
+    const hash = hashOf(result);
     record({
       id,
       name,
@@ -238,9 +287,18 @@ async function expectRefusal(
       expected: `refusal containing "${match}"`,
       observed: "the call SUCCEEDED — no refusal at all",
       verdict: "deviated",
+      txs: hash ? [...context, { label: "the attack, accepted", hash }] : context,
     });
   } catch (error) {
     const text = error instanceof Error ? error.message : String(error);
+    // A revert that was mined carries its hash in the relay's error, as
+    // "requestSpend reverted (0x…)". One caught at gas estimation was never
+    // broadcast and has none. The pattern is that exact shape: viem's own
+    // messages quote calldata, which is full of 64-digit hex runs.
+    const mined = text.match(/reverted \((0x[0-9a-fA-F]{64})\)/)?.[1] as Hex | undefined;
+    const evidence = mined
+      ? { txs: [...context, { label: "the attack, reverted", hash: mined }] }
+      : { txs: context, noTx: "refused at gas estimation, so nothing was broadcast" };
     let matched = text.includes(match);
     let observed = matched ? `refused: ${match}` : `refused, but for another reason: ${first(text)}`;
 
@@ -261,6 +319,7 @@ async function expectRefusal(
       expected: `refusal containing "${match}"`,
       observed,
       verdict: matched ? "held" : "inconclusive",
+      ...evidence,
     });
   }
 }
@@ -273,7 +332,7 @@ const { network, rpcUrl, usdcAddress } = networkFromEnv();
 const vaultAddress = requiredAddress("POLICY_VAULT_ADDRESS");
 const signerUrl = optional("SIGNER_URL") ?? `http://127.0.0.1:${process.env["SIGNER_PORT"] ?? 8402}`;
 
-const user = privateKeyToAccount(requiredHexKey("DEPLOYER_PRIVATE_KEY"));
+const user = sendingAccount(requiredHexKey("DEPLOYER_PRIVATE_KEY"));
 const relayKey = requiredHexKey("ORCHESTRATOR_RELAY_KEY");
 const relayAddress = privateKeyToAccount(relayKey).address;
 
@@ -307,6 +366,8 @@ interface OpenedGoal {
   readonly perCallCap: bigint;
   readonly calls: number;
   readonly payer: Address;
+  /** The `openGoal` transaction, which binds the payer and sets every limit. */
+  readonly openTx: Hex;
 }
 
 async function openGoal(spec: {
@@ -362,8 +423,9 @@ async function openGoal(spec: {
     )} USDC  (public)`,
   );
   console.log(`    payer       ${payer}`);
+  console.log(`    opened      ${network.explorer}/tx/${hash}`);
 
-  return { goalId, payer, ...spec };
+  return { goalId, payer, openTx: hash, ...spec };
 }
 
 /**
@@ -439,6 +501,8 @@ async function c11PayerCapture(victim: OpenedGoal): Promise<void> {
         ],
         value: incoFee,
       }),
+    undefined,
+    [{ label: `open goal ${victim.goalId} (binds payer)`, hash: victim.openTx }],
   );
 
   /*
@@ -460,6 +524,7 @@ async function c11PayerCapture(victim: OpenedGoal): Promise<void> {
     expected: `payerGoal(${victim.payer.slice(0, 10)}…) == ${victim.goalId}`,
     observed: `payerGoal returned ${bound}`,
     verdict: bound === victim.goalId ? "held" : "deviated",
+    txs: [{ label: `open goal ${victim.goalId} (binds payer)`, hash: victim.openTx }],
   });
 }
 
@@ -501,27 +566,35 @@ async function attemptSpend(
   goal: OpenedGoal,
   amount: bigint,
   payTo: Address,
-): Promise<{ authorized: bigint; seq: bigint; decision: AttestedDecision | undefined }> {
+): Promise<{
+  authorized: bigint;
+  seq: bigint;
+  decision: AttestedDecision | undefined;
+  /** Commit, then finalize when there was a decision to finalize. */
+  txs: Tx[];
+}> {
   const requested = await relay.requestSpend(goal.goalId, amount, payTo, "adversary/max-extract");
+  const txs: Tx[] = [{ label: `commit seq ${requested.seq}`, hash: requested.commitTx }];
 
   const outcome = await pollForDecision(decisions, requested.decisionHandle, { timeoutMs: 180_000 });
   if (outcome.kind === "timeout") {
     // The debit has already committed. This is a distinct state from rejection
     // and must not be reported as one (ARCHITECTURE.md §6.4).
     console.log(`    seq ${requested.seq}: decision UNOBTAINABLE after ${outcome.elapsedMs}ms`);
-    return { authorized: 0n, seq: requested.seq, decision: undefined };
+    return { authorized: 0n, seq: requested.seq, decision: undefined, txs };
   }
 
-  await relay.finalizeDecision(
+  const finalized = await relay.finalizeDecision(
     goal.goalId,
     requested.seq,
     outcome.decision.approved,
     outcome.decision.signatures,
   );
+  txs.push({ label: `finalize seq ${requested.seq}`, hash: finalized.txHash });
 
   if (!outcome.decision.approved) {
     console.log(`    seq ${requested.seq}: ask ${formatUsdc(amount)} -> REJECTED by policy`);
-    return { authorized: 0n, seq: requested.seq, decision: outcome.decision };
+    return { authorized: 0n, seq: requested.seq, decision: outcome.decision, txs };
   }
 
   const auth = await authorizeWithRetry(goal.goalId, requested.seq);
@@ -530,7 +603,7 @@ async function attemptSpend(
     `    seq ${requested.seq}: ask ${formatUsdc(amount)} -> APPROVED, signer ${auth.kind}` +
       (authorized > 0n ? ` (${formatUsdc(authorized)} authorized)` : ""),
   );
-  return { authorized, seq: requested.seq, decision: outcome.decision };
+  return { authorized, seq: requested.seq, decision: outcome.decision, txs };
 }
 
 // ------------------------------------------------------------------ C1
@@ -548,12 +621,14 @@ async function c1MaxExtraction(goal: OpenedGoal): Promise<bigint> {
   console.log(`\n  C1 on goal ${goal.goalId} (${goal.label}) — asking perCallCap every call`);
   const payee = DEMO_PAYEES[0]!;
   let extracted = 0n;
+  const txs: Tx[] = [{ label: "open goal", hash: goal.openTx }];
 
   // Bounded by the public call count: once it is exhausted the vault rejects
   // regardless of budget, so there is no point iterating past it.
   for (let i = 0; i < goal.calls; i++) {
     const result = await attemptSpend(goal, goal.perCallCap, payee);
     extracted += result.authorized;
+    txs.push(...result.txs);
     if (result.authorized === 0n && result.decision?.approved === false) {
       console.log(`    budget exhausted after ${formatUsdc(extracted)}`);
       break;
@@ -570,6 +645,7 @@ async function c1MaxExtraction(goal: OpenedGoal): Promise<bigint> {
     expected: `<= ${formatUsdc(trueBound)} = min(budget ${formatUsdc(goal.budget)}, cap x calls ${formatUsdc(publicBound)})`,
     observed: `${formatUsdc(extracted)} authorized`,
     verdict: extracted <= trueBound ? "held" : "deviated",
+    txs,
   });
 
   return extracted;
@@ -577,7 +653,9 @@ async function c1MaxExtraction(goal: OpenedGoal): Promise<bigint> {
 
 // ------------------------------------------------- C2-C4, C8-C10: refusals
 
-async function refusalStrategies(goal: OpenedGoal): Promise<bigint | undefined> {
+async function refusalStrategies(
+  goal: OpenedGoal,
+): Promise<{ seq: bigint; finalizeTx: Hex } | undefined> {
   const payee = DEMO_PAYEES[0]!;
 
   // C2 — a payee nobody allowlisted. Structural: reverts, never becomes a
@@ -592,11 +670,13 @@ async function refusalStrategies(goal: OpenedGoal): Promise<bigint | undefined> 
       functionName: "requestSpend",
       args: [goal.goalId, SMALL_ASK, UNALLOWLISTED, "adversary/redirect"],
     },
+    [{ label: "open goal (allowlist set)", hash: goal.openTx }],
   );
 
   // --- seq 1: small, within budget. Carries C4, C10, and C8's ammunition. ---
 
   const first = await relay.requestSpend(goal.goalId, SMALL_ASK, payee, "adversary/first");
+  const firstCommit: Tx = { label: `commit seq ${first.seq} (pending)`, hash: first.commitTx };
 
   // C4 — two spends in flight at once. Refused because the public call counter
   // only moves at finalisation, so a second would read a stale count (§3.1).
@@ -607,6 +687,7 @@ async function refusalStrategies(goal: OpenedGoal): Promise<bigint | undefined> 
     "SpendPending",
     () => relay.requestSpend(goal.goalId, SMALL_ASK, payee, "adversary/second"),
     { functionName: "requestSpend", args: [goal.goalId, SMALL_ASK, payee, "adversary/second"] },
+    [firstCommit],
   );
 
   // C10 — the signer before finalisation. Must be 425 and must be
@@ -622,6 +703,8 @@ async function refusalStrategies(goal: OpenedGoal): Promise<bigint | undefined> 
     expected: "not-ready (HTTP 425)",
     observed: `${early.kind}${early.kind === "refused" ? ` (HTTP ${early.status})` : ""}`,
     verdict: early.kind === "not-ready" ? "held" : "deviated",
+    txs: [firstCommit],
+    noTx: "the signer answers off chain",
   });
 
   const firstDecision = await pollForDecision(decisions, first.decisionHandle, {
@@ -635,10 +718,11 @@ async function refusalStrategies(goal: OpenedGoal): Promise<bigint | undefined> 
       expected: "InvalidAttestation",
       observed: "no genuine attestation to substitute — seq 1 decision timed out",
       verdict: "inconclusive",
+      txs: [firstCommit],
     });
     return undefined;
   }
-  await relay.finalizeDecision(
+  const firstFinal = await relay.finalizeDecision(
     goal.goalId,
     first.seq,
     firstDecision.decision.approved,
@@ -655,12 +739,13 @@ async function refusalStrategies(goal: OpenedGoal): Promise<bigint | undefined> 
   const over = await relay.requestSpend(goal.goalId, OVER_BUDGET_ASK, payee, "adversary/over");
   const overDecision = await pollForDecision(decisions, over.decisionHandle, { timeoutMs: 180_000 });
   if (overDecision.kind === "decided") {
-    await relay.finalizeDecision(
+    const overFinal = await relay.finalizeDecision(
       goal.goalId,
       over.seq,
       overDecision.decision.approved,
       overDecision.decision.signatures,
     );
+    const overFinalTx: Tx = { label: `finalize seq ${over.seq}`, hash: overFinal.txHash };
 
     // C3 — the over-budget ask must land as a *decision*, not a revert. An
     // over-cap request that reverted would leave no record, and the bounce is
@@ -674,6 +759,7 @@ async function refusalStrategies(goal: OpenedGoal): Promise<bigint | undefined> 
         ? "APPROVED — the budget did not bind"
         : `REJECTED on chain at seq ${over.seq}`,
       verdict: overDecision.decision.approved ? "deviated" : "held",
+      txs: [{ label: `commit seq ${over.seq}`, hash: over.commitTx }, overFinalTx],
     });
 
     // C9 — the signer on a spend finalised as REJECTED. Terminal 403. Retried
@@ -689,6 +775,8 @@ async function refusalStrategies(goal: OpenedGoal): Promise<bigint | undefined> 
         expected: "refused, HTTP 403, terminal",
         observed: `${refused.kind}${refused.kind === "refused" ? ` (HTTP ${refused.status})` : ""}`,
         verdict: refused.kind === "refused" && refused.status === 403 ? "held" : "deviated",
+        txs: [overFinalTx],
+        noTx: "the signer answers off chain",
       });
     }
   }
@@ -707,6 +795,11 @@ async function refusalStrategies(goal: OpenedGoal): Promise<bigint | undefined> 
       functionName: "finalizeDecision",
       args: [goal.goalId, victim.seq, true, firstDecision.decision.signatures],
     },
+    [
+      // Where the replayed signatures were genuinely used, and the record they were aimed at.
+      { label: `finalize seq ${first.seq} (source)`, hash: firstFinal.txHash },
+      { label: `commit seq ${victim.seq} (target)`, hash: victim.commitTx },
+    ],
   );
 
   // Leave the goal resolved rather than wedged with a spend pending forever.
@@ -721,7 +814,9 @@ async function refusalStrategies(goal: OpenedGoal): Promise<bigint | undefined> 
   }
 
   // seq 1 was approved, so it is the one with a signature to replay for C5.
-  return firstDecision.decision.approved ? first.seq : undefined;
+  return firstDecision.decision.approved
+    ? { seq: first.seq, finalizeTx: firstFinal.txHash }
+    : undefined;
 }
 
 // ------------------------------------------------------------- C5, C6, C7
@@ -740,7 +835,14 @@ async function refusalStrategies(goal: OpenedGoal): Promise<bigint | undefined> 
  * could be substituted. Recorded as an observation about the API's shape rather
  * than a test, because a test would have nothing to call.
  */
-async function idempotency(goal: OpenedGoal, seq: bigint): Promise<void> {
+async function idempotency(
+  goal: OpenedGoal,
+  approved: { seq: bigint; finalizeTx: Hex },
+): Promise<void> {
+  const { seq } = approved;
+  // The approval both calls sign against. The signatures themselves are off chain.
+  const txs: Tx[] = [{ label: `finalize seq ${seq} (approved)`, hash: approved.finalizeTx }];
+
   // Retried for the same reason as `attemptSpend`: this asks about an already
   // finalised-approved seq, and a `not-ready` here would be the signer's RPC
   // view lagging the finalize receipt, not evidence about replay stability.
@@ -755,6 +857,7 @@ async function idempotency(goal: OpenedGoal, seq: bigint): Promise<void> {
       expected: "two identical signed tuples",
       observed: `signer returned ${a.kind} then ${b.kind} — no approved spend to replay`,
       verdict: "inconclusive",
+      txs,
     });
     return;
   }
@@ -767,6 +870,8 @@ async function idempotency(goal: OpenedGoal, seq: bigint): Promise<void> {
     expected: "byte-identical, including validAfter/validBefore",
     observed: same ? "identical" : "TUPLES DIFFER — a retry would be a second authorization",
     verdict: same ? "held" : "deviated",
+    txs,
+    noTx: "both authorizations are signer responses, off chain",
   });
 
   // C6 splits in two, and only half is reachable here.
@@ -805,7 +910,7 @@ if (chainId !== network.chainId) {
 }
 const health = await fetch(`${signerUrl}/health`).catch(() => undefined);
 if (!health?.ok) throw new Error(`signer is not reachable at ${signerUrl}. Start it first.`);
-console.log(`  chain  ${chainId}\n  vault  ${vaultAddress}\n  signer ${signerUrl}`);
+console.log(`  chain  ${chainId} (${network.label})\n  vault  ${vaultAddress}\n  signer ${signerUrl}`);
 
 rule("opening goals");
 const budgetBound = await openGoal(GOAL_BUDGET_BOUND);
@@ -817,13 +922,13 @@ const extractedA = await c1MaxExtraction(budgetBound);
 const extractedB = await c1MaxExtraction(capBound);
 
 rule("C2, C3, C4, C8, C9, C10 — refusals");
-const replayableSeq = await refusalStrategies(refusals);
+const replayable = await refusalStrategies(refusals);
 
 rule("C11, C12 — payer capture");
 await c11PayerCapture(budgetBound);
 
 rule("C5 — idempotency");
-if (replayableSeq === undefined) {
+if (replayable === undefined) {
   record({
     id: "C5",
     name: "authorization replay returns an identical tuple",
@@ -833,7 +938,7 @@ if (replayableSeq === undefined) {
     verdict: "inconclusive",
   });
 } else {
-  await idempotency(refusals, replayableSeq);
+  await idempotency(refusals, replayable);
 }
 
 record({
@@ -856,6 +961,9 @@ console.log(`  strategies run   ${findings.length}`);
 console.log(`  held             ${findings.filter((f) => f.verdict === "held").length}`);
 console.log(`  deviated         ${deviated.length}`);
 console.log(`  inconclusive     ${inconclusive.length}`);
+console.log(
+  `  transactions     ${new Set(findings.flatMap((f) => (f.txs ?? []).map((t) => t.hash))).size} distinct, linked under each finding`,
+);
 console.log();
 console.log(`  extraction, budget-bound goal   ${formatUsdc(extractedA)} USDC`);
 console.log(
