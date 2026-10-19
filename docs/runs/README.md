@@ -303,7 +303,8 @@ strategy that passed.
 Since 17 October C6 can run. An authorization now ends at the vendor's hold (`payBy`) instead of
 an hour out, so the campaign names a 60-second hold, waits it out, and plays the late vendor:
 the signer must answer 410, USDC must refuse the authorization, and one `reclaimExpired` must
-restore the call. No recorded run has it yet, since every vault deployed so far predates `payBy`.
+restore the call. No recorded run has it yet. The vault deployed on 19 October 2026,
+`0x132DDf2b…53FBC`, is the first with `payBy`.
 
 ### What this log is not
 
