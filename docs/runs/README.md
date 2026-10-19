@@ -300,6 +300,11 @@ handle is a different one. The refusal comes from the real deployed Inco integra
 C6 is recorded as not-run rather than omitted. A strategy missing from a report reads as a
 strategy that passed.
 
+Since 17 October C6 can run. An authorization now ends at the vendor's hold (`payBy`) instead of
+an hour out, so the campaign names a 60-second hold, waits it out, and plays the late vendor:
+the signer must answer 410, USDC must refuse the authorization, and one `reclaimExpired` must
+restore the call. No recorded run has it yet, since every vault deployed so far predates `payBy`.
+
 ### What this log is not
 
 It carries no transaction hashes. The strategies are verifiable from the goal state they left

@@ -3,6 +3,12 @@ pragma solidity ^0.8.29;
 
 import {ebool, euint256, e, inco} from "@inco/lightning/src/Lib.sol";
 
+/// The one read the vault makes of its token.
+interface IAuthorizationState {
+    /// True once the token has consumed the EIP-3009 authorization `nonce` from `authorizer`.
+    function authorizationState(address authorizer, bytes32 nonce) external view returns (bool);
+}
+
 /// @title PolicyVault — confidential spending policy for an autonomous agent
 ///
 /// @notice Enforces a spending policy whose budget is confidential, so that
@@ -43,6 +49,14 @@ import {ebool, euint256, e, inco} from "@inco/lightning/src/Lib.sol";
 /// transaction that records the terms — before anyone, including the caller,
 /// can learn whether it was approved. Inco makes this the only expressible
 /// option, since branching on an encrypted condition is impossible.
+///
+/// ## The vendor's hold
+///
+/// A vendor holds what it quoted for a limited time, and an authorization that
+/// outlives the hold lets the vendor collect after it has let the thing go.
+/// So each authorization expires when the hold does (`payBy`), and an approved
+/// amount whose authorization expired unused goes back to the budget
+/// (`reclaimExpired`).
 contract PolicyVault {
     using e for euint256;
     using e for ebool;
@@ -74,6 +88,8 @@ contract PolicyVault {
         ebool decision;
         bool finalized;
         bool approved;
+        /// The authorization expired unused and the amount went back to the budget.
+        bool reclaimed;
     }
 
     struct OpenGoalParams {
@@ -90,8 +106,9 @@ contract PolicyVault {
 
     // ------------------------------------------------------------------ state
 
-    /// How long an EIP-3009 authorization stays valid once issued. Clamped to
-    /// the goal's expiry so an authorization can never outlive its goal.
+    /// The longest an EIP-3009 authorization stays valid once issued. Each one
+    /// ends at the vendor's hold (`payBy`) when that comes sooner, and never
+    /// after the goal's expiry.
     uint64 public constant AUTHORIZATION_WINDOW = 1 hours;
 
     uint256 public goalCount;
@@ -150,6 +167,7 @@ contract PolicyVault {
         uint64 validBefore
     );
     event SpendFinalized(uint256 indexed goalId, uint64 indexed seq, bool approved, bytes32 decisionHandle);
+    event SpendReclaimed(uint256 indexed goalId, uint64 indexed seq, uint256 amount, bytes32 budgetHandle);
 
     // ----------------------------------------------------------------- errors
 
@@ -172,6 +190,11 @@ contract PolicyVault {
     error UnknownSpend();
     error AlreadyFinalized();
     error InvalidAttestation();
+    error PayByPassed();
+    error NotApproved();
+    error AlreadyReclaimed();
+    error AuthorizationLive();
+    error AuthorizationUsed();
 
     // ------------------------------------------------------------- open/close
 
@@ -264,9 +287,18 @@ contract PolicyVault {
     /// The decision is committed here but only knowable later, once Inco's
     /// compute server has processed the emitted events.
     ///
+    /// @param payBy When the vendor stops holding what it quoted. The
+    /// authorization expires then, so a payment that arrives after the vendor
+    /// has let the thing go cannot be collected at all.
+    ///
     /// @dev `asset` is deliberately not a parameter — it is read from the goal
     /// record. A 402 body is a claim, not a source of configuration.
-    function requestSpend(uint256 goalId, uint256 amount, address payTo, string calldata resource)
+    ///
+    /// `payBy` does come from the 402, through the relay, and nothing here can
+    /// check it against the vendor. It can only shorten the window. A relay
+    /// that names a later time gets at most `AUTHORIZATION_WINDOW`, which is
+    /// what every authorization got before `payBy` existed.
+    function requestSpend(uint256 goalId, uint256 amount, address payTo, string calldata resource, uint64 payBy)
         external
         returns (uint64 seq)
     {
@@ -279,6 +311,8 @@ contract PolicyVault {
         require(block.timestamp < goal.expiry, GoalExpired());
         require(allowlisted[goalId][payTo], PayeeNotAllowlisted());
         require(amount > 0, ZeroAmount());
+        // A hold that has already ended leaves nothing to pay for.
+        require(payBy > block.timestamp, PayByPassed());
         // Strictly sequential per goal: the public call counter is only
         // decremented at finalisation, so a second in-flight spend would be
         // evaluated against a stale count.
@@ -299,6 +333,7 @@ contract PolicyVault {
         // produce a *different* authorization that could execute a second time.
         record.validAfter = uint64(block.timestamp) - 1;
         record.validBefore = uint64(block.timestamp) + AUTHORIZATION_WINDOW;
+        if (record.validBefore > payBy) record.validBefore = payBy;
         if (record.validBefore > goal.expiry) record.validBefore = goal.expiry;
 
         record.termsHash = keccak256(
@@ -406,6 +441,46 @@ contract PolicyVault {
         emit SpendFinalized(goalId, seq, approved, ebool.unwrap(record.decision));
     }
 
+    /// @notice Puts an approved amount back in the budget, and the call back in
+    /// the count, once its authorization can never be used.
+    ///
+    /// That is the case when the window has closed and the token never consumed
+    /// the authorization: an EIP-3009 token refuses an authorization at or after
+    /// `validBefore`, so an unused one stays unused for good, and the amount
+    /// cannot be both returned here and paid.
+    ///
+    /// @dev Anyone may call this. Both conditions are read from the chain, the
+    /// window from this record and the use from the token itself, so a caller
+    /// has nothing to claim. A spend that was paid fails the second check,
+    /// whoever paid it.
+    function reclaimExpired(uint256 goalId, uint64 seq) external {
+        Goal storage goal = goals[goalId];
+        require(goal.owner != address(0), UnknownGoal());
+
+        SpendRecord storage record = _spends[goalId][seq];
+        require(record.amount != 0, UnknownSpend());
+        // A rejected spend debited zero, so it has nothing to give back.
+        require(record.finalized && record.approved, NotApproved());
+        require(!record.reclaimed, AlreadyReclaimed());
+        require(block.timestamp >= record.validBefore, AuthorizationLive());
+        require(
+            !IAuthorizationState(goal.asset).authorizationState(goal.payer, _nonce(goalId, seq)),
+            AuthorizationUsed()
+        );
+
+        record.reclaimed = true;
+
+        euint256 restored = _remainingBudget[goalId].add(record.amount);
+        // Persisted across transactions, so it needs a permanent grant.
+        restored.allowThis();
+        _remainingBudget[goalId] = restored;
+        // Decremented at finalisation on approval, so this cannot pass the count
+        // the goal was opened with.
+        goal.callsRemaining += 1;
+
+        emit SpendReclaimed(goalId, seq, record.amount, euint256.unwrap(restored));
+    }
+
     // ----------------------------------------------------------------- views
 
     /// @notice The frozen EIP-3009 tuple. The Authorization Signer reads every
@@ -418,7 +493,7 @@ contract PolicyVault {
     {
         SpendRecord storage record = _spends[goalId][seq];
         Goal storage goal = goals[goalId];
-        return (goal.payer, record.amount, record.payTo, goal.asset, keccak256(abi.encode(goalId, seq)));
+        return (goal.payer, record.amount, record.payTo, goal.asset, _nonce(goalId, seq));
     }
 
     function validityWindow(uint256 goalId, uint64 seq)
@@ -435,6 +510,10 @@ contract PolicyVault {
     /// per-goal and `seq` is per-goal and monotonic. `abi.encode`, not
     /// `encodePacked`, so no two distinct pairs can collide via concatenation.
     function spendNonce(uint256 goalId, uint64 seq) external pure returns (bytes32) {
+        return _nonce(goalId, seq);
+    }
+
+    function _nonce(uint256 goalId, uint64 seq) private pure returns (bytes32) {
         return keccak256(abi.encode(goalId, seq));
     }
 
@@ -455,6 +534,20 @@ contract PolicyVault {
     function isApproved(uint256 goalId, uint64 seq) external view returns (bool) {
         SpendRecord storage record = _spends[goalId][seq];
         return record.finalized && record.approved;
+    }
+
+    function isReclaimed(uint256 goalId, uint64 seq) external view returns (bool) {
+        return _spends[goalId][seq].reclaimed;
+    }
+
+    /// @notice True when `reclaimExpired(goalId, seq)` would succeed now.
+    function isReclaimable(uint256 goalId, uint64 seq) external view returns (bool) {
+        Goal storage goal = goals[goalId];
+        SpendRecord storage record = _spends[goalId][seq];
+        if (goal.owner == address(0) || record.amount == 0) return false;
+        if (!record.finalized || !record.approved || record.reclaimed) return false;
+        if (block.timestamp < record.validBefore) return false;
+        return !IAuthorizationState(goal.asset).authorizationState(goal.payer, _nonce(goalId, seq));
     }
 
     /// @notice The budget handle — an opaque `bytes32`. Exposed so the UI can

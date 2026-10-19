@@ -1,10 +1,12 @@
 /**
- * The orchestrator's on-chain hands: `requestSpend` and `finalizeDecision`.
+ * The orchestrator's on-chain hands: `requestSpend`, `finalizeDecision` and
+ * `reclaimExpired`.
  *
- * These are the *only* two writes the orchestrator makes, and the relay key that
+ * These are the *only* writes the orchestrator makes, and the relay key that
  * pays for them is a gas key — it holds no funds and authorizes no payment
  * (ARCHITECTURE.md). Everything the orchestrator is trusted to do is here, and it
- * amounts to "submit two transactions and pay for them".
+ * amounts to "submit three transactions and pay for them". The third can only
+ * ever give money back to the budget, and the vault decides whether it may.
  *
  * What is deliberately absent is as important as what is present. There is no
  * method here that reads a budget handle, and there is none that produces a
@@ -35,6 +37,21 @@ export interface SpendRequested {
   readonly commitTx: Hex;
   readonly gasUsed: bigint;
 }
+
+/**
+ * What `reclaimExpired` found. Every case but `reclaimed` is the vault's own
+ * refusal, read back by name, because each one means something different about
+ * where the money is.
+ */
+export type ReclaimOutcome =
+  /** The budget and the call came back. */
+  | { readonly kind: "reclaimed"; readonly txHash: Hex; readonly gasUsed: bigint }
+  /** The token consumed the authorization: the money left the payer. */
+  | { readonly kind: "collected" }
+  /** Somebody reclaimed it first. Anyone may. */
+  | { readonly kind: "already" }
+  /** The authorization can still be used, so nothing can come back yet. */
+  | { readonly kind: "live" };
 
 export interface GoalView {
   readonly owner: Address;
@@ -122,6 +139,10 @@ export class VaultRelay {
    * `asset` is not a parameter. The vault reads it from the goal record,
    * because a 402 body is a claim, not a source of configuration.
    *
+   * `payBy` is when the vendor stops holding what it quoted, in unix seconds.
+   * The vault ends the authorization there, so a payment that arrives after the
+   * vendor let the thing go cannot be collected.
+   *
    * ## A SpendPending that is not real
    *
    * Public Base RPCs are load balanced, and the node that estimates gas can be
@@ -141,11 +162,12 @@ export class VaultRelay {
     amount: bigint,
     payTo: Address,
     resource: string,
+    payBy: bigint,
   ): Promise<SpendRequested> {
     const attempts = 5;
     for (let attempt = 1; ; attempt++) {
       try {
-        return await this.#requestSpendOnce(goalId, amount, payTo, resource);
+        return await this.#requestSpendOnce(goalId, amount, payTo, resource, payBy);
       } catch (error) {
         const text = error instanceof Error ? error.message : String(error);
         if (attempt >= attempts || !text.includes("SpendPending")) throw error;
@@ -162,6 +184,7 @@ export class VaultRelay {
     amount: bigint,
     payTo: Address,
     resource: string,
+    payBy: bigint,
   ): Promise<SpendRequested> {
     await this.assertChain();
 
@@ -169,7 +192,7 @@ export class VaultRelay {
       address: this.#vault,
       abi: policyVaultAbi,
       functionName: "requestSpend",
-      args: [goalId, amount, payTo, resource],
+      args: [goalId, amount, payTo, resource, payBy],
       chain: this.#chain,
       account: this.#wallet.account!,
     });
@@ -249,6 +272,62 @@ export class VaultRelay {
   }
 
   /**
+   * Asks the vault to put an approved, unpaid amount back in the budget.
+   *
+   * Safe to call whenever: the vault refuses unless the authorization's window
+   * has closed and the token never consumed it, and those refusals come back as
+   * outcomes, not errors. Anything else throws.
+   *
+   * `AuthorizationLive` is retried for a short while. The caller waits for
+   * `validBefore` by its own clock, and the node that estimates gas can be a
+   * block or two behind it, which the vault reads as a window still open.
+   */
+  async reclaimExpired(goalId: bigint, seq: bigint): Promise<ReclaimOutcome> {
+    const attempts = 6;
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await this.#reclaimOnce(goalId, seq);
+      } catch (error) {
+        const text = error instanceof Error ? error.message : String(error);
+        if (text.includes("AuthorizationUsed")) return { kind: "collected" };
+        if (text.includes("AlreadyReclaimed")) return { kind: "already" };
+        if (!text.includes("AuthorizationLive")) throw error;
+        if (attempt >= attempts) return { kind: "live" };
+        await new Promise((resolve) => setTimeout(resolve, 2_000));
+      }
+    }
+  }
+
+  async #reclaimOnce(goalId: bigint, seq: bigint): Promise<ReclaimOutcome> {
+    await this.assertChain();
+
+    const hash = await this.#wallet.writeContract({
+      address: this.#vault,
+      abi: policyVaultAbi,
+      functionName: "reclaimExpired",
+      args: [goalId, seq],
+      chain: this.#chain,
+      account: this.#wallet.account!,
+    });
+
+    const receipt = await this.#public.waitForTransactionReceipt({ hash });
+    if (receipt.status !== "success") {
+      throw new Error(`reclaimExpired reverted (${hash})`);
+    }
+    return { kind: "reclaimed", txHash: hash, gasUsed: receipt.gasUsed };
+  }
+
+  /**
+   * True when this relay itself saw `finalizeDecision` for `(goalId, seq)` confirmed.
+   *
+   * A `pendingSeq` read that names such a seq came from a node behind our own
+   * receipt, not from a genuinely unfinished spend.
+   */
+  hasFinalized(goalId: bigint, seq: bigint): boolean {
+    return this.#finalized.has(`${goalId}:${seq}`);
+  }
+
+  /**
    * The seq awaiting finalisation for this goal, or 0 when none is.
    *
    * Non-zero means a previous run committed a debit and never came back to
@@ -273,6 +352,17 @@ export class VaultRelay {
       functionName: "decisionHandle",
       args: [goalId, seq],
     })) as Hex;
+  }
+
+  /** The frozen authorization window, in unix seconds. */
+  async validityWindow(goalId: bigint, seq: bigint): Promise<{ validAfter: bigint; validBefore: bigint }> {
+    const [validAfter, validBefore] = (await this.#public.readContract({
+      address: this.#vault,
+      abi: policyVaultAbi,
+      functionName: "validityWindow",
+      args: [goalId, seq],
+    })) as readonly [bigint, bigint];
+    return { validAfter, validBefore };
   }
 
   async isApproved(goalId: bigint, seq: bigint): Promise<boolean> {

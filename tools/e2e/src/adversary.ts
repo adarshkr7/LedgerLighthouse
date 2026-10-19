@@ -85,7 +85,7 @@ import {
 import { privateKeyToAccount } from "viem/accounts";
 import { handleTypes } from "@inco/lightning-js";
 import { rpcTransport, sendingAccount, viemChain } from "@ntux402/shared/viem";
-import { DEMO_PAYEES } from "@ntux402/shared";
+import { DEMO_PAYEES, usdcAbi } from "@ntux402/shared";
 import {
   IncoDecisionReader,
   SignerClient,
@@ -163,10 +163,30 @@ const GOAL_REFUSALS = {
   calls: 4,
 } as const;
 
+/**
+ * Goal D — C6's, so the call it spends and gets back is the only one there.
+ */
+const GOAL_EXPIRY = {
+  label: "expiry",
+  budget: 2_000n,
+  perCallCap: 100_000n,
+  calls: 1,
+} as const;
+
 /** Under the budget. Approved, and its attestation is what C8 replays. */
 const SMALL_ASK = 500n;
 /** Clears perCallCap, exceeds the remaining budget. Rejected confidentially. */
 const OVER_BUDGET_ASK = 50_000n;
+
+/**
+ * The vendor's hold every strategy but C6 names: long enough that no
+ * authorization expires mid-campaign.
+ */
+const HOLD_SECONDS = 600;
+const payBy = (): bigint => BigInt(Math.floor(Date.now() / 1_000) + HOLD_SECONDS);
+
+/** C6's hold, the mock vendor's own 60 s: room to commit, reveal and sign inside it. */
+const C6_HOLD_SECONDS = 60;
 
 /** Not on any allowlist. Used to prove the structural refusal, never funded. */
 const UNALLOWLISTED = "0x000000000000000000000000000000000000dEaD" as Address;
@@ -596,7 +616,7 @@ async function attemptSpend(
   /** Commit, then finalize when there was a decision to finalize. */
   txs: Tx[];
 }> {
-  const requested = await relay.requestSpend(goal.goalId, amount, payTo, "adversary/max-extract");
+  const requested = await relay.requestSpend(goal.goalId, amount, payTo, "adversary/max-extract", payBy());
   const txs: Tx[] = [{ label: `commit seq ${requested.seq}`, hash: requested.commitTx }];
 
   const outcome = await pollForDecision(decisions, requested.decisionHandle, { timeoutMs: 180_000 });
@@ -714,17 +734,17 @@ async function refusalStrategies(
     "settlement to a non-allowlisted payee",
     "the allowlist (structural)",
     "PayeeNotAllowlisted",
-    () => relay.requestSpend(goal.goalId, SMALL_ASK, UNALLOWLISTED, "adversary/redirect"),
+    () => relay.requestSpend(goal.goalId, SMALL_ASK, UNALLOWLISTED, "adversary/redirect", payBy()),
     {
       functionName: "requestSpend",
-      args: [goal.goalId, SMALL_ASK, UNALLOWLISTED, "adversary/redirect"],
+      args: [goal.goalId, SMALL_ASK, UNALLOWLISTED, "adversary/redirect", payBy()],
     },
     [{ label: "open goal (allowlist set)", hash: goal.openTx }],
   );
 
   // --- seq 1: small, within budget. Carries C4, C10, and C8's ammunition. ---
 
-  const first = await relay.requestSpend(goal.goalId, SMALL_ASK, payee, "adversary/first");
+  const first = await relay.requestSpend(goal.goalId, SMALL_ASK, payee, "adversary/first", payBy());
   const firstCommit: Tx = { label: `commit seq ${first.seq} (pending)`, hash: first.commitTx };
 
   // C4 — two spends in flight at once. Refused because the public call counter
@@ -734,8 +754,8 @@ async function refusalStrategies(
     "two concurrent requestSpend on one goal",
     "pendingSeq sequencing",
     "SpendPending",
-    () => relay.requestSpend(goal.goalId, SMALL_ASK, payee, "adversary/second"),
-    { functionName: "requestSpend", args: [goal.goalId, SMALL_ASK, payee, "adversary/second"] },
+    () => relay.requestSpend(goal.goalId, SMALL_ASK, payee, "adversary/second", payBy()),
+    { functionName: "requestSpend", args: [goal.goalId, SMALL_ASK, payee, "adversary/second", payBy()] },
     [firstCommit],
   );
 
@@ -785,7 +805,7 @@ async function refusalStrategies(
 
   // --- seq 2: over the remaining budget. Manufactures the rejection C9 needs. ---
 
-  const over = await relay.requestSpend(goal.goalId, OVER_BUDGET_ASK, payee, "adversary/over");
+  const over = await relay.requestSpend(goal.goalId, OVER_BUDGET_ASK, payee, "adversary/over", payBy());
   const overDecision = await pollForDecision(decisions, over.decisionHandle, { timeoutMs: 180_000 });
   if (overDecision.kind === "decided") {
     const overFinal = await relay.finalizeDecision(
@@ -832,7 +852,7 @@ async function refusalStrategies(
 
   // --- seq 3: the victim record C8 tries to finalise with seq 1's attestation. ---
 
-  const victim = await relay.requestSpend(goal.goalId, SMALL_ASK, payee, "adversary/victim");
+  const victim = await relay.requestSpend(goal.goalId, SMALL_ASK, payee, "adversary/victim", payBy());
   await expectRefusal(
     "C8",
     "genuine attestation from another seq, replayed",
@@ -868,16 +888,15 @@ async function refusalStrategies(
     : undefined;
 }
 
-// ------------------------------------------------------------- C5, C6, C7
+// ---------------------------------------------------------------- C5, C7
 
 /**
  * Idempotency and the absence of a terms channel.
  *
- * C5/C6 are one question asked twice: does a second `authorize` for the same
- * `(goalId, seq)` return the *byte-identical* tuple? If any field moves —
- * `validBefore` regenerated from the clock being the dangerous one — the retry
- * is a different authorization and could execute a second time
- * (ARCHITECTURE.md §3.3).
+ * C5 asks whether a second `authorize` for the same `(goalId, seq)` returns
+ * the *byte-identical* tuple. If any field moves — `validBefore` regenerated
+ * from the clock being the dangerous one — the retry is a different
+ * authorization and could execute a second time (ARCHITECTURE.md §3.3).
  *
  * C7 has no code because it has no attack surface: `authorize` takes
  * `(goalId, seq)` and nothing else, so there is no argument through which terms
@@ -922,28 +941,131 @@ async function idempotency(
     txs,
     noTx: "both authorizations are signer responses, off chain",
   });
+}
 
-  // C6 splits in two, and only half is reachable here.
-  //
-  // The dangerous half — does the signer regenerate `validBefore` from the
-  // current clock, making a retry a *different* authorization that could
-  // execute twice? — is exactly what the tuple comparison above answers, since
-  // the two calls are separated by a round trip.
-  //
-  // The other half, a 410 once the frozen window has passed, needs a window
-  // that has actually expired. AUTHORIZATION_WINDOW is an hour, so a campaign
-  // that runs in minutes cannot reach it. Recorded as not-run rather than
-  // omitted: a strategy missing from the report reads as a strategy that
-  // passed.
+// ------------------------------------------------------------------- C6
+
+/**
+ * C6 — a vendor collects after its hold has ended.
+ *
+ * A vendor holds what it quoted for a short time, like a seat held while you
+ * pay, and an authorization that outlives the hold lets it collect for a thing
+ * it has already let go. Until the vault took `payBy`, every authorization
+ * lived an hour and a campaign running in minutes could not reach an expired
+ * one, so C6 was recorded as not run.
+ *
+ * Now the adversary names a 60-second hold and plays the late vendor itself:
+ *
+ *   1. commit and finalize an approved spend whose hold ends in 60 s;
+ *   2. take the signed authorization while the hold lasts, as a vendor would;
+ *   3. once the hold has ended, ask the signer again, which must answer 410;
+ *   4. submit the authorization taken in step 2, which the token must refuse;
+ *   5. reclaim, which must give the call back, then reclaim again, which must
+ *      not give it twice.
+ *
+ * Step 4 is an `eth_call`, not a broadcast. The token refuses it in simulation
+ * against live state, and a reverted transaction would only cost gas to say
+ * the same thing.
+ */
+async function c6ExpiredHold(goal: OpenedGoal): Promise<void> {
+  const id = "C6";
+  const name = "an authorization collected after the vendor's hold";
+  const targets = "payBy ends the authorization; reclaimExpired returns the amount";
+  const expected = "410 from the signer, the token refuses, one reclaim restores the call";
+  const payee = DEMO_PAYEES[0]!;
+
+  const holdEnds = BigInt(Math.floor(Date.now() / 1_000) + C6_HOLD_SECONDS);
+  const requested = await relay.requestSpend(goal.goalId, SMALL_ASK, payee, "adversary/expiry", holdEnds);
+  const txs: Tx[] = [{ label: `commit seq ${requested.seq}`, hash: requested.commitTx }];
+  console.log(`  hold ends ${new Date(Number(holdEnds) * 1_000).toISOString()}, window ends ${requested.validBefore}`);
+
+  const outcome = await pollForDecision(decisions, requested.decisionHandle, { timeoutMs: 180_000 });
+  if (outcome.kind === "timeout" || !outcome.decision.approved) {
+    record({
+      id,
+      name,
+      targets,
+      expected,
+      observed: outcome.kind === "timeout" ? "Inco gave no decision" : "the spend was rejected, so nothing could expire",
+      verdict: "inconclusive",
+      txs,
+    });
+    return;
+  }
+  const finalized = await relay.finalizeDecision(goal.goalId, requested.seq, true, outcome.decision.signatures);
+  txs.push({ label: `finalize seq ${requested.seq}`, hash: finalized.txHash });
+
+  // 2. The vendor's copy, taken inside the hold.
+  const held = await authorizeWithRetry(goal.goalId, requested.seq);
+
+  // Out past the window, by enough that the next block is too.
+  const waitMs = Number(requested.validBefore) * 1_000 + 5_000 - Date.now();
+  if (waitMs > 0) {
+    console.log(`  waiting ${Math.ceil(waitMs / 1_000)}s for the hold to end`);
+    await new Promise((resolve) => setTimeout(resolve, waitMs));
+  }
+
+  // 3. The signer, asked again.
+  const late = await signer.authorize(goal.goalId, requested.seq);
+  const signerRefused = late.kind === "refused" && late.status === 410;
+
+  // 4. The late vendor tries to collect anyway.
+  let tokenRefused = false;
+  let tokenSaid = "not tried: the signer gave no authorization inside the hold";
+  if (held.kind === "signed") {
+    const auth = held.value.authorization;
+    try {
+      await publicClient.simulateContract({
+        address: usdcAddress,
+        abi: usdcAbi,
+        functionName: "transferWithAuthorization",
+        args: [
+          auth.from,
+          auth.to,
+          BigInt(auth.value),
+          BigInt(auth.validAfter),
+          BigInt(auth.validBefore),
+          auth.nonce,
+          held.value.signature,
+        ],
+        account: relayAddress,
+      });
+      tokenSaid = "the token ACCEPTED it";
+    } catch (error) {
+      const text = error instanceof Error ? error.message : String(error);
+      tokenRefused = /expired/i.test(text);
+      tokenSaid = tokenRefused ? "the token refused it as expired" : `the token refused it: ${first(text)}`;
+    }
+  }
+
+  // 5. The amount back, once.
+  const before = (await relay.goal(goal.goalId)).callsRemaining;
+  const reclaim = await relay.reclaimExpired(goal.goalId, requested.seq);
+  if (reclaim.kind === "reclaimed") txs.push({ label: `reclaim seq ${requested.seq}`, hash: reclaim.txHash });
+  const restored = await relay
+    .waitUntilVisible(
+      `call count after reclaim of ${goal.goalId}:${requested.seq}`,
+      async () => (await relay.goal(goal.goalId)).callsRemaining === before + 1,
+      30_000,
+    )
+    .then(() => true)
+    .catch(() => false);
+  const again = await relay.reclaimExpired(goal.goalId, requested.seq);
+
+  const ok = signerRefused && tokenRefused && reclaim.kind === "reclaimed" && restored && again.kind === "already";
   record({
-    id: "C6",
-    name: "expired frozen window refused with 410",
-    targets: "expiry is a refusal, not a re-issue",
-    expected: "refused, HTTP 410",
-    observed: same
-      ? "NOT RUN — needs a window older than AUTHORIZATION_WINDOW (1h). Regeneration half covered by C5."
-      : "NOT RUN, and C5 already shows the tuple is not stable",
-    verdict: "inconclusive",
+    id,
+    name,
+    targets,
+    expected,
+    observed: [
+      `signer ${late.kind === "refused" ? late.status : late.kind}`,
+      tokenSaid,
+      `reclaim ${reclaim.kind}${restored ? ", call restored" : ", call NOT restored"}`,
+      `second reclaim ${again.kind}`,
+    ].join("; "),
+    verdict: ok ? "held" : held.kind !== "signed" ? "inconclusive" : "deviated",
+    txs,
   });
 }
 
@@ -992,6 +1114,9 @@ if (replayable === undefined) {
 } else {
   await idempotency(refusals, replayable);
 }
+
+rule("C6 — collecting after the vendor's hold");
+await c6ExpiredHold(await openGoal(GOAL_EXPIRY));
 
 record({
   id: "C7",

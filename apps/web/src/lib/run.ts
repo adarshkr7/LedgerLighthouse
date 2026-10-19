@@ -72,6 +72,20 @@ export type PaymentEvent =
   | { type: "signer-refused"; status: number; reason: string }
   | { type: "signed"; nonce: string; value: string }
   | { type: "settled"; settlement: Settlement }
+  /**
+   * What became of an approved amount that was not paid. `reclaimed`: its
+   * authorization expired unused and the budget and the call came back.
+   * `collected`: the token consumed it, so a vendor has the money.
+   */
+  | {
+      type: "reclaim";
+      goalId: string;
+      seq: string;
+      outcome: "waiting" | "reclaimed" | "collected" | "deferred" | "failed";
+      validBefore: string;
+      txHash?: `0x${string}`;
+      reason?: string;
+    }
   | { type: "failed"; reason: string };
 
 export interface Terms {

@@ -29,9 +29,9 @@ import { TraceBuilder } from "@ntux402/trace";
 import { X402Client } from "../x402/client.js";
 import { ScriptedAgent } from "../agent/scripted.js";
 import type { AttestedDecision, DecisionReader } from "../inco/reveal.js";
-import { PaymentLoop, type PaymentEvent } from "./payment-loop.js";
+import { PaymentLoop, type PaymentEvent, type PaymentLoopConfig } from "./payment-loop.js";
 import { SignerClient } from "./signer-client.js";
-import type { SpendRequested, VaultRelay } from "./relay.js";
+import type { ReclaimOutcome, SpendRequested, VaultRelay } from "./relay.js";
 
 const VENDOR: Address = "0x1111111111111111111111111111111111111111";
 const PAYER: Address = "0x5555555555555555555555555555555555555555";
@@ -40,7 +40,11 @@ const HANDLE = `0x${"ab".repeat(32)}` as Hex;
 const TERMS_HASH = `0x${"cd".repeat(32)}` as Hex;
 const NONCE = `0x${"ef".repeat(32)}` as Hex;
 
-function requirementsBody(amount = PRICE, description = "Ordinary market data feed.") {
+function requirementsBody(
+  amount = PRICE,
+  description = "Ordinary market data feed.",
+  maxTimeoutSeconds = 60,
+) {
   return {
     x402Version: X402_VERSION,
     accepts: [
@@ -52,7 +56,7 @@ function requirementsBody(amount = PRICE, description = "Ordinary market data fe
         payTo: VENDOR,
         resource: "https://mock.local/resource/honest",
         description,
-        maxTimeoutSeconds: 60,
+        maxTimeoutSeconds,
         extra: { name: "USDC", version: "2" },
       },
     ],
@@ -98,8 +102,12 @@ class FakeResourceServer {
 }
 
 class FakeRelay {
-  spends: Array<{ goalId: bigint; amount: bigint; payTo: Address; resource: string }> = [];
+  spends: Array<{ goalId: bigint; amount: bigint; payTo: Address; resource: string; payBy: bigint }> = [];
   finalized: Array<{ goalId: bigint; seq: bigint; approved: boolean }> = [];
+  reclaims: Array<{ goalId: bigint; seq: bigint }> = [];
+  reclaimResult: ReclaimOutcome = { kind: "reclaimed", txHash: `0x${"55".repeat(32)}`, gasUsed: 60_000n };
+  /** The window an orphan's record reports. Long past by default: Inco was slow. */
+  orphanValidBefore = 1n;
   nextSeq = 1n;
   failRequest = false;
   /** Non-zero simulates a goal wedged by a run that died before finalizing. */
@@ -108,6 +116,15 @@ class FakeRelay {
 
   async pendingSeq(): Promise<bigint> {
     return this.pending;
+  }
+
+  hasFinalized(goalId: bigint, seq: bigint): boolean {
+    return this.finalized.some((f) => f.goalId === goalId && f.seq === seq);
+  }
+
+  /** Simulates a lagging node catching up: the stale pending seq clears. */
+  async waitUntilVisible(): Promise<void> {
+    this.pending = 0n;
   }
 
   async decisionHandle(): Promise<Hex> {
@@ -119,16 +136,18 @@ class FakeRelay {
     amount: bigint,
     payTo: Address,
     resource: string,
+    payBy: bigint,
   ): Promise<SpendRequested> {
     if (this.failRequest) throw new Error("simulated revert");
-    this.spends.push({ goalId, amount, payTo, resource });
+    this.spends.push({ goalId, amount, payTo, resource, payBy });
     const seq = this.nextSeq++;
     return {
       seq,
       decisionHandle: HANDLE,
       termsHash: TERMS_HASH,
       validAfter: 0n,
-      validBefore: 99_999_999_999n,
+      // What the vault does with a `payBy` inside its one-hour ceiling.
+      validBefore: payBy,
       commitTx: `0x${"11".repeat(32)}`,
       gasUsed: 500_000n,
     };
@@ -138,6 +157,15 @@ class FakeRelay {
     if (this.failFinalize) throw new Error("simulated finalize revert");
     this.finalized.push({ goalId, seq, approved });
     return { txHash: `0x${"22".repeat(32)}` as Hex, gasUsed: 100_000n };
+  }
+
+  async validityWindow(): Promise<{ validAfter: bigint; validBefore: bigint }> {
+    return { validAfter: 0n, validBefore: this.orphanValidBefore };
+  }
+
+  async reclaimExpired(goalId: bigint, seq: bigint): Promise<ReclaimOutcome> {
+    this.reclaims.push({ goalId, seq });
+    return this.reclaimResult;
   }
 }
 
@@ -189,9 +217,12 @@ let relay: FakeRelay;
 let decisions: FakeDecisions;
 let signerServer: FakeSignerServer;
 let events: PaymentEvent[];
+/** Every wait the loop asked for, in milliseconds. None of them takes real time. */
+let sleeps: number[];
 
-function buildLoop() {
+function buildLoop(overrides: Partial<PaymentLoopConfig> = {}) {
   events = [];
+  sleeps = [];
   return new PaymentLoop({
     client: new X402Client({ fetchImpl: api.fetch, sleep: async () => {} }),
     relay: relay as unknown as VaultRelay,
@@ -201,9 +232,20 @@ function buildLoop() {
     asset: USDC_BASE_SEPOLIA,
     poll: { intervalMs: 0, timeoutMs: 50, sleep: async () => {} },
     signerRetries: 2,
+    sleep: async (ms) => {
+      sleeps.push(ms);
+    },
     onEvent: (e) => events.push(e),
+    ...overrides,
   });
 }
+
+function reclaimEvents(): Array<Extract<PaymentEvent, { type: "reclaim" }>> {
+  return events.filter((e): e is Extract<PaymentEvent, { type: "reclaim" }> => e.type === "reclaim");
+}
+
+const expired = () =>
+  new Response(JSON.stringify({ error: "refused: the frozen authorization expired" }), { status: 410 });
 
 beforeEach(() => {
   api = new FakeResourceServer();
@@ -581,6 +623,21 @@ describe("PaymentLoop — orphaned spend recovery", () => {
     expect(result.seq).toBe(1n);
   });
 
+  it("treats a pending seq this relay already finalized as a stale read, not an orphan", async () => {
+    // A lagging node still reports seq 7 after our own finalize of it landed.
+    // Finalizing it again would revert AlreadyFinalized and abort the run.
+    relay.finalized.push({ goalId: 1n, seq: 7n, approved: false });
+    relay.pending = 7n;
+    const seen: PaymentEvent[] = [];
+    const result = await buildLoop().fetchPaid("https://mock.local/resource/honest", 1n, {
+      onEvent: (e) => seen.push(e),
+    });
+
+    expect(relay.finalized.filter((f) => f.seq === 7n)).toHaveLength(1);
+    expect(seen.some((e) => e.type === "orphan-recovered" || e.type === "orphan-abandoned")).toBe(false);
+    expect(result.kind).toBe("paid");
+  });
+
   it("touches nothing when the goal is clean", async () => {
     relay.pending = 0n;
     const seen: PaymentEvent[] = [];
@@ -663,5 +720,130 @@ describe("PaymentLoop — a refused settlement", () => {
     expect(result.kind).toBe("failed");
     if (result.kind !== "failed") return;
     expect(result.reason).toContain("still demands payment");
+  });
+});
+
+describe("PaymentLoop — the vendor's hold", () => {
+  /*
+   * A vendor holds what it quoted for `maxTimeoutSeconds`, like a seat held
+   * while you pay. Before `payBy`, every authorization lived an hour, so a
+   * payment slowed past the hold could still be collected for a GPU the vendor
+   * had already given to someone else.
+   */
+
+  const T = 1_700_000_000_000;
+
+  it("ends the authorization where the vendor's hold ends", async () => {
+    await buildLoop({ now: () => T }).fetchPaid("https://mock.local/resource/honest", 1n);
+    expect(relay.spends[0]!.payBy).toBe(BigInt(T / 1_000 + 60));
+  });
+
+  it("counts the time spent before committing against the hold", async () => {
+    // The 402 arrives at T; by the commit, 45 of the 60 seconds are gone.
+    let t = T;
+    const result = await buildLoop({
+      now: () => {
+        const at = t;
+        t += 45_000;
+        return at;
+      },
+    }).fetchPaid("https://mock.local/resource/honest", 1n);
+
+    expect(result.kind).toBe("failed");
+    if (result.kind !== "failed") return;
+    expect(result.reason).toContain("15s are left");
+    expect(result.reason).toContain("Nothing was committed");
+    expect(relay.spends).toHaveLength(0);
+  });
+
+  it("does not commit against a hold shorter than a paid call", async () => {
+    api.body = requirementsBody(PRICE, "Ordinary market data feed.", 10);
+    const result = await buildLoop().fetchPaid("https://mock.local/resource/honest", 1n);
+
+    expect(result.kind).toBe("failed");
+    expect(relay.spends).toHaveLength(0);
+  });
+
+  it("reclaims at once when Inco was slower than the hold", async () => {
+    // The professor's case. Committed at T with a 60 s hold; by the time the
+    // approval is final it is T + 70 s, the signer refuses the dead window, and
+    // the amount comes straight back.
+    let late = false;
+    signerServer.respond = () => {
+      late = true;
+      return expired();
+    };
+    const result = await buildLoop({ now: () => (late ? T + 70_000 : T) }).fetchPaid(
+      "https://mock.local/resource/honest",
+      1n,
+    );
+
+    expect(result.kind).toBe("failed");
+    expect(relay.reclaims).toEqual([{ goalId: 1n, seq: 1n }]);
+    expect(reclaimEvents().map((e) => e.outcome)).toEqual(["reclaimed"]);
+    expect(sleeps).toHaveLength(0);
+  });
+
+  it("waits out a live window before reclaiming", async () => {
+    signerServer.respond = () =>
+      new Response(JSON.stringify({ error: "refused: no key held" }), { status: 404 });
+    await buildLoop({ now: () => T }).fetchPaid("https://mock.local/resource/honest", 1n);
+
+    expect(reclaimEvents().map((e) => e.outcome)).toEqual(["waiting", "reclaimed"]);
+    // Until 4 s past the hold, so the block the vault runs in is past it too.
+    expect(sleeps).toEqual([64_000]);
+    expect(relay.reclaims).toHaveLength(1);
+  });
+
+  it("reports the money as collected when the vendor took it and refused", async () => {
+    api.refuseWith = "hold expired";
+    relay.reclaimResult = { kind: "collected" };
+    const result = await buildLoop().fetchPaid("https://mock.local/resource/honest", 1n);
+
+    expect(result.kind).toBe("failed");
+    expect(reclaimEvents().at(-1)?.outcome).toBe("collected");
+  });
+
+  it("defers a window longer than it will wait", async () => {
+    api.body = requirementsBody(PRICE, "Ordinary market data feed.", 3_600);
+    signerServer.respond = () =>
+      new Response(JSON.stringify({ error: "refused: no key held" }), { status: 404 });
+    await buildLoop().fetchPaid("https://mock.local/resource/honest", 1n);
+
+    expect(reclaimEvents().map((e) => e.outcome)).toEqual(["deferred"]);
+    expect(relay.reclaims).toHaveLength(0);
+    expect(sleeps).toHaveLength(0);
+  });
+
+  it("never reclaims a spend that was paid", async () => {
+    const result = await buildLoop().fetchPaid("https://mock.local/resource/honest", 1n);
+    expect(result.kind).toBe("paid");
+    expect(relay.reclaims).toHaveLength(0);
+    expect(reclaimEvents()).toHaveLength(0);
+  });
+
+  it("never reclaims a rejected spend", async () => {
+    decisions.decision = { approved: false, signatures: [`0x${"33".repeat(65)}`] };
+    await buildLoop().fetchPaid("https://mock.local/resource/honest", 1n);
+    expect(relay.reclaims).toHaveLength(0);
+  });
+
+  it("reclaims an approved orphan whose hold has passed, without waiting", async () => {
+    relay.pending = 7n;
+    const result = await buildLoop().fetchPaid("https://mock.local/resource/honest", 1n);
+
+    expect(relay.reclaims).toEqual([{ goalId: 1n, seq: 7n }]);
+    expect(sleeps).toHaveLength(0);
+    // And the run the caller asked for still happened.
+    expect(result.kind).toBe("paid");
+  });
+
+  it("leaves a live orphan for later, so this run keeps its own hold", async () => {
+    relay.pending = 7n;
+    relay.orphanValidBefore = BigInt(Math.floor(Date.now() / 1_000) + 600);
+    await buildLoop().fetchPaid("https://mock.local/resource/honest", 1n);
+
+    expect(reclaimEvents().map((e) => e.outcome)).toEqual(["deferred"]);
+    expect(relay.reclaims).toHaveLength(0);
   });
 });

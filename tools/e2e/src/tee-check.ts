@@ -225,7 +225,7 @@ async function spend(amount: bigint, resource: string, expected: boolean): Promi
     address: vaultAddress,
     abi,
     functionName: "requestSpend",
-    args: [goalId, amount, relay.address, resource],
+    args: [goalId, amount, relay.address, resource, BigInt(Math.floor(Date.now() / 1_000) + 600)],
   });
   const receipt = await publicClient.waitForTransactionReceipt({ hash });
   check("requestSpend confirmed", receipt.status === "success", `${fmt(ms(started))}  gas ${receipt.gasUsed}`);

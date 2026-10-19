@@ -266,6 +266,54 @@ export const policyVaultAbi = [
   },
   {
     "type": "function",
+    "name": "isReclaimable",
+    "inputs": [
+      {
+        "name": "goalId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "seq",
+        "type": "uint64",
+        "internalType": "uint64"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "isReclaimed",
+    "inputs": [
+      {
+        "name": "goalId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "seq",
+        "type": "uint64",
+        "internalType": "uint64"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "openGoal",
     "inputs": [
       {
@@ -384,6 +432,24 @@ export const policyVaultAbi = [
   },
   {
     "type": "function",
+    "name": "reclaimExpired",
+    "inputs": [
+      {
+        "name": "goalId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "seq",
+        "type": "uint64",
+        "internalType": "uint64"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "remainingBudgetHandle",
     "inputs": [
       {
@@ -424,6 +490,11 @@ export const policyVaultAbi = [
         "name": "resource",
         "type": "string",
         "internalType": "string"
+      },
+      {
+        "name": "payBy",
+        "type": "uint64",
+        "internalType": "uint64"
       }
     ],
     "outputs": [
@@ -619,6 +690,37 @@ export const policyVaultAbi = [
   },
   {
     "type": "event",
+    "name": "SpendReclaimed",
+    "inputs": [
+      {
+        "name": "goalId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "seq",
+        "type": "uint64",
+        "indexed": true,
+        "internalType": "uint64"
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "budgetHandle",
+        "type": "bytes32",
+        "indexed": false,
+        "internalType": "bytes32"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "SpendRequested",
     "inputs": [
       {
@@ -679,6 +781,21 @@ export const policyVaultAbi = [
   },
   {
     "type": "error",
+    "name": "AlreadyReclaimed",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "AuthorizationLive",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "AuthorizationUsed",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "CallFailedAfterFeeRefresh",
     "inputs": []
   },
@@ -734,12 +851,22 @@ export const policyVaultAbi = [
   },
   {
     "type": "error",
+    "name": "NotApproved",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "NotGoalOwner",
     "inputs": []
   },
   {
     "type": "error",
     "name": "NotRelay",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "PayByPassed",
     "inputs": []
   },
   {
