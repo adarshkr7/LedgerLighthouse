@@ -42,6 +42,25 @@ export const policyVaultAbi = [
   },
   {
     "type": "function",
+    "name": "attemptsRemaining",
+    "inputs": [
+      {
+        "name": "goalId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint32",
+        "internalType": "uint32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "authorization",
     "inputs": [
       {
@@ -333,6 +352,11 @@ export const policyVaultAbi = [
           },
           {
             "name": "callsRemaining",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "maxAttempts",
             "type": "uint32",
             "internalType": "uint32"
           },
@@ -826,6 +850,11 @@ export const policyVaultAbi = [
   },
   {
     "type": "error",
+    "name": "InvalidAttemptCount",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "InvalidAttestation",
     "inputs": []
   },
@@ -847,6 +876,11 @@ export const policyVaultAbi = [
   {
     "type": "error",
     "name": "InvalidRelay",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NoAttemptsLeft",
     "inputs": []
   },
   {

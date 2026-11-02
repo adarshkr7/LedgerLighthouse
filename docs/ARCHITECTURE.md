@@ -131,9 +131,13 @@ the 402. The bound is the conjunction of `perCallCap`, the allowlist and `callsR
 loss ceiling = perCallCap × callsRemaining, paid only to an allowlisted payee
 ```
 
-The cap is encrypted, so a compromised orchestrator does not know this ceiling either. Each
-approved amount tells it the cap is at least that much. A rejection with calls left does not say
-whether the budget or the cap refused it.
+The cap is encrypted, so a compromised orchestrator does not start out knowing this ceiling, but it
+can learn it. Every request is a yes/no question it chooses: is this amount within both limits?
+Rejections cost nothing, and since `reclaimExpired` an approval left to expire costs nothing either,
+so a binary search recovered a cap of 137,391 units exactly in 23 requests. The goal therefore has a
+public attempt budget (`maxAttempts`, §7): every request spends one, and reclaim never returns it.
+What the orchestrator learns about the cap and the budget is bounded by that number of yes/no
+answers, which the owner chooses. A rejection still does not say which limit refused it.
 
 Every term there is scoped to one goal, so the ceiling holds only while a payer belongs to one
 goal. That is now enforced rather than assumed: see the last bullet in §3.2.
@@ -211,8 +215,9 @@ afterwards cannot be used to spend.
 | State | Storage | Rationale |
 |---|---|---|
 | `remainingBudget` | `euint256` [INCO] | The headline secret — reveals strategy and willingness to pay |
-| `perCallCap` | `euint256` [INCO] | Bounds per-call size; hidden so a vendor cannot price to it, see §7 |
+| `perCallCap` | `euint256` [INCO] | Bounds per-call size; hidden so a vendor cannot read it and price to it. What probing can learn is bounded by the attempt budget, see §7 |
 | `callsRemaining` | public [BUILD] | Bounds call count independently of spend size |
+| `attemptsRemaining` | public [BUILD] | Bounds how many yes/no answers about the encrypted limits any request can obtain; never restored, see §7 |
 | `payTo` allowlist | public [BUILD] | Avoids `eaddress` comparisons and their fees |
 | `asset`, `expiry`, `seq` | public [BUILD] | Not sensitive |
 | requested `amount` | public [BUILD] | Deliberate — see below |
@@ -483,7 +488,8 @@ token itself refuses the authorization, whoever submits it. Before committing, t
 that at least 20 seconds of the hold are left, and stops with nothing committed if they are not.
 
 **An unpaid approval comes back.** `reclaimExpired(goalId, seq)` puts an approved amount back in the
-encrypted budget, and its call back in the count, once the authorization can never be used: its
+encrypted budget, and its call back in the count, but not its attempt (§7), once the authorization
+can never be used: its
 window has closed and the token's `authorizationState` says it was never consumed. EIP-3009 refuses an
 authorization at or after `validBefore`, so one that is unused then stays unused, and the amount
 cannot be both returned and paid. Anyone may call it, because both conditions are read from the chain.
@@ -506,13 +512,23 @@ not built (§10).
 Encrypted on chain: the budget and the per-call cap, as `euint256`; and the per-spend decision,
 until `finalizeDecision` reveals it.
 
-Public on chain: `callsRemaining`, allowlist membership, and every `requestSpend` term, approval,
-and rejection record.
+Public on chain: `callsRemaining`, `attemptsRemaining`, allowlist membership, and every
+`requestSpend` term, approval, and rejection record.
 
 Until 9 October 2026 the cap was public too, so a vendor could read the per-call ceiling and price
-immediately beneath it. What still leaks: every approved amount is public, so each approval is a
-lower bound on the cap, and someone watching many approvals on one goal learns roughly where it
-sits. A rejection with calls left does not say whether the budget or the cap refused it.
+immediately beneath it. What still leaks: every requested amount and every decision is public, so
+each request answers one yes/no question about the cap and the budget, and whoever chooses the
+amounts chooses the questions. A rejection with calls left does not say whether the budget or the cap
+refused it.
+
+How much leaks is bounded by the attempt budget. The owner sets `maxAttempts` at `openGoal`, at
+least `callsRemaining`; every `requestSpend` spends one whether it is approved or rejected; and
+`reclaimExpired` never returns it. Over the goal's life an observer therefore learns at most
+`maxAttempts` bits about the limits. With 8 attempts, a search over 0 to 10 USDC narrows the cap to
+an interval about 0.04 USDC wide and no further; with 30, it recovers the cap exactly
+(`contracts/test/ProbeLeak.t.sol`). The demo opens goals with 10 attempts for 5 calls. The bound is
+the owner's choice and is stated as such: an attempt budget large enough for an exact search gives
+no protection.
 
 ---
 

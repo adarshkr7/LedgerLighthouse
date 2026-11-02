@@ -26,8 +26,22 @@ interface IAuthorizationState {
 /// most a single call would pay, so a hostile vendor simply priced at it, and
 /// the encrypted budget then hid only how many such calls the agent could
 /// afford. With both encrypted, a rejection does not say which limit failed.
-/// What still leaks: every approved amount is public, so each approval is a
-/// public lower bound on the cap.
+///
+/// ## What still leaks, and how much
+///
+/// Every requested amount and every decision is public, so each request
+/// answers one yes/no question: is this amount within both limits? An attacker
+/// who controls the relay chooses the questions, and a binary search over them
+/// recovers the cap exactly in about twenty requests. Before `reclaimExpired`
+/// existed, each approval at least spent a call; since then an approval whose
+/// authorization is left to expire costs nothing, and a rejection never did.
+///
+/// So the number of questions is itself limited. `attemptsRemaining` is public,
+/// set by the owner at `openGoal`, decremented by every `requestSpend` whatever
+/// its outcome, and never restored, not by `reclaimExpired` and not by
+/// anything else. Over the life of a goal, the relay learns at most
+/// `maxAttempts` bits about the cap and the budget, and the owner chooses that
+/// number knowing it.
 ///
 /// ## Where a condition is enforced, and why it differs
 ///
@@ -97,6 +111,10 @@ contract PolicyVault {
         /// Encrypted like the budget, by the same wallet, for this vault.
         bytes perCallCapCiphertext;
         uint32 callsRemaining;
+        /// How many `requestSpend` calls the goal allows in total, approved or
+        /// rejected. At least `callsRemaining`. Bounds what the relay can learn
+        /// about the encrypted limits; see "What still leaks" above.
+        uint32 maxAttempts;
         address payer;
         address relay;
         address asset;
@@ -122,6 +140,11 @@ contract PolicyVault {
     mapping(uint256 goalId => mapping(uint64 seq => SpendRecord)) internal _spends;
     /// 0 when no spend awaits finalisation.
     mapping(uint256 goalId => uint64) public pendingSeq;
+
+    /// Public. `requestSpend` calls this goal still allows, approved or not.
+    /// Only ever decreases. Kept out of `Goal` so the `goals()` getter, which
+    /// the Authorization Signer decodes, keeps its shape.
+    mapping(uint256 goalId => uint32) public attemptsRemaining;
 
     /// The goal a payer belongs to, or 0 if the address has never been used.
     ///
@@ -195,6 +218,8 @@ contract PolicyVault {
     error AlreadyReclaimed();
     error AuthorizationLive();
     error AuthorizationUsed();
+    error InvalidAttemptCount();
+    error NoAttemptsLeft();
 
     // ------------------------------------------------------------- open/close
 
@@ -221,6 +246,8 @@ contract PolicyVault {
         require(params.asset != address(0), InvalidAsset());
         require(params.expiry > block.timestamp, InvalidExpiry());
         require(params.callsRemaining > 0, InvalidCallCount());
+        // Fewer attempts than calls would strand calls the owner paid for.
+        require(params.maxAttempts >= params.callsRemaining, InvalidAttemptCount());
         require(params.allowlist.length > 0, EmptyAllowlist());
 
         goalId = ++goalCount;
@@ -248,6 +275,7 @@ contract PolicyVault {
             seq: 0,
             open: true
         });
+        attemptsRemaining[goalId] = params.maxAttempts;
         // Written alongside the goal record it describes, so the two cannot be
         // added separately and drift.
         payerGoal[params.payer] = goalId;
@@ -317,6 +345,11 @@ contract PolicyVault {
         // decremented at finalisation, so a second in-flight spend would be
         // evaluated against a stale count.
         require(pendingSeq[goalId] == 0, SpendPending());
+        // Every request is a yes/no question about the encrypted limits, so
+        // every request spends an attempt, approved or rejected. Reverting here
+        // leaks nothing: the count is public.
+        require(attemptsRemaining[goalId] > 0, NoAttemptsLeft());
+        attemptsRemaining[goalId] -= 1;
 
         // Burns unconditionally, so a rejected attempt still appears in the trace.
         seq = ++goal.seq;
@@ -477,6 +510,9 @@ contract PolicyVault {
         // Decremented at finalisation on approval, so this cannot pass the count
         // the goal was opened with.
         goal.callsRemaining += 1;
+        // The attempt is deliberately not given back. The money and the call
+        // were never used, but the question was asked and answered; returning
+        // the attempt would make probing free again.
 
         emit SpendReclaimed(goalId, seq, record.amount, euint256.unwrap(restored));
     }

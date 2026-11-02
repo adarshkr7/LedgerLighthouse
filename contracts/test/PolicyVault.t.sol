@@ -47,6 +47,8 @@ contract PolicyVaultTest is IncoTest {
     uint256 constant BUDGET = 300_000; // 0.30 USDC
     uint256 constant PER_CALL_CAP = 200_000; // 0.20 USDC
     uint32 constant CALLS = 5;
+    /// Room for every test's requests, approved and rejected.
+    uint32 constant ATTEMPTS = 20;
 
     address constant VENDOR = address(0x1111111111111111111111111111111111111111);
     address constant OTHER_VENDOR = address(0x3333333333333333333333333333333333333333);
@@ -87,6 +89,17 @@ contract PolicyVaultTest is IncoTest {
         internal
         returns (PolicyVault.OpenGoalParams memory params)
     {
+        return _paramsWithAttempts(budget, cap, calls, ATTEMPTS, payer, opener);
+    }
+
+    function _paramsWithAttempts(
+        uint256 budget,
+        uint256 cap,
+        uint32 calls,
+        uint32 attempts,
+        address payer,
+        address opener
+    ) internal returns (PolicyVault.OpenGoalParams memory params) {
         address[] memory allowlist = new address[](1);
         allowlist[0] = VENDOR;
 
@@ -97,6 +110,7 @@ contract PolicyVaultTest is IncoTest {
             budgetCiphertext: fakePrepareEuint256Ciphertext(budget, opener, address(vault)),
             perCallCapCiphertext: fakePrepareEuint256Ciphertext(cap, opener, address(vault)),
             callsRemaining: calls,
+            maxAttempts: attempts,
             payer: payer,
             relay: address(this),
             asset: ASSET,
@@ -182,6 +196,10 @@ contract PolicyVaultTest is IncoTest {
     function _callsRemaining() internal view returns (uint32) {
         (,,,, uint32 calls,,,) = vault.goals(goalId);
         return calls;
+    }
+
+    function _attemptsRemaining() internal view returns (uint32) {
+        return vault.attemptsRemaining(goalId);
     }
 
     function _isOpen() internal view returns (bool) {
@@ -438,6 +456,72 @@ contract PolicyVaultTest is IncoTest {
         vm.prank(alice);
         vault.closeGoal(goalId);
         assertFalse(_isOpen(), "owner should still be able to close the goal");
+    }
+
+    // ------------------------------------------------------- attempt budget
+
+    function testOpenGoalRecordsTheAttemptBudget() public view {
+        assertEq(_attemptsRemaining(), ATTEMPTS);
+    }
+
+    function testOpenGoalRefusesFewerAttemptsThanCalls() public {
+        PolicyVault.OpenGoalParams memory params =
+            _paramsWithAttempts(BUDGET, PER_CALL_CAP, CALLS, CALLS - 1, OTHER_PAYER, alice);
+        uint256 fee = 2 * inco.getFee();
+        vm.deal(alice, fee);
+        vm.prank(alice);
+        vm.expectRevert(PolicyVault.InvalidAttemptCount.selector);
+        vault.openGoal{value: fee}(params);
+    }
+
+    /// A rejection answers a question as surely as an approval does.
+    function testEveryRequestSpendsAnAttemptWhateverTheOutcome() public {
+        (, bool approved) = _spendAndFinalize(50_000);
+        assertTrue(approved);
+        assertEq(_attemptsRemaining(), ATTEMPTS - 1, "an approval must spend an attempt");
+
+        (, bool rejected) = _spendAndFinalize(PER_CALL_CAP + 1);
+        assertFalse(rejected);
+        assertEq(_attemptsRemaining(), ATTEMPTS - 2, "a rejection must spend an attempt");
+    }
+
+    /// The probing fix itself: reclaim returns the money and the call, never the attempt.
+    function testReclaimDoesNotRestoreTheAttempt() public {
+        uint64 seq = vault.requestSpend(goalId, 50_000, VENDOR, RESOURCE, uint64(block.timestamp) + 1);
+        processAllOperations();
+        assertTrue(_finalize(seq));
+        (, uint64 validBefore) = vault.validityWindow(goalId, seq);
+        vm.warp(validBefore);
+        vault.reclaimExpired(goalId, seq);
+        processAllOperations();
+
+        assertEq(_callsRemaining(), CALLS, "reclaim should still restore the call");
+        assertEq(_budget(), BUDGET, "reclaim should still restore the budget");
+        assertEq(_attemptsRemaining(), ATTEMPTS - 1, "reclaim must not restore the attempt");
+    }
+
+    function testRequestSpendRefusedOnceAttemptsAreSpent() public {
+        goalId = _openGoalWithAttempts(BUDGET + 2, PER_CALL_CAP + 2, 1, 2);
+        _spendAndFinalize(PER_CALL_CAP + 3); // rejected: over the cap
+        _spendAndFinalize(PER_CALL_CAP + 3); // rejected again
+        assertEq(_attemptsRemaining(), 0);
+        assertEq(_callsRemaining(), 1, "the call is still unused");
+
+        vm.expectRevert(PolicyVault.NoAttemptsLeft.selector);
+        vault.requestSpend(goalId, 50_000, VENDOR, RESOURCE, _payBy());
+    }
+
+    function _openGoalWithAttempts(uint256 budget, uint256 cap, uint32 calls, uint32 attempts)
+        internal
+        returns (uint256 id)
+    {
+        PolicyVault.OpenGoalParams memory params =
+            _paramsWithAttempts(budget, cap, calls, attempts, OTHER_PAYER, alice);
+        uint256 fee = 2 * inco.getFee();
+        vm.deal(alice, fee);
+        vm.prank(alice);
+        id = vault.openGoal{value: fee}(params);
+        processAllOperations();
     }
 
     function testClosedGoalRejectsSpend() public {

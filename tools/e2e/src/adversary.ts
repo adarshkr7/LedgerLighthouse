@@ -173,6 +173,14 @@ const GOAL_EXPIRY = {
   calls: 1,
 } as const;
 
+/**
+ * Every goal's attempt budget. Generous on purpose: the strategies above make
+ * several requests per goal, rejections included, and must be refused by the
+ * policy they test, not by running out of attempts. The attempt budget itself
+ * is tested in `contracts/test/ProbeLeak.t.sol`.
+ */
+const CAMPAIGN_ATTEMPTS = 32;
+
 /** Under the budget. Approved, and its attestation is what C8 replays. */
 const SMALL_ASK = 500n;
 /** Clears perCallCap, exceeds the remaining budget. Rejected confidentially. */
@@ -438,6 +446,7 @@ async function openGoal(spec: {
         budgetCiphertext,
         perCallCapCiphertext,
         callsRemaining: spec.calls,
+        maxAttempts: CAMPAIGN_ATTEMPTS,
         payer,
         relay: relayAddress,
         asset: usdcAddress,
@@ -535,6 +544,7 @@ async function c11PayerCapture(victim: OpenedGoal): Promise<void> {
             budgetCiphertext: ownCiphertext,
             perCallCapCiphertext: ownCapCiphertext,
             callsRemaining: 255,
+            maxAttempts: 255,
             payer: victim.payer,
             relay: relayAddress,
             asset: usdcAddress,

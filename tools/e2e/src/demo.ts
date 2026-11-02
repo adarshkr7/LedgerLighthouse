@@ -84,6 +84,8 @@ loadDotEnv();
 const BUDGET = 200_000n; // 0.20 USDC, encrypted
 const PER_CALL_CAP = 6_000_000n; // 6.00 USDC, encrypted — deliberately above run 2's price
 const CALLS_REMAINING = 5;
+/** Every request spends one, approved or not; reclaim never returns it. */
+const MAX_ATTEMPTS = 10;
 /**
  * Above the encrypted budget so Inco binds first (ARCHITECTURE.md), and
  * above run 2's 0.35 ask so a skeptic cannot say the payer simply could not
@@ -195,6 +197,7 @@ const openHash = await userWallet.writeContract({
       budgetCiphertext,
       perCallCapCiphertext,
       callsRemaining: CALLS_REMAINING,
+      maxAttempts: MAX_ATTEMPTS,
       payer,
       relay: relayAddress,
       asset: usdcAddress,

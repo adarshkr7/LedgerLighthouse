@@ -180,6 +180,7 @@ const openHash = await userWallet.writeContract({
       budgetCiphertext,
       perCallCapCiphertext,
       callsRemaining: 5,
+      maxAttempts: 10,
       // Never funded and never signs: nothing here settles. It only has to be
       // an address no goal has bound yet, so a fresh one each run.
       payer: throwawayPayer,

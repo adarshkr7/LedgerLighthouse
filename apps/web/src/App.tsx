@@ -80,6 +80,12 @@ const FUNDING_HEADROOM = 100_000n; // 0.10 USDC
  */
 const PER_CALL_CAP = 6_000_000n; // 6.00 USDC
 const CALLS_REMAINING = 5;
+/**
+ * Every request spends one, approved or rejected, and none comes back. Twice the
+ * calls leaves room for honest rejections while capping what a compromised relay
+ * can learn about the encrypted limits at ten yes/no answers.
+ */
+const MAX_ATTEMPTS = 10;
 
 /** How far over the chosen budget the overcharge vendor asks. */
 const OVERCHARGE_MARGIN = 50_000n; // 0.05 USDC
@@ -691,6 +697,7 @@ export default function App() {
             budgetCiphertext,
             perCallCapCiphertext,
             callsRemaining: CALLS_REMAINING,
+            maxAttempts: MAX_ATTEMPTS,
             payer,
             relay: config.relayAddress,
             asset: config.usdcAddress,
