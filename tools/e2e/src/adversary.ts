@@ -174,6 +174,22 @@ const GOAL_EXPIRY = {
 } as const;
 
 /**
+ * Goal E, C14's. The cap is the secret a probing relay wants; the budget is
+ * ample so that only the cap can refuse. Four attempts allow four yes/no
+ * answers, so a binary search over 0 to 1 USDC must stop with the cap known
+ * only to within 1/16 of that range, and a fifth question must revert.
+ */
+const GOAL_PROBE = {
+  label: "probe",
+  budget: 5_000_000n,
+  perCallCap: 137_391n,
+  calls: 4,
+  attempts: 4,
+} as const;
+/** C14 searches the cap over [0, PROBE_RANGE). */
+const PROBE_RANGE = 1_000_000n;
+
+/**
  * Every goal's attempt budget. Generous on purpose: the strategies above make
  * several requests per goal, rejections included, and must be refused by the
  * policy they test, not by running out of attempts. The attempt budget itself
@@ -415,6 +431,7 @@ async function openGoal(spec: {
   budget: bigint;
   perCallCap: bigint;
   calls: number;
+  attempts?: number;
 }): Promise<OpenedGoal> {
   // Before openGoal — the payer address is a field of the goal record
   // (ARCHITECTURE.md §3.4), so the key must exist first.
@@ -446,7 +463,7 @@ async function openGoal(spec: {
         budgetCiphertext,
         perCallCapCiphertext,
         callsRemaining: spec.calls,
-        maxAttempts: CAMPAIGN_ATTEMPTS,
+        maxAttempts: spec.attempts ?? CAMPAIGN_ATTEMPTS,
         payer,
         relay: relayAddress,
         asset: usdcAddress,
@@ -657,6 +674,90 @@ async function attemptSpend(
       (authorized > 0n ? ` (${formatUsdc(authorized)} authorized)` : ""),
   );
   return { authorized, seq: requested.seq, decision: outcome.decision, txs };
+}
+
+// ----------------------------------------------------------------- C14
+
+/**
+ * C14: binary-search the encrypted cap, live, against the attempt budget.
+ *
+ * Every request is a public yes/no question about the encrypted limits. Before
+ * the attempt budget, rejections were free and approvals could be reclaimed,
+ * so a relay could search the cap to the unit (`ProbeLeak.t.sol`: exact in 23).
+ * Here the goal allows four attempts. The search asks four questions, never
+ * signs anything, and then asks a fifth, which must revert `NoAttemptsLeft`
+ * with the cap still only known to lie in an interval 1/16 of the range wide.
+ */
+async function c14Probe(goal: OpenedGoal & { attempts: number }): Promise<void> {
+  console.log(`\n  C14 on goal ${goal.goalId}: binary search of the cap over 0 to ${formatUsdc(PROBE_RANGE)}`);
+  let lo = 0n;
+  let hi = PROBE_RANGE;
+  const txs: Tx[] = [{ label: "open goal", hash: goal.openTx }];
+  let asked = 0;
+  for (let i = 0; i < goal.attempts; i++) {
+    const mid = (lo + hi) / 2n;
+    const requested = await relay.requestSpend(goal.goalId, mid, DEMO_PAYEES[0]!, "adversary/probe", payBy());
+    txs.push({ label: `probe ${i + 1} commit`, hash: requested.commitTx });
+    const outcome = await pollForDecision(decisions, requested.decisionHandle, { timeoutMs: 180_000 });
+    if (outcome.kind === "timeout") {
+      record({
+        id: "C14",
+        name: "binary-search the encrypted cap",
+        targets: "the attempt budget",
+        expected: `${goal.attempts} answers, then NoAttemptsLeft`,
+        observed: `no decision for probe ${i + 1}: Inco did not answer in time`,
+        verdict: "inconclusive",
+        txs,
+      });
+      return;
+    }
+    const fin = await relay.finalizeDecision(
+      goal.goalId,
+      requested.seq,
+      outcome.decision.approved,
+      outcome.decision.signatures,
+    );
+    txs.push({ label: `probe ${i + 1} finalize`, hash: fin.txHash });
+    asked++;
+    // Approved means mid <= cap: the cap is at least mid.
+    if (outcome.decision.approved) lo = mid;
+    else hi = mid;
+    console.log(
+      `    probe ${i + 1}: ${formatUsdc(mid)} -> ${outcome.decision.approved ? "APPROVED" : "REJECTED"}; ` +
+        `cap in [${formatUsdc(lo)}, ${formatUsdc(hi)})`,
+    );
+  }
+
+  let fifth = "accepted";
+  try {
+    await relay.requestSpend(goal.goalId, (lo + hi) / 2n, DEMO_PAYEES[0]!, "adversary/probe", payBy());
+  } catch (e) {
+    const text = e instanceof Error ? `${e.name} ${e.message}` : String(e);
+    fifth = /NoAttemptsLeft/.test(text) ? "reverted NoAttemptsLeft" : `reverted: ${text.slice(0, 160)}`;
+  }
+  const remaining = (await publicClient.readContract({
+    address: vaultAddress,
+    abi,
+    functionName: "attemptsRemaining",
+    args: [goal.goalId],
+  })) as number;
+
+  const bounded = hi - lo >= PROBE_RANGE >> BigInt(goal.attempts) && lo <= goal.perCallCap && goal.perCallCap < hi;
+  const held = fifth === "reverted NoAttemptsLeft" && bounded && asked === goal.attempts;
+  record({
+    id: "C14",
+    name: "binary-search the encrypted cap",
+    targets: "the attempt budget",
+    expected: `${goal.attempts} answers, cap left in an interval at least ${formatUsdc(
+      PROBE_RANGE >> BigInt(goal.attempts),
+    )} wide, then NoAttemptsLeft`,
+    observed:
+      `${asked} answers; cap in [${formatUsdc(lo)}, ${formatUsdc(hi)}), width ${formatUsdc(hi - lo)}; ` +
+      `next request ${fifth}; attemptsRemaining ${remaining}`,
+    verdict: held ? "held" : "deviated",
+    txs,
+    noTx: "the fifth request reverts in gas estimation and is never broadcast",
+  });
 }
 
 // ----------------------------------------------------------------- C13
@@ -1093,6 +1194,14 @@ const health = await fetch(`${signerUrl}/health`).catch(() => undefined);
 if (!health?.ok) throw new Error(`signer is not reachable at ${signerUrl}. Start it first.`);
 console.log(`  chain  ${chainId} (${network.label})\n  vault  ${vaultAddress}\n  signer ${signerUrl}`);
 
+if (process.argv.includes("--only-c14")) {
+  rule("C14 - probing the encrypted cap");
+  const probe = await openGoal(GOAL_PROBE);
+  await c14Probe({ ...probe, attempts: GOAL_PROBE.attempts });
+  const bad = findings.filter((f) => f.verdict !== "held");
+  process.exit(bad.length > 0 ? 1 : 0);
+}
+
 rule("opening goals");
 const budgetBound = await openGoal(GOAL_BUDGET_BOUND);
 const capBound = await openGoal(GOAL_CAP_BOUND);
@@ -1127,6 +1236,12 @@ if (replayable === undefined) {
 
 rule("C6 — collecting after the vendor's hold");
 await c6ExpiredHold(await openGoal(GOAL_EXPIRY));
+
+rule("C14 - probing the encrypted cap");
+{
+  const probe = await openGoal(GOAL_PROBE);
+  await c14Probe({ ...probe, attempts: GOAL_PROBE.attempts });
+}
 
 record({
   id: "C7",
