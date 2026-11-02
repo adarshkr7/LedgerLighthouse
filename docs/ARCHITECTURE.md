@@ -22,7 +22,7 @@ Base Sepolia, chain id `84532`.
 
 The PolicyVault was redeployed twice on 9 October 2026, again on 19 October, and on 2 November. [`0x0C759D06…F15921`](https://sepolia.basescan.org/address/0x0C759D06a1c14F43852D7b078Db2f8C342F15921) was deployed before each payer was bound to one goal (`48805e9`), and the adversary campaign's payer-capture attack succeeded against it. [`0x518B8701…3522c`](https://sepolia.basescan.org/address/0x518B8701484ba99A38f60090cd4a2cc710d3522c) added the binding but kept the per-call cap public. [`0x052E52a2…4feD8`](https://sepolia.basescan.org/address/0x052E52a28AA15e0B556de4FCe3d0BEBb7EB4feD8) encrypted the cap (§5.1) but signed every authorization for an hour. [`0x132DDf2b…53FBC`](https://sepolia.basescan.org/address/0x132DDf2b66A1595f10a3104f272BeB1236c53FBC), deployed on 19 October, ended each authorization at the vendor's hold and returned unpaid approvals to the budget (§6.8), which made probing free. The current vault, deployed on 2 November 2026, adds the attempt budget (§7). Each log in `docs/runs` names the vault it ran against. The current vault is not yet source-verified on Basescan; TraceAnchor is.
 
-No recorded run uses the current vault yet. The enclave signer names `0x132DDf…` until its `POLICY_VAULT_ADDRESS` secret is changed (§12).
+On 2 November 2026 the enclave signer was rebound to the current vault on machine `0000000000000745`, and the demo, the adversary campaign with the live probing strategy C14, and the benchmark all ran against it (`docs/runs/*-2026-11-02-*`).
 
 Settlement asset: USDC at [`0x036CbD53842c5426634e7929541eC2318f3dCF7e`](https://sepolia.basescan.org/address/0x036CbD53842c5426634e7929541eC2318f3dCF7e).
 
