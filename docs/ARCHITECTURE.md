@@ -426,8 +426,9 @@ are the specification:
 | Frozen window expired | `410` |
 | EIP-712 domain mismatch vs the token's own `DOMAIN_SEPARATOR()` | `500` |
 
-**Why it cannot be eliminated:** x402's `exact` scheme requires an EIP-3009 signature from the payer,
-which must come from an EOA key. A contract cannot produce one.
+**Why it exists:** x402's `exact` scheme on EVM has three transfer methods. The one this system uses,
+EIP-3009, requires a 65-byte signature that recovers to the payer, so the payer must be a key. The
+scheme's ERC-7710 method lets a smart account pay instead; this system does not use it.
 
 **What ROFL changes:** the key is derived inside an attested enclave and never written to disk, so
 "trusted to hold a key safely" stops being an assumption about operator discipline. What remains
