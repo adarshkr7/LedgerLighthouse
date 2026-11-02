@@ -1,0 +1,65 @@
+$ tsx src/tee-check.ts "--" "--equal"
+
+--- preflight -----------------------------------------------------
+
+  pass  chain                             84532
+  pass  vault                             0x7F5833730033a1d320b3536CE08FD641330a4966
+  pass  user (pays the Inco fee)          0x28384D2aBD29cc57E495784ed6f2711b7Ce376B8  0.034305031407326863 ETH
+  pass  relay (gas only)                  0x25e0a349480f32A474bdf24c1c7956c2F919e825  0.00394838279330313 ETH
+  pass  Inco executor deployed            0x4b9911b0191B0b6a6eA8F2Ed562e20Cff5AC8624
+  pass  Inco fee                          0.000001 ETH per encrypted input
+
+--- 1. encrypt the budget client-side -----------------------------
+
+  pass  encrypted                         0.1 USDC in 48ms
+  pass  ciphertext is opaque              2634 hex chars
+
+--- 2. open a goal — ciphertext becomes an on-chain handle --------
+
+  pass  openGoal confirmed                3.52s  gas 485360
+  pass  goalId                            9
+  pass  goal visible to the RPC           payerGoal = 9
+  pass  budget handle                     0xfee00da7b164116173e1f70461a1a397e7eb1d5f169d547d8992fac73c000800
+
+  The handle above is the whole point: it is what the chain stores instead
+  of 0.1. Reading it back tells you nothing.
+
+--- 3. spend 0.06 — inside the encrypted budget -------------------
+
+  pass  requestSpend confirmed            2.55s  gas 326528
+  pass  decision handle                   0x501e52a2f8c790e6d992ad03e0e034bc226f568cb8f372614458de12af2a0000
+        committed — and at this moment nobody, including this script, knows the answer
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x501e52a2f8c790e6d992ad03e0e034bc226f568cb8f372614458de12af2a0000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x501e52a2f8c790e6d992ad03e0e034bc226f568cb8f372614458de12af2a0000 not found, it might not have been processed yet, try again later
+  pass  attestedReveal                    true in 7.08s (1 attempt), 2 signatures
+  pass  decision is true                  
+  pass  flipped plaintext is rejected     claimed false, on-chain verification refused it
+  pass  finalizeDecision confirmed        3.69s  gas 106735
+  pass  on-chain isApproved agrees        true
+
+--- 4. spend 0.06 — inside the cap, past the budget ---------------
+
+  The encrypted cap is 6.0 and the payee is allowlisted, so only
+  the budget can refuse this. The enclave already debited 0.06,
+  leaving 0.04 — a figure this process never saw.
+
+  pass  requestSpend confirmed            2.36s  gas 326528
+  pass  decision handle                   0xba3ef133fe1caa551c997e070eed93b388410e8dcc451808a5bc0c2fdb830000
+        committed — and at this moment nobody, including this script, knows the answer
+  pass  attestedReveal                    false in 3.79s (1 attempt), 2 signatures
+  pass  decision is false                 
+  pass  flipped plaintext is rejected     claimed true, on-chain verification refused it
+  pass  finalizeDecision confirmed        4.40s  gas 101334
+  pass  on-chain isApproved agrees        false
+
+--- 5. close the goal ---------------------------------------------
+
+  pass  closeGoal confirmed               gas 30030
+
+--------------------------------------------------------------
+
+  Inco TEE round trip verified: encryption in, attested decryption out,
+  both decisions checked on chain, goal 9 closed.
+
+  https://sepolia.basescan.org/address/0x7F5833730033a1d320b3536CE08FD641330a4966
+

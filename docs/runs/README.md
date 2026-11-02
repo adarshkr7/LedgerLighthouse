@@ -5,6 +5,33 @@ Kept because a demo that depends on a venue's wifi is a demo with a single point
 of failure — and because a transaction hash is checkable by someone who does not
 trust us, which a live walkthrough is not.
 
+## 2 November 2026: the attempt budget
+
+Every request now spends one of a goal's public attempts, approved or rejected, and reclaim never
+returns it, so a relay probing the encrypted cap learns at most one bit per attempt. That needed a
+new vault: PolicyVault
+[`0x7F58…a4966`](https://sepolia.basescan.org/address/0x7F5833730033a1d320b3536CE08FD641330a4966)
+([deploy](https://sepolia.basescan.org/tx/0x8edbc7c2d24af8d89eb57f94508ed670380e4c9a1f489b7073cc78cdfffcbfa9)).
+The enclave signer ran on machine `0000000000000745` with its `POLICY_VAULT_ADDRESS` secret set to
+it. The first attempt at that secret stored `-n 0x7F58…`, because `echo -n` on Windows printed the
+flag; the signer refused to boot and said why on `/health`, and the second attempt fixed it.
+
+| Log | What it shows |
+| --- | --- |
+| `demo-2026-11-02-attempt-budget.log` | Exit 0. The 0.01 call approved, signed in the enclave and settled; the 0.35 call rejected on chain, nothing moved. The model's provider answered 503, so the scripted stand-in decided both, and the log says so |
+| `adversary-2026-11-02-attempt-budget.log` | C1 to C13 in 14 runs, all held, 21 transactions linked under the findings |
+| `adversary-2026-11-02-c14-probe.log` | C14: a binary search of a 0.137391 cap with 4 attempts. 0.5, 0.25 rejected, 0.125 approved, 0.1875 rejected; the fifth request reverted `NoAttemptsLeft` with the cap known only to lie in [0.125, 0.1875) |
+| `bench-2026-11-02-attempt-budget.log`, `bench-2026-11-02.json` | 30 approved and 20 rejected calls. Median 14.9 s per paid call, 10.0 s per rejected one; `requestSpend` about 327,000 gas either way |
+| `bench-2026-11-02-zero-calls.log`, `.json` | Kept as a record of a flawed run: the goal had exactly 30 calls, so the 20 "rejected" calls met a call count of zero and were refused in plaintext without the encrypted comparison. That is why they looked cheaper and faster. `bench.ts` now opens one spare call |
+| `tee-check-2026-11-02-equal-calldata.log` | `tee-check --equal`: the same amount and resource twice, one approved and one rejected by the budget. Both `requestSpend` calls used exactly 326,528 gas, so gas does not reveal the outcome |
+
+## 1 November 2026: C6 live
+
+`adversary-2026-11-01-c6-live.log`, on vault `0x132DDf…53FBC`, the first with authorizations that
+end at the vendor's hold. All 14 runs held, C6 live for the first time: after a 60-second hold the
+signer answered 410, USDC refused the authorization as expired, and one `reclaimExpired` restored
+the call.
+
 ## 9 October 2026: the encrypted cap
 
 The per-call cap used to be public, so every vendor could read the most a single call would pay

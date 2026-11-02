@@ -1,0 +1,172 @@
+$ tsx src/adversary.ts
+
+--- Track 2 — A2 adversary campaign -----------------------------------
+
+  Threat model: arbitrary code execution in the orchestrator.
+  No agent, no model. The adversary calls requestSpend directly.
+
+  chain  84532 (Base Sepolia)
+  vault  0x132DDf2b66A1595f10a3104f272BeB1236c53FBC
+  signer https://p8402.m1854.opf-testnet-rofl-9.rofl.app
+
+--- opening goals -----------------------------------------------------
+
+  goal 1 (budget-bound)
+    budget      0.25 USDC  (encrypted)
+    cap x calls 0.2 x 3 = 0.6 USDC  (encrypted cap, public call count)
+    payer       0x7D782B896E86f50569129ec0f3c6Adf1473BdbcA
+    opened      https://sepolia.basescan.org/tx/0xecdc3a74a2bf915633063bbfec0c9a5fc09a68038dd07bf38d20238156e5ec3d
+  goal 2 (cap-bound)
+    budget      1.0 USDC  (encrypted)
+    cap x calls 0.1 x 2 = 0.2 USDC  (encrypted cap, public call count)
+    payer       0xD6Aa51361cba2CB9Fd6644816505151BD11E9292
+    opened      https://sepolia.basescan.org/tx/0x9ca582b7d2d0cc74ae869f37e69d6afd65bc7e49bb7682572192f1c72500b811
+  goal 3 (refusals)
+    budget      0.003 USDC  (encrypted)
+    cap x calls 0.1 x 4 = 0.4 USDC  (encrypted cap, public call count)
+    payer       0x697Ba17297536B9F653317d47B8da05cbB120569
+    opened      https://sepolia.basescan.org/tx/0x2de3720d32238dd9d00147cee469905f0fb35617c30fd74344690efcb2684d17
+
+--- C13 — the encrypted cap alone -------------------------------------
+
+
+  C13 on goal 2 (cap-bound) — asking 0.100001, one unit over the cap
+    seq 1: ask 0.100001 -> REJECTED by policy
+[  ok  ] C13  one unit over the encrypted cap, inside the budget
+         expected: REJECTED on chain, not reverted
+         observed: REJECTED on chain at seq 1
+         tx:       open goal                  https://sepolia.basescan.org/tx/0x9ca582b7d2d0cc74ae869f37e69d6afd65bc7e49bb7682572192f1c72500b811
+         tx:       commit seq 1               https://sepolia.basescan.org/tx/0x20b4d9faebc5b33474432030f05cbd43bdbee0110611f85620bcd4e01175c8c9
+         tx:       finalize seq 1             https://sepolia.basescan.org/tx/0xac0fcc783e01ebe69c7933d249f5d449fb9876d8561300db53c7323de049e528
+
+--- C1 — maximum extraction -------------------------------------------
+
+
+  C1 on goal 1 (budget-bound) — asking perCallCap every call
+    seq 1: ask 0.2 -> APPROVED, signer signed (0.2 authorized)
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0xf3f2345ccca3eae37818ed6d3b2fd4d09b1268b7ca2987bb95bcbf26c1cb0000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0xf3f2345ccca3eae37818ed6d3b2fd4d09b1268b7ca2987bb95bcbf26c1cb0000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0xf3f2345ccca3eae37818ed6d3b2fd4d09b1268b7ca2987bb95bcbf26c1cb0000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0xf3f2345ccca3eae37818ed6d3b2fd4d09b1268b7ca2987bb95bcbf26c1cb0000 not found, it might not have been processed yet, try again later
+    seq 2: ask 0.2 -> REJECTED by policy
+    budget exhausted after 0.2
+[  ok  ] C1   max extraction (budget-bound)
+         expected: <= 0.25 = min(budget 0.25, cap x calls 0.6)
+         observed: 0.2 authorized
+         tx:       open goal                  https://sepolia.basescan.org/tx/0xecdc3a74a2bf915633063bbfec0c9a5fc09a68038dd07bf38d20238156e5ec3d
+         tx:       commit seq 1               https://sepolia.basescan.org/tx/0x36a1286ad9eb30f8ea4a1db2220df20f3b101b1f29e4041849bf45ac6a8f57e1
+         tx:       finalize seq 1             https://sepolia.basescan.org/tx/0xc60295ba4e33038689c69fef6bc6762dc25308303e19fe6db163fe2c24b28b29
+         tx:       commit seq 2               https://sepolia.basescan.org/tx/0x4c681263bc0c94e0c7f4ab586751f79fbb2774b62e3560688d76dd1a0f352ed5
+         tx:       finalize seq 2             https://sepolia.basescan.org/tx/0xc692af34844d873ee7035c0ae2f0221388067a48b581a344e1aa62263c4f648f
+
+  C1 on goal 2 (cap-bound) — asking perCallCap every call
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x9db35ca9300604feeddc03e535f023180c90ba0cf5bdfe2ef9dd94b12f720000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x9db35ca9300604feeddc03e535f023180c90ba0cf5bdfe2ef9dd94b12f720000 not found, it might not have been processed yet, try again later
+    seq 2: ask 0.1 -> APPROVED, signer signed (0.1 authorized)
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x3654480cc612afb238a1ba87e2279666c700e48784c20aaac759d5241f7e0000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x3654480cc612afb238a1ba87e2279666c700e48784c20aaac759d5241f7e0000 not found, it might not have been processed yet, try again later
+    seq 3: ask 0.1 -> APPROVED, signer signed (0.1 authorized)
+[  ok  ] C1   max extraction (cap-bound)
+         expected: <= 0.2 = min(budget 1.0, cap x calls 0.2)
+         observed: 0.2 authorized
+         tx:       open goal                  https://sepolia.basescan.org/tx/0x9ca582b7d2d0cc74ae869f37e69d6afd65bc7e49bb7682572192f1c72500b811
+         tx:       commit seq 2               https://sepolia.basescan.org/tx/0x6a3d77ad180b8a29f0e6bc38899149e0f86e8678f05969ae5349991f61c14818
+         tx:       finalize seq 2             https://sepolia.basescan.org/tx/0x10cdf1703c8d4b25bda2c9cbdd899e1f5d8f44c40e4ee4d7ad1a5d6e83ce0255
+         tx:       commit seq 3               https://sepolia.basescan.org/tx/0xc7209d853d1f82b898e98f95b85f87d0e0196905539608a7f6fe32ca444e5b41
+         tx:       finalize seq 3             https://sepolia.basescan.org/tx/0x5f8afa32ea5dc2b042dd8526f0c6c3f3ea957e22bf4682868ff05ead485e8c6e
+
+--- C2, C3, C4, C8, C9, C10 — refusals --------------------------------
+
+[  ok  ] C2   settlement to a non-allowlisted payee
+         expected: refusal containing "PayeeNotAllowlisted"
+         observed: refused: PayeeNotAllowlisted
+         tx:       open goal (allowlist set)  https://sepolia.basescan.org/tx/0x2de3720d32238dd9d00147cee469905f0fb35617c30fd74344690efcb2684d17
+         no tx:    refused at gas estimation, so nothing was broadcast
+[  ok  ] C4   two concurrent requestSpend on one goal
+         expected: refusal containing "SpendPending"
+         observed: refused: SpendPending
+         tx:       commit seq 1 (pending)     https://sepolia.basescan.org/tx/0x6acde4c695195e086c1b3bf27e67ff01d60c05125a21dbd10cad288f91ea9dc0
+         no tx:    refused at gas estimation, so nothing was broadcast
+[  ok  ] C10  signer asked before finalisation
+         expected: not-ready (HTTP 425)
+         observed: not-ready
+         tx:       commit seq 1 (pending)     https://sepolia.basescan.org/tx/0x6acde4c695195e086c1b3bf27e67ff01d60c05125a21dbd10cad288f91ea9dc0
+         no tx:    the signer answers off chain
+    seq 1: ask 0.0005 -> APPROVED (C8 now has a genuine attestation)
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x8b12b292d4503236d75e6b9f66195d976433449e532dae7a00847950e7030000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x8b12b292d4503236d75e6b9f66195d976433449e532dae7a00847950e7030000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x8b12b292d4503236d75e6b9f66195d976433449e532dae7a00847950e7030000 not found, it might not have been processed yet, try again later
+[  ok  ] C3   ask exceeding the encrypted budget
+         expected: REJECTED on chain at seq 2, not reverted
+         observed: REJECTED on chain at seq 2
+         tx:       commit seq 2               https://sepolia.basescan.org/tx/0xc9f8462299f004df30c9370039b68a362b25beaef6f82252b4fff79ddb3d5b65
+         tx:       finalize seq 2             https://sepolia.basescan.org/tx/0x50ddcd255cc870f71974a0b45f53b99e8c38045385f943ee444aa6118b12db9d
+[  ok  ] C9   signer asked for a policy-rejected spend
+         expected: refused, HTTP 403, terminal
+         observed: refused (HTTP 403)
+         tx:       finalize seq 2             https://sepolia.basescan.org/tx/0x50ddcd255cc870f71974a0b45f53b99e8c38045385f943ee444aa6118b12db9d
+         no tx:    the signer answers off chain
+[  ok  ] C8   genuine attestation from another seq, replayed
+         expected: refusal containing "InvalidAttestation"
+         observed: refused: InvalidAttestation
+         tx:       finalize seq 1 (source)    https://sepolia.basescan.org/tx/0x17346e32a0984fa3fc4720146698e7ee878081fb3861a247a7ea689dd57a91df
+         tx:       commit seq 3 (target)      https://sepolia.basescan.org/tx/0xff5e0ae4ae0f8d5f07a3617c5e6dc7094228db03f4e6d846ddcf392c88ca0c3c
+         no tx:    refused at gas estimation, so nothing was broadcast
+
+--- C11, C12 — payer capture ------------------------------------------
+
+[  ok  ] C11  second goal opened for somebody else's payer
+         expected: refusal containing "PayerAlreadyBound"
+         observed: refused: PayerAlreadyBound
+         tx:       open goal 1 (binds payer)  https://sepolia.basescan.org/tx/0xecdc3a74a2bf915633063bbfec0c9a5fc09a68038dd07bf38d20238156e5ec3d
+         no tx:    refused at gas estimation, so nothing was broadcast
+[  ok  ] C12  the payer is still bound to the goal that minted it
+         expected: payerGoal(0x7D782B89…) == 1
+         observed: payerGoal returned 1
+         tx:       open goal 1 (binds payer)  https://sepolia.basescan.org/tx/0xecdc3a74a2bf915633063bbfec0c9a5fc09a68038dd07bf38d20238156e5ec3d
+
+--- C5 — idempotency --------------------------------------------------
+
+[  ok  ] C5   authorization replay returns an identical tuple
+         expected: byte-identical, including validAfter/validBefore
+         observed: identical
+         tx:       finalize seq 1 (approved)  https://sepolia.basescan.org/tx/0x17346e32a0984fa3fc4720146698e7ee878081fb3861a247a7ea689dd57a91df
+         no tx:    both authorizations are signer responses, off chain
+
+--- C6 — collecting after the vendor's hold ---------------------------
+
+  goal 4 (expiry)
+    budget      0.002 USDC  (encrypted)
+    cap x calls 0.1 x 1 = 0.1 USDC  (encrypted cap, public call count)
+    payer       0xae268081073DF37396083d86e6fBa93fFb973c36
+    opened      https://sepolia.basescan.org/tx/0xa3f81ba13245750ece9c5050f100560fdf15100640069d76f580c01581f9121d
+  hold ends 2026-10-31T23:15:27.000Z, window ends 1793488527
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x4ad1db896176552e5d4cc89dc65276f36ff6adda0d682dcc1dfc185c91960000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x4ad1db896176552e5d4cc89dc65276f36ff6adda0d682dcc1dfc185c91960000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x4ad1db896176552e5d4cc89dc65276f36ff6adda0d682dcc1dfc185c91960000 not found, it might not have been processed yet, try again later
+  waiting 54s for the hold to end
+[  ok  ] C6   an authorization collected after the vendor's hold
+         expected: 410 from the signer, the token refuses, one reclaim restores the call
+         observed: signer 410; the token refused it as expired; reclaim reclaimed, call restored; second reclaim already
+         tx:       commit seq 1               https://sepolia.basescan.org/tx/0xeb0a5d0c7ea86d43817b279a20241061ddf5fd8068263f9b8bbb3edd5f5db2e1
+         tx:       finalize seq 1             https://sepolia.basescan.org/tx/0x9a1eba14eed2fec4d0c9d126b2f47c6f3cd91dcea60932ad47031c05ed8884a1
+         tx:       reclaim seq 1              https://sepolia.basescan.org/tx/0x5caa64e1df9f9154a0803658e1bf324988106e34f120986dc13a290b3aebc955
+[  ok  ] C7   terms substituted between request and signature
+         expected: no channel exists
+         observed: authorize() accepts (goalId, seq) only — nothing to substitute
+
+--- verdict -----------------------------------------------------------
+
+  strategies run   14
+  held             14
+  deviated         0
+  inconclusive     0
+  transactions     21 distinct, linked under each finding
+
+  extraction, budget-bound goal   0.2 USDC
+    predicted ceiling             0.25 (budget binds first)
+  extraction, cap-bound goal      0.2 USDC
+    predicted ceiling             0.2 (cap x calls binds first)
+
+  Note: extraction is counted as *authorized*, not settled. A released
+  EIP-3009 signature is the spending authority; settlement is downstream.
