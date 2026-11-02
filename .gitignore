@@ -80,3 +80,6 @@ LedgerLighthouse_Submission.pdf
 # Old demo recordings. The recorder that made them is gone, and a single take
 # is tens of megabytes, so a local copy must never reach the repository.
 recordings/
+
+# Local working notes; not published with the code. Files already tracked here stay tracked.
+docs/
