@@ -65,8 +65,17 @@ const BUDGET = 100_000n;
 // Encrypted too, and far above both spends, so the cap cannot be what refuses
 // either of them. A bounce here has exactly one possible source: the budget.
 const PER_CALL_CAP = 6_000_000n;
-const FIRST_SPEND = 40_000n; // 0.04 — inside the budget
-const SECOND_SPEND = 90_000n; // 0.09 — inside the *cap*, past what the budget has left
+/**
+ * `--equal` sends the same amount and resource twice, 0.06 each: the first is
+ * approved, the second rejected by what the budget has left. Identical calldata,
+ * so any gas difference between the two `requestSpend` calls comes from the
+ * outcome, not from the inputs.
+ */
+const EQUAL = process.argv.includes("--equal");
+const FIRST_SPEND = EQUAL ? 60_000n : 40_000n; // inside the budget
+const SECOND_SPEND = EQUAL ? 60_000n : 90_000n; // inside the *cap*, past what the budget has left
+const FIRST_RESOURCE = EQUAL ? "tee-check/equal" : "tee-check/inside-budget";
+const SECOND_RESOURCE = EQUAL ? "tee-check/equal" : "tee-check/past-budget";
 
 const { network, rpcUrl, usdcAddress } = networkFromEnv();
 const vaultAddress = requiredAddress("POLICY_VAULT_ADDRESS");
@@ -180,6 +189,7 @@ const openHash = await userWallet.writeContract({
       budgetCiphertext,
       perCallCapCiphertext,
       callsRemaining: 5,
+      maxAttempts: 10,
       // Never funded and never signs: nothing here settles. It only has to be
       // an address no goal has bound yet, so a fresh one each run.
       payer: throwawayPayer,
@@ -225,7 +235,7 @@ async function spend(amount: bigint, resource: string, expected: boolean): Promi
     address: vaultAddress,
     abi,
     functionName: "requestSpend",
-    args: [goalId, amount, relay.address, resource],
+    args: [goalId, amount, relay.address, resource, BigInt(Math.floor(Date.now() / 1_000) + 600)],
   });
   const receipt = await publicClient.waitForTransactionReceipt({ hash });
   check("requestSpend confirmed", receipt.status === "success", `${fmt(ms(started))}  gas ${receipt.gasUsed}`);
@@ -297,14 +307,14 @@ async function spend(amount: bigint, resource: string, expected: boolean): Promi
 
 // --------------------------------------------------------------- approved path
 rule(`3. spend ${formatUsdc(FIRST_SPEND)} — inside the encrypted budget`);
-await spend(FIRST_SPEND, "tee-check/inside-budget", true);
+await spend(FIRST_SPEND, FIRST_RESOURCE, true);
 
 // --------------------------------------------------------------- refused path
 rule(`4. spend ${formatUsdc(SECOND_SPEND)} — inside the cap, past the budget`);
 console.log(`  The encrypted cap is ${formatUsdc(PER_CALL_CAP)} and the payee is allowlisted, so only`);
 console.log(`  the budget can refuse this. The enclave already debited ${formatUsdc(FIRST_SPEND)},`);
 console.log(`  leaving ${formatUsdc(BUDGET - FIRST_SPEND)} — a figure this process never saw.\n`);
-await spend(SECOND_SPEND, "tee-check/past-budget", false);
+await spend(SECOND_SPEND, SECOND_RESOURCE, false);
 
 // --------------------------------------------------------------------- cleanup
 rule("5. close the goal");

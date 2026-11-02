@@ -16,7 +16,9 @@
     "fund": "tsx src/fund.ts",
     "whois": "tsx src/whois.ts",
     "sweep": "tsx src/sweep.ts",
-    "diagnose": "tsx src/diagnose.ts"
+    "reclaim": "tsx src/reclaim.ts",
+    "diagnose": "tsx src/diagnose.ts",
+    "bench": "tsx src/bench.ts"
   },
   "dependencies": {
     "@inco/lightning-js": "^1.0.2",

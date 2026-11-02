@@ -21,6 +21,15 @@
  * `requestSpend`. If the compute server stalls, the budget has moved and the
  * decision is unobtainable — a distinct, reportable state (ARCHITECTURE.md). Merging
  * it into "rejected" would be a lie about where the money went.
+ *
+ * ## The vendor's hold
+ *
+ * A vendor holds what it quoted for `maxTimeoutSeconds`, from the moment it
+ * answered 402, like a seat held while you pay. The authorization ends there
+ * too (`payBy`), so a payment slowed past the hold cannot be collected for a
+ * thing the vendor has already let go. A run with too little of the hold left
+ * stops before it commits anything. And an approved amount that was not paid
+ * goes back to the budget once its authorization has expired (`#reclaim`).
  */
 
 import {
@@ -46,6 +55,22 @@ import type { AuthorizeOutcome, SignerClient } from "./signer-client.js";
 
 /** How often a pending reveal reports that it is still waiting. */
 const REVEAL_WAITING_EVERY_MS = 5_000;
+
+/**
+ * The least hold a spend is committed against. A paid call took about 14 s on
+ * 9 October 2026 with Inco answering quickly, so a shorter hold would expire
+ * during the payment.
+ */
+const DEFAULT_MIN_HOLD_SECONDS = 20;
+
+/** The longest a failed run waits for its authorization to expire before reclaiming. */
+const DEFAULT_RECLAIM_WAIT_MS = 120_000;
+
+/**
+ * Past `validBefore` by this machine's clock before reclaiming. A Base block is
+ * two seconds, and the vault reads the time of the block it runs in.
+ */
+const RECLAIM_GRACE_MS = 4_000;
 
 // ------------------------------------------------------------------- events
 
@@ -114,6 +139,28 @@ export type PaymentEvent =
   | { readonly type: "signer-refused"; readonly status: number; readonly reason: string }
   | { readonly type: "signed"; readonly nonce: `0x${string}`; readonly value: string }
   | { readonly type: "settled"; readonly settlement: SettleResponse }
+  /**
+   * What became of an approved amount that was not paid.
+   *
+   *   - `waiting`: its authorization is still usable, until `validBefore`, and
+   *     the run waits for that before reclaiming.
+   *   - `reclaimed`: its authorization expired unused, and the budget and the
+   *     call came back.
+   *   - `collected`: the token consumed the authorization, so the money left the
+   *     payer even though this run did not get what it paid for.
+   *   - `deferred`: the authorization is still usable until `validBefore`, later
+   *     than this run waits. `pnpm --filter @ntux402/e2e run reclaim` finishes it.
+   *   - `failed`: the reclaim did not go through; `reason` says why.
+   */
+  | {
+      readonly type: "reclaim";
+      readonly goalId: bigint;
+      readonly seq: bigint;
+      readonly outcome: "waiting" | "reclaimed" | "collected" | "deferred" | "failed";
+      readonly validBefore: bigint;
+      readonly txHash?: `0x${string}`;
+      readonly reason?: string;
+    }
   | { readonly type: "failed"; readonly reason: string };
 
 // ------------------------------------------------------------------ outcomes
@@ -177,6 +224,14 @@ export interface PaymentLoopConfig {
   readonly poll?: PollOptions;
   /** How long to keep asking the signer while the chain read catches up. */
   readonly signerRetries?: number;
+  /** The least of the vendor's hold that must be left to commit a spend. */
+  readonly minHoldSeconds?: number;
+  /** The longest a failed run waits for its authorization to expire. */
+  readonly reclaimWaitMs?: number;
+  /** Milliseconds since the epoch. Tests replace it. */
+  readonly now?: () => number;
+  /** Tests replace it, so a wait for expiry does not take real time. */
+  readonly sleep?: (ms: number) => Promise<void>;
   readonly onEvent?: (event: PaymentEvent) => void;
 }
 
@@ -278,6 +333,8 @@ export class PaymentLoop {
       url,
       options.fresh === true ? { fresh: true } : {},
     );
+    // A 402 starts the vendor's hold. Everything from here on spends it.
+    const quotedAt = this.#now();
 
     if (first.kind === "ok") {
       emit({ type: "response-200", url, fromCache: first.fromCache });
@@ -323,10 +380,26 @@ export class PaymentLoop {
     const recovery = await this.#recoverOrphan(goalId, emit);
     if (recovery !== undefined) return recovery;
 
+    // --- the vendor's hold ---------------------------------------------------
+    // The authorization will end where the hold does. With too little of it
+    // left the payment would expire on the way, so stop before committing a
+    // debit for something the vendor is about to release.
+    const payBy = BigInt(Math.floor(quotedAt / 1_000) + terms.maxTimeoutSeconds);
+    const minHold = this.#config.minHoldSeconds ?? DEFAULT_MIN_HOLD_SECONDS;
+    const holdLeft = Number(payBy) - Math.floor(this.#now() / 1_000);
+    if (holdLeft < minHold) {
+      const reason =
+        `the vendor holds this for ${terms.maxTimeoutSeconds}s and ${Math.max(holdLeft, 0)}s ` +
+        `are left, less than the ${minHold}s a paid call needs. Nothing was committed; ` +
+        `ask again for a fresh hold.`;
+      emit({ type: "failed", reason });
+      return { kind: "failed", reason };
+    }
+
     // --- commit ------------------------------------------------------------
     let spend: SpendRequested;
     try {
-      spend = await relay.requestSpend(goalId, terms.amount, terms.payTo, terms.resource);
+      spend = await relay.requestSpend(goalId, terms.amount, terms.payTo, terms.resource, payBy);
     } catch (e) {
       const reason = `requestSpend failed: ${e instanceof Error ? e.message : String(e)}`;
       emit({ type: "failed", reason });
@@ -428,6 +501,7 @@ export class PaymentLoop {
               : 0,
         reason,
       });
+      await this.#reclaim(goalId, spend.seq, spend.validBefore, emit, { wait: true });
       return { kind: "failed", reason };
     }
 
@@ -446,6 +520,7 @@ export class PaymentLoop {
         `termsHash mismatch: signer signed against ${signed.termsHash}, ` +
         `requestSpend recorded ${spend.termsHash}`;
       emit({ type: "failed", reason });
+      await this.#reclaim(goalId, spend.seq, spend.validBefore, emit, { wait: true });
       return { kind: "failed", reason };
     }
 
@@ -489,6 +564,9 @@ export class PaymentLoop {
             ? attributeVendorText(paid.parsed.error)
             : "resource still demands payment after settlement";
       emit({ type: "failed", reason });
+      // The vendor holds the authorization and may still collect it, honestly
+      // or not, until it expires. The vault checks which happened.
+      await this.#reclaim(goalId, spend.seq, spend.validBefore, emit, { wait: true });
       return { kind: "failed", reason };
     }
 
@@ -546,7 +624,23 @@ export class PaymentLoop {
     }
     if (pending === 0n) return undefined;
 
-    const abandon = (reason: string): PaymentResult => {
+    // A seq this relay already finalized is not an orphan: the read came from a
+    // node behind our own receipt. Re-finalizing it reverts AlreadyFinalized,
+    // which a 50-call benchmark on 12 October 2026 hit four times in twenty.
+    // Wait for the node to catch up instead; requestSpend's own stale-refusal
+    // retry covers whatever lag remains.
+    if (relay.hasFinalized(goalId, pending)) {
+      await relay
+        .waitUntilVisible(
+          `finalization of ${goalId}:${pending}`,
+          async () => (await relay.pendingSeq(goalId)) !== pending,
+          30_000,
+        )
+        .catch(() => undefined);
+      return undefined;
+    }
+
+    const abandon =(reason: string): PaymentResult => {
       emit({ type: "orphan-abandoned", seq: pending, reason });
       return { kind: "failed", reason };
     };
@@ -593,13 +687,93 @@ export class PaymentLoop {
         approved: poll.decision.approved,
         txHash,
       });
-      return undefined;
     } catch (e) {
       return abandon(
         `goal ${goalId} is blocked by an unfinalized spend at seq ${pending} and finalizing it ` +
           `failed: ${e instanceof Error ? e.message : String(e)}`,
       );
     }
+
+    // The run that requested it died before signing, so an approved orphan was
+    // never paid. Usually Inco was slow, and the vendor's hold has long gone.
+    // Not waited for: this run has its own hold to keep.
+    if (poll.decision.approved) {
+      let validBefore: bigint | undefined;
+      try {
+        ({ validBefore } = await relay.validityWindow(goalId, pending));
+      } catch {
+        // Unreadable now. The reclaim tool finds it later; this run goes on.
+      }
+      if (validBefore !== undefined) {
+        await this.#reclaim(goalId, pending, validBefore, emit, { wait: false });
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * Gives an approved, unpaid amount back to the budget once its authorization
+   * can no longer be used.
+   *
+   * The vault decides, not this process. It refuses while the window is open
+   * and once the token has consumed the authorization, so this is safe after
+   * any failure that follows an approval, and the outcome reports what really
+   * happened to the money: `collected` means a vendor took it.
+   *
+   * With `wait`, a window that closes within `reclaimWaitMs` is waited out. A
+   * later one is reported `deferred` and left to the `reclaim` tool.
+   */
+  async #reclaim(
+    goalId: bigint,
+    seq: bigint,
+    validBefore: bigint,
+    emit: (event: PaymentEvent) => void,
+    options: { readonly wait: boolean },
+  ): Promise<void> {
+    const report = (
+      outcome: "waiting" | "reclaimed" | "collected" | "deferred" | "failed",
+      extra: { readonly txHash?: `0x${string}`; readonly reason?: string } = {},
+    ) => emit({ type: "reclaim", goalId, seq, outcome, validBefore, ...extra });
+
+    const untilExpiredMs = Number(validBefore) * 1_000 + RECLAIM_GRACE_MS - this.#now();
+    if (untilExpiredMs > 0) {
+      const limit = options.wait ? (this.#config.reclaimWaitMs ?? DEFAULT_RECLAIM_WAIT_MS) : 0;
+      if (untilExpiredMs > limit) {
+        report("deferred");
+        return;
+      }
+      report("waiting");
+      await this.#sleep(untilExpiredMs);
+    }
+
+    try {
+      const result = await this.#config.relay.reclaimExpired(goalId, seq);
+      switch (result.kind) {
+        case "reclaimed":
+          report("reclaimed", { txHash: result.txHash });
+          return;
+        case "already":
+          report("reclaimed", { reason: "another caller reclaimed it first" });
+          return;
+        case "collected":
+          report("collected");
+          return;
+        case "live":
+          report("deferred", { reason: "the vault still reads the authorization as usable" });
+          return;
+      }
+    } catch (e) {
+      report("failed", { reason: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
+  #now(): number {
+    return this.#config.now?.() ?? Date.now();
+  }
+
+  async #sleep(ms: number): Promise<void> {
+    if (this.#config.sleep) return this.#config.sleep(ms);
+    await new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   /**

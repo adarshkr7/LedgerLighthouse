@@ -17,10 +17,12 @@ Base Sepolia, chain id `84532`.
 
 | Contract | Address | Deployment tx |
 |---|---|---|
-| `PolicyVault` | [`0x052E52a28AA15e0B556de4FCe3d0BEBb7EB4feD8`](https://sepolia.basescan.org/address/0x052E52a28AA15e0B556de4FCe3d0BEBb7EB4feD8) | [`0x6960e625…eceff`](https://sepolia.basescan.org/tx/0x6960e625cc7bf16fc361b43f95f70356458ab671c15b2c09c65589352cbeceff) |
+| `PolicyVault` | [`0x7F5833730033a1d320b3536CE08FD641330a4966`](https://sepolia.basescan.org/address/0x7F5833730033a1d320b3536CE08FD641330a4966) | [`0x8edbc7c2…fcbfa9`](https://sepolia.basescan.org/tx/0x8edbc7c2d24af8d89eb57f94508ed670380e4c9a1f489b7073cc78cdfffcbfa9) |
 | `TraceAnchor` | [`0x065d5E16160159cAB7D841818aBc92b4E85D5818`](https://sepolia.basescan.org/address/0x065d5E16160159cAB7D841818aBc92b4E85D5818) | [`0x068c2d88…2f9900`](https://sepolia.basescan.org/tx/0x068c2d8883bfe2a294164da805274905aa33c85f2a68a27ab1c06892972f9900) |
 
-The PolicyVault was redeployed twice on 9 October 2026. [`0x0C759D06…F15921`](https://sepolia.basescan.org/address/0x0C759D06a1c14F43852D7b078Db2f8C342F15921) was deployed before each payer was bound to one goal (`48805e9`), and the adversary campaign's payer-capture attack succeeded against it. [`0x518B8701…3522c`](https://sepolia.basescan.org/address/0x518B8701484ba99A38f60090cd4a2cc710d3522c) added the binding but kept the per-call cap public. The current vault encrypts the cap (§5.1). Each log in `docs/runs` names the vault it ran against. The current vault is not yet source-verified on Basescan; TraceAnchor is.
+The PolicyVault was redeployed twice on 9 October 2026, again on 19 October, and on 2 November. [`0x0C759D06…F15921`](https://sepolia.basescan.org/address/0x0C759D06a1c14F43852D7b078Db2f8C342F15921) was deployed before each payer was bound to one goal (`48805e9`), and the adversary campaign's payer-capture attack succeeded against it. [`0x518B8701…3522c`](https://sepolia.basescan.org/address/0x518B8701484ba99A38f60090cd4a2cc710d3522c) added the binding but kept the per-call cap public. [`0x052E52a2…4feD8`](https://sepolia.basescan.org/address/0x052E52a28AA15e0B556de4FCe3d0BEBb7EB4feD8) encrypted the cap (§5.1) but signed every authorization for an hour. [`0x132DDf2b…53FBC`](https://sepolia.basescan.org/address/0x132DDf2b66A1595f10a3104f272BeB1236c53FBC), deployed on 19 October, ended each authorization at the vendor's hold and returned unpaid approvals to the budget (§6.8), which made probing free. The current vault, deployed on 2 November 2026, adds the attempt budget (§7). Each log in `docs/runs` names the vault it ran against. The current vault is not yet source-verified on Basescan; TraceAnchor is.
+
+On 2 November 2026 the enclave signer was rebound to the current vault on machine `0000000000000745`, and the demo, the adversary campaign with the live probing strategy C14, and the benchmark all ran against it (`docs/runs/*-2026-11-02-*`).
 
 Settlement asset: USDC at [`0x036CbD53842c5426634e7929541eC2318f3dCF7e`](https://sepolia.basescan.org/address/0x036CbD53842c5426634e7929541eC2318f3dCF7e).
 
@@ -129,9 +131,13 @@ the 402. The bound is the conjunction of `perCallCap`, the allowlist and `callsR
 loss ceiling = perCallCap × callsRemaining, paid only to an allowlisted payee
 ```
 
-The cap is encrypted, so a compromised orchestrator does not know this ceiling either. Each
-approved amount tells it the cap is at least that much. A rejection with calls left does not say
-whether the budget or the cap refused it.
+The cap is encrypted, so a compromised orchestrator does not start out knowing this ceiling, but it
+can learn it. Every request is a yes/no question it chooses: is this amount within both limits?
+Rejections cost nothing, and since `reclaimExpired` an approval left to expire costs nothing either,
+so a binary search recovered a cap of 137,391 units exactly in 23 requests. The goal therefore has a
+public attempt budget (`maxAttempts`, §7): every request spends one, and reclaim never returns it.
+What the orchestrator learns about the cap and the budget is bounded by that number of yes/no
+answers, which the owner chooses. A rejection still does not say which limit refused it.
 
 Every term there is scoped to one goal, so the ceiling holds only while a payer belongs to one
 goal. That is now enforced rather than assumed: see the last bullet in §3.2.
@@ -187,7 +193,7 @@ verified on-chain records.
 |---|---|---|
 | 1. Budget funded | `PolicyVault` | `euint256` handle; ciphertext bound to `msg.sender` |
 | 2. Payer minted | ROFL enclave | Goal's `payer` address written to the vault |
-| 3. `requestSpend` | `PolicyVault` | Public terms, `termsHash`, sequential `seq` |
+| 3. `requestSpend` | `PolicyVault` | Public terms, `termsHash`, sequential `seq`, the vendor's hold as `payBy` |
 | 4. Write-ahead debit | `PolicyVault` | `e.select` on the operand, committed *before* the decision is knowable |
 | 5. Confidential evaluation | Inco | Decision handle; plaintext not yet available to anyone |
 | 6. `finalizeDecision` | `PolicyVault` | `e.verifyDecryption`, bound to the handle the vault itself stored |
@@ -209,8 +215,9 @@ afterwards cannot be used to spend.
 | State | Storage | Rationale |
 |---|---|---|
 | `remainingBudget` | `euint256` [INCO] | The headline secret — reveals strategy and willingness to pay |
-| `perCallCap` | `euint256` [INCO] | Bounds per-call size; hidden so a vendor cannot price to it, see §7 |
+| `perCallCap` | `euint256` [INCO] | Bounds per-call size; hidden so a vendor cannot read it and price to it. What probing can learn is bounded by the attempt budget, see §7 |
 | `callsRemaining` | public [BUILD] | Bounds call count independently of spend size |
+| `attemptsRemaining` | public [BUILD] | Bounds how many yes/no answers about the encrypted limits any request can obtain; never restored, see §7 |
 | `payTo` allowlist | public [BUILD] | Avoids `eaddress` comparisons and their fees |
 | `asset`, `expiry`, `seq` | public [BUILD] | Not sensitive |
 | requested `amount` | public [BUILD] | Deliberate — see below |
@@ -384,8 +391,8 @@ used. A retry must reuse the entire tuple byte-for-byte — `from`, `to`, `value
 would be a *different* authorization and could execute a second time.
 
 So `validAfter` and `validBefore` are frozen into the on-chain record at `requestSpend` time and read
-back verbatim on retry. The window is one hour, clamped to the goal's expiry so an authorization can
-never outlive its goal. **Expiry is a refusal, not a re-issue.**
+back verbatim on retry. The window ends at the vendor's hold (`payBy`, §6.8), never more than an hour
+after the request, and never after the goal's expiry. **Expiry is a refusal, not a re-issue.**
 
 ### 6.5 Three bindings that connect the decision to the signature
 
@@ -419,8 +426,9 @@ are the specification:
 | Frozen window expired | `410` |
 | EIP-712 domain mismatch vs the token's own `DOMAIN_SEPARATOR()` | `500` |
 
-**Why it cannot be eliminated:** x402's `exact` scheme requires an EIP-3009 signature from the payer,
-which must come from an EOA key. A contract cannot produce one.
+**Why it exists:** x402's `exact` scheme on EVM has three transfer methods. The one this system uses,
+EIP-3009, requires a 65-byte signature that recovers to the payer, so the payer must be a key. The
+scheme's ERC-7710 method lets a smart account pay instead; this system does not use it.
 
 **What ROFL changes:** the key is derived inside an attested enclave and never written to disk, so
 "trusted to hold a key safely" stops being an assumption about operator discipline. What remains
@@ -451,7 +459,9 @@ nothing but "connection refused" from outside, which is how a root-only key sock
 | Terms changed between 402 and retry | `termsHash` mismatch → signer refuses |
 | Orchestrator understates the amount | Signer signs the recorded smaller amount; resource server rejects as insufficient |
 | **Debit committed, decision unobtainable** [INCO] | Polling is bounded at 180 s and a timeout is a *reported outcome*, not a swallowed exception. The debit has already committed, so "decision unavailable" is a different state from "rejected" |
-| Approved but never spent | Budget debited, not refunded |
+| Approved but never spent | Once the authorization expires unused, `reclaimExpired` restores the budget and the call. The payment loop does it after a failure, waiting up to two minutes; the `reclaim` tool does the rest (§6.8) |
+| Payment slower than the vendor's hold | The authorization ends at `payBy`, so the token refuses it after the hold; the amount is then reclaimed (§6.8) |
+| Vendor collects inside its hold, then delivers nothing | **Not prevented.** Bounded by the cap, the call count and the allowlist, as in §3.3. Closing it needs release on delivery, not built |
 | Two concurrent `requestSpend` calls | Rejected: `pendingSeq` must be zero. Strictly sequential per goal, because the public call counter is only decremented at finalisation |
 | Missing `allowThis` after debit [INCO] | Vault can never compute over the budget again. Covered by cheatcode tests |
 | Revealing the wrong handle [INCO] | Reveals are permanent. Only ever the per-request decision handle |
@@ -460,6 +470,42 @@ nothing but "connection refused" from outside, which is how a root-only key sock
 | Enclave machine expires or its disk is wiped [OASIS] | Payer keys are rebuilt from the chain at boot, §5.6 |
 | Signer cannot boot | `/health` reports the step and the error; boot is retried every 30 s, §6.6 |
 
+### 6.8 The vendor's hold
+
+A vendor holds what it quoted for a limited time, the way an airline holds a seat while you pay. The
+nearest x402 field is `maxTimeoutSeconds`, the time the vendor allows for the exchange, and the
+orchestrator treats it as the hold. A paid call takes about 14 seconds when Inco answers
+quickly and can take minutes when it does not, and until October 2026 every authorization lived an
+hour. So a slow payment could reach the vendor after its hold had ended, and the vendor could still
+collect it for a thing it had already let go. An airline refuses payment after the hold. Nothing here
+did.
+
+Two changes close that.
+
+**The authorization ends with the hold.** The orchestrator records when the 402 arrived, adds
+`maxTimeoutSeconds`, and passes the result to `requestSpend` as `payBy`. The vault sets `validBefore`
+to the earliest of `payBy`, an hour after the request, and the goal's expiry. After that moment the
+token itself refuses the authorization, whoever submits it. Before committing, the orchestrator checks
+that at least 20 seconds of the hold are left, and stops with nothing committed if they are not.
+
+**An unpaid approval comes back.** `reclaimExpired(goalId, seq)` puts an approved amount back in the
+encrypted budget, and its call back in the count, but not its attempt (§7), once the authorization
+can never be used: its
+window has closed and the token's `authorizationState` says it was never consumed. EIP-3009 refuses an
+authorization at or after `validBefore`, so one that is unused then stays unused, and the amount
+cannot be both returned and paid. Anyone may call it, because both conditions are read from the chain.
+The payment loop calls it after any failure that follows an approval, waiting up to two minutes for
+the window to close. `pnpm --filter @ntux402/e2e run reclaim` finds the rest.
+
+**What `payBy` trusts.** It comes from the 402, through the orchestrator, and the vault cannot check it
+against the vendor. It can only shorten the window. A compromised orchestrator that names a later time
+gets an hour, which is what every authorization had before. [BUILD]
+
+**What it does not cover.** A vendor that collects inside its hold and then delivers nothing is still
+paid. Ending the authorization on time stops late collection; it cannot make collection depend on
+delivery. That needs an escrow that releases only on a delivery event the chain can check, which is
+not built (§10).
+
 ---
 
 ## 7. Confidentiality boundary, stated exactly
@@ -467,13 +513,23 @@ nothing but "connection refused" from outside, which is how a root-only key sock
 Encrypted on chain: the budget and the per-call cap, as `euint256`; and the per-spend decision,
 until `finalizeDecision` reveals it.
 
-Public on chain: `callsRemaining`, allowlist membership, and every `requestSpend` term, approval,
-and rejection record.
+Public on chain: `callsRemaining`, `attemptsRemaining`, allowlist membership, and every
+`requestSpend` term, approval, and rejection record.
 
 Until 9 October 2026 the cap was public too, so a vendor could read the per-call ceiling and price
-immediately beneath it. What still leaks: every approved amount is public, so each approval is a
-lower bound on the cap, and someone watching many approvals on one goal learns roughly where it
-sits. A rejection with calls left does not say whether the budget or the cap refused it.
+immediately beneath it. What still leaks: every requested amount and every decision is public, so
+each request answers one yes/no question about the cap and the budget, and whoever chooses the
+amounts chooses the questions. A rejection with calls left does not say whether the budget or the cap
+refused it.
+
+How much leaks is bounded by the attempt budget. The owner sets `maxAttempts` at `openGoal`, at
+least `callsRemaining`; every `requestSpend` spends one whether it is approved or rejected; and
+`reclaimExpired` never returns it. Over the goal's life an observer therefore learns at most
+`maxAttempts` bits about the limits. With 8 attempts, a search over 0 to 10 USDC narrows the cap to
+an interval about 0.04 USDC wide and no further; with 30, it recovers the cap exactly
+(`contracts/test/ProbeLeak.t.sol`). The demo opens goals with 10 attempts for 5 calls. The bound is
+the owner's choice and is stated as such: an attempt budget large enough for an exact search gives
+no protection.
 
 ---
 
@@ -544,8 +600,8 @@ figure grows with the list.
 
 ## 10. Limitations
 
-**Not built:** encrypted allowlists, escrow-based x402 schemes, refund-on-timeout accounting,
-multi-goal concurrency, mainnet deployment, on-Sapphire publication of the enclave-to-payer binding,
+**Not built:** encrypted allowlists, escrow that releases payment only on delivery (so a vendor that
+collects and delivers nothing is still paid, §6.8), multi-goal concurrency, mainnet deployment, on-Sapphire publication of the enclave-to-payer binding,
 and a real vendor for mainnet. The mock vendor's payees are placeholder addresses nobody holds a key
 for, so it refuses live settlement on Base.
 

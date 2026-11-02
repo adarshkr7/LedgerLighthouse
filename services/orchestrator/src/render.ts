@@ -89,8 +89,28 @@ ${indent(event.reason)}`;
             event.settlement.alreadySettled ? "  (already settled — retry was safe)" : ""
           }`;
 
+    case "reclaim":
+      return renderReclaim(event);
+
     case "failed":
       return `  !!  ${event.reason}`;
+  }
+}
+
+function renderReclaim(event: Extract<PaymentEvent, { type: "reclaim" }>): string {
+  const expires = new Date(Number(event.validBefore) * 1_000).toISOString();
+  const why = event.reason ? `  (${event.reason})` : "";
+  switch (event.outcome) {
+    case "waiting":
+      return `  vault  seq ${event.seq} was approved but not paid; waiting for its authorization to expire at ${expires}`;
+    case "reclaimed":
+      return `  tx  reclaimExpired  seq ${event.seq}  budget and call restored  ${event.txHash ?? ""}${why}`;
+    case "collected":
+      return `  vault  seq ${event.seq} NOT reclaimable: the token consumed the authorization, so the vendor was paid`;
+    case "deferred":
+      return `  vault  seq ${event.seq} reclaimable after ${expires}${why}; run \`pnpm --filter @ntux402/e2e run reclaim\` then`;
+    case "failed":
+      return `  !!  reclaimExpired for seq ${event.seq} failed${why}`;
   }
 }
 

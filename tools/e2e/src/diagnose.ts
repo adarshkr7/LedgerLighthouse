@@ -475,6 +475,43 @@ await check("goals", async () => {
     : { level: "ok", detail: `${count} goals, no stuck spends, no USDC left in payers` };
 });
 
+await check("unpaid approvals", async () => {
+  // An approved spend whose authorization expired unused still holds its amount
+  // out of the budget until `reclaimExpired`. The payment loop reclaims what
+  // expires within two minutes; this catches the rest, on recent open goals.
+  const read = (functionName: string, args: readonly unknown[]) =>
+    client.readContract({ address: vault!, abi: policyVaultAbi, functionName, args } as Parameters<
+      typeof client.readContract
+    >[0]);
+  const count = (await read("goalCount", [])) as bigint;
+  const first = count > 200n ? count - 199n : 1n;
+  try {
+    await read("isReclaimable", [first, 1n]);
+  } catch {
+    return {
+      level: "warn",
+      detail: "this vault predates reclaimExpired, so an unpaid approval stays debited",
+      fix: "redeploy PolicyVault; authorizations on this one also live an hour, past any vendor's hold.",
+    };
+  }
+  const found: string[] = [];
+  for (let id = first; id <= count; id++) {
+    const goal = (await read("goals", [id])) as readonly [Address, Address, Address, Address, number, bigint, bigint, boolean];
+    const [, , , , , , lastSeq, open] = goal;
+    if (!open) continue;
+    for (let seq = lastSeq > 10n ? lastSeq - 9n : 1n; seq <= lastSeq; seq++) {
+      if ((await read("isReclaimable", [id, seq])) as boolean) found.push(`${id}:${seq}`);
+    }
+  }
+  return found.length > 0
+    ? {
+        level: "warn",
+        detail: `${found.length} approved spend(s) expired unpaid and still hold budget: ${found.slice(0, 8).join(", ")}`,
+        fix: "pnpm --filter @ntux402/e2e run reclaim -- --execute gives them back.",
+      }
+    : { level: "ok", detail: "every expired approval was paid or reclaimed" };
+});
+
 finish();
 
 // -------------------------------------------------------------------- summary

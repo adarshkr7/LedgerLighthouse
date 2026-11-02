@@ -25,6 +25,16 @@ contract RevealedHandleMinter {
     }
 }
 
+/// Stands in for USDC's EIP-3009 bookkeeping, the only part of the token the
+/// vault reads. Etched at the goal's asset address in `setUp`.
+contract MockAuthorizationState {
+    mapping(address authorizer => mapping(bytes32 nonce => bool)) public authorizationState;
+
+    function markUsed(address authorizer, bytes32 nonce) external {
+        authorizationState[authorizer][nonce] = true;
+    }
+}
+
 /// Tests for the on-chain policy vault.
 ///
 /// Written before the contract, because the properties they pin down are the
@@ -37,6 +47,8 @@ contract PolicyVaultTest is IncoTest {
     uint256 constant BUDGET = 300_000; // 0.30 USDC
     uint256 constant PER_CALL_CAP = 200_000; // 0.20 USDC
     uint32 constant CALLS = 5;
+    /// Room for every test's requests, approved and rejected.
+    uint32 constant ATTEMPTS = 20;
 
     address constant VENDOR = address(0x1111111111111111111111111111111111111111);
     address constant OTHER_VENDOR = address(0x3333333333333333333333333333333333333333);
@@ -47,12 +59,16 @@ contract PolicyVaultTest is IncoTest {
 
     string constant RESOURCE = "https://api.example.com/resource/honest";
 
+    /// How long the test vendor holds what it quotes.
+    uint64 constant HOLD = 10 minutes;
+
     uint256 goalId;
     uint64 expiry;
 
     function setUp() public override {
         super.setUp();
         vault = new PolicyVault();
+        vm.etch(ASSET, address(new MockAuthorizationState()).code);
         expiry = uint64(block.timestamp + 7 days);
         goalId = _openGoal(BUDGET, PER_CALL_CAP, CALLS);
     }
@@ -73,6 +89,17 @@ contract PolicyVaultTest is IncoTest {
         internal
         returns (PolicyVault.OpenGoalParams memory params)
     {
+        return _paramsWithAttempts(budget, cap, calls, ATTEMPTS, payer, opener);
+    }
+
+    function _paramsWithAttempts(
+        uint256 budget,
+        uint256 cap,
+        uint32 calls,
+        uint32 attempts,
+        address payer,
+        address opener
+    ) internal returns (PolicyVault.OpenGoalParams memory params) {
         address[] memory allowlist = new address[](1);
         allowlist[0] = VENDOR;
 
@@ -83,6 +110,7 @@ contract PolicyVaultTest is IncoTest {
             budgetCiphertext: fakePrepareEuint256Ciphertext(budget, opener, address(vault)),
             perCallCapCiphertext: fakePrepareEuint256Ciphertext(cap, opener, address(vault)),
             callsRemaining: calls,
+            maxAttempts: attempts,
             payer: payer,
             relay: address(this),
             asset: ASSET,
@@ -134,8 +162,12 @@ contract PolicyVaultTest is IncoTest {
         vault.openGoal{value: fee}(params);
     }
 
+    function _payBy() internal view returns (uint64) {
+        return uint64(block.timestamp) + HOLD;
+    }
+
     function _requestSpend(uint256 amount) internal returns (uint64 seq) {
-        seq = vault.requestSpend(goalId, amount, VENDOR, RESOURCE);
+        seq = vault.requestSpend(goalId, amount, VENDOR, RESOURCE, _payBy());
         processAllOperations();
     }
 
@@ -164,6 +196,10 @@ contract PolicyVaultTest is IncoTest {
     function _callsRemaining() internal view returns (uint32) {
         (,,,, uint32 calls,,,) = vault.goals(goalId);
         return calls;
+    }
+
+    function _attemptsRemaining() internal view returns (uint32) {
+        return vault.attemptsRemaining(goalId);
     }
 
     function _isOpen() internal view returns (bool) {
@@ -365,19 +401,19 @@ contract PolicyVaultTest is IncoTest {
 
     function testRequestSpendRejectsUnallowlistedPayee() public {
         vm.expectRevert(PolicyVault.PayeeNotAllowlisted.selector);
-        vault.requestSpend(goalId, 50_000, OTHER_VENDOR, RESOURCE);
+        vault.requestSpend(goalId, 50_000, OTHER_VENDOR, RESOURCE, _payBy());
     }
 
     function testRequestSpendRejectsAfterExpiry() public {
         vm.warp(uint256(expiry) + 1);
         vm.expectRevert(PolicyVault.GoalExpired.selector);
-        vault.requestSpend(goalId, 50_000, VENDOR, RESOURCE);
+        vault.requestSpend(goalId, 50_000, VENDOR, RESOURCE, _payBy());
     }
 
     function testRequestSpendRequiresPreviousSpendFinalized() public {
         _requestSpend(50_000);
         vm.expectRevert(PolicyVault.SpendPending.selector);
-        vault.requestSpend(goalId, 50_000, VENDOR, RESOURCE);
+        vault.requestSpend(goalId, 50_000, VENDOR, RESOURCE, _payBy());
     }
 
     /// Only the registered relay may drive the spend loop. Without this, any
@@ -386,7 +422,7 @@ contract PolicyVaultTest is IncoTest {
     /// whole world rather than to one known component.
     function testOnlyRelayCanRequestSpend() public {
         // The relay (this contract, registered at openGoal) succeeds.
-        uint64 seq = vault.requestSpend(goalId, 50_000, VENDOR, RESOURCE);
+        uint64 seq = vault.requestSpend(goalId, 50_000, VENDOR, RESOURCE, _payBy());
         assertEq(seq, 1, "the registered relay must be able to request a spend");
 
         // Nobody else does.
@@ -395,7 +431,7 @@ contract PolicyVaultTest is IncoTest {
         for (uint256 i = 0; i < strangers.length; i++) {
             vm.prank(strangers[i]);
             vm.expectRevert(PolicyVault.NotRelay.selector);
-            vault.requestSpend(goalId, 50_000, VENDOR, RESOURCE);
+            vault.requestSpend(goalId, 50_000, VENDOR, RESOURCE, _payBy());
         }
     }
 
@@ -413,7 +449,7 @@ contract PolicyVaultTest is IncoTest {
 
         vm.prank(alice);
         vm.expectRevert(PolicyVault.NotRelay.selector);
-        vault.requestSpend(goalId, 50_000, VENDOR, RESOURCE);
+        vault.requestSpend(goalId, 50_000, VENDOR, RESOURCE, _payBy());
 
         // The owner's actual privilege still works, so the refusal above is
         // about the relay role and not a broken goal.
@@ -422,12 +458,78 @@ contract PolicyVaultTest is IncoTest {
         assertFalse(_isOpen(), "owner should still be able to close the goal");
     }
 
+    // ------------------------------------------------------- attempt budget
+
+    function testOpenGoalRecordsTheAttemptBudget() public view {
+        assertEq(_attemptsRemaining(), ATTEMPTS);
+    }
+
+    function testOpenGoalRefusesFewerAttemptsThanCalls() public {
+        PolicyVault.OpenGoalParams memory params =
+            _paramsWithAttempts(BUDGET, PER_CALL_CAP, CALLS, CALLS - 1, OTHER_PAYER, alice);
+        uint256 fee = 2 * inco.getFee();
+        vm.deal(alice, fee);
+        vm.prank(alice);
+        vm.expectRevert(PolicyVault.InvalidAttemptCount.selector);
+        vault.openGoal{value: fee}(params);
+    }
+
+    /// A rejection answers a question as surely as an approval does.
+    function testEveryRequestSpendsAnAttemptWhateverTheOutcome() public {
+        (, bool approved) = _spendAndFinalize(50_000);
+        assertTrue(approved);
+        assertEq(_attemptsRemaining(), ATTEMPTS - 1, "an approval must spend an attempt");
+
+        (, bool rejected) = _spendAndFinalize(PER_CALL_CAP + 1);
+        assertFalse(rejected);
+        assertEq(_attemptsRemaining(), ATTEMPTS - 2, "a rejection must spend an attempt");
+    }
+
+    /// The probing fix itself: reclaim returns the money and the call, never the attempt.
+    function testReclaimDoesNotRestoreTheAttempt() public {
+        uint64 seq = vault.requestSpend(goalId, 50_000, VENDOR, RESOURCE, uint64(block.timestamp) + 1);
+        processAllOperations();
+        assertTrue(_finalize(seq));
+        (, uint64 validBefore) = vault.validityWindow(goalId, seq);
+        vm.warp(validBefore);
+        vault.reclaimExpired(goalId, seq);
+        processAllOperations();
+
+        assertEq(_callsRemaining(), CALLS, "reclaim should still restore the call");
+        assertEq(_budget(), BUDGET, "reclaim should still restore the budget");
+        assertEq(_attemptsRemaining(), ATTEMPTS - 1, "reclaim must not restore the attempt");
+    }
+
+    function testRequestSpendRefusedOnceAttemptsAreSpent() public {
+        goalId = _openGoalWithAttempts(BUDGET + 2, PER_CALL_CAP + 2, 1, 2);
+        _spendAndFinalize(PER_CALL_CAP + 3); // rejected: over the cap
+        _spendAndFinalize(PER_CALL_CAP + 3); // rejected again
+        assertEq(_attemptsRemaining(), 0);
+        assertEq(_callsRemaining(), 1, "the call is still unused");
+
+        vm.expectRevert(PolicyVault.NoAttemptsLeft.selector);
+        vault.requestSpend(goalId, 50_000, VENDOR, RESOURCE, _payBy());
+    }
+
+    function _openGoalWithAttempts(uint256 budget, uint256 cap, uint32 calls, uint32 attempts)
+        internal
+        returns (uint256 id)
+    {
+        PolicyVault.OpenGoalParams memory params =
+            _paramsWithAttempts(budget, cap, calls, attempts, OTHER_PAYER, alice);
+        uint256 fee = 2 * inco.getFee();
+        vm.deal(alice, fee);
+        vm.prank(alice);
+        id = vault.openGoal{value: fee}(params);
+        processAllOperations();
+    }
+
     function testClosedGoalRejectsSpend() public {
         vm.prank(alice);
         vault.closeGoal(goalId);
 
         vm.expectRevert(PolicyVault.GoalNotOpen.selector);
-        vault.requestSpend(goalId, 50_000, VENDOR, RESOURCE);
+        vault.requestSpend(goalId, 50_000, VENDOR, RESOURCE, _payBy());
     }
 
     function testOnlyOwnerMayCloseGoal() public {
@@ -563,6 +665,164 @@ contract PolicyVaultTest is IncoTest {
 
         (, bool atCap) = _spendAndFinalize(PER_CALL_CAP);
         assertTrue(atCap, "an amount equal to the cap must approve");
+    }
+
+    // ------------------------------------------------------ the vendor's hold
+
+    /// The case this exists for. The vendor holds the GPU for a minute, so the
+    /// authorization must die with the hold: a vendor that collects later has
+    /// let the GPU go and would be paid for nothing.
+    function testAuthorizationEndsAtThePayByTime() public {
+        uint64 payBy = uint64(block.timestamp) + 60;
+        uint64 seq = vault.requestSpend(goalId, 50_000, VENDOR, RESOURCE, payBy);
+
+        (, uint64 validBefore) = vault.validityWindow(goalId, seq);
+        assertEq(validBefore, payBy, "the authorization must expire when the hold does");
+    }
+
+    /// `payBy` arrives from the 402 through the relay, so it may only shorten
+    /// the window. A later time gets the same hour every authorization had
+    /// before `payBy` existed.
+    function testPayByCannotLengthenTheWindow() public {
+        uint64 seq = vault.requestSpend(goalId, 50_000, VENDOR, RESOURCE, uint64(block.timestamp) + 2 hours);
+
+        (, uint64 validBefore) = vault.validityWindow(goalId, seq);
+        assertEq(validBefore, uint64(block.timestamp) + vault.AUTHORIZATION_WINDOW(), "payBy lengthened the window");
+    }
+
+    function testPayByCannotOutliveTheGoal() public {
+        vm.warp(uint256(expiry) - 30);
+        uint64 seq = vault.requestSpend(goalId, 50_000, VENDOR, RESOURCE, _payBy());
+
+        (, uint64 validBefore) = vault.validityWindow(goalId, seq);
+        assertEq(validBefore, expiry, "an authorization outlived its goal");
+    }
+
+    /// A hold that has already ended is a malformed request, not a policy
+    /// question, so it reverts and burns no seq.
+    function testRequestSpendRejectsAPayByThatHasPassed() public {
+        vm.expectRevert(PolicyVault.PayByPassed.selector);
+        vault.requestSpend(goalId, 50_000, VENDOR, RESOURCE, uint64(block.timestamp));
+
+        (,,,,,, uint64 seq,) = vault.goals(goalId);
+        assertEq(seq, 0, "a refused request burned a seq");
+    }
+
+    /// The other half: the payment never happened, so the budget and the call
+    /// come back.
+    function testReclaimRestoresBudgetAndCall() public {
+        (uint64 seq, bool approved) = _spendAndFinalize(200_000);
+        assertTrue(approved);
+        assertEq(_budget(), BUDGET - 200_000);
+        assertEq(_callsRemaining(), CALLS - 1);
+
+        (, uint64 validBefore) = vault.validityWindow(goalId, seq);
+        vm.warp(validBefore);
+
+        vm.expectEmit(true, true, false, false, address(vault));
+        emit PolicyVault.SpendReclaimed(goalId, seq, 200_000, bytes32(0));
+        vault.reclaimExpired(goalId, seq);
+        processAllOperations();
+
+        assertEq(_budget(), BUDGET, "the unused amount did not come back");
+        assertEq(_callsRemaining(), CALLS, "the unused call did not come back");
+        assertTrue(vault.isReclaimed(goalId, seq));
+    }
+
+    /// Without the reclaim, 100_000 would be left and a second 200_000 would
+    /// reject. With it, the amount is spendable again.
+    function testReclaimedAmountCanBeSpentAgain() public {
+        (uint64 seq,) = _spendAndFinalize(200_000);
+        (, uint64 validBefore) = vault.validityWindow(goalId, seq);
+        vm.warp(validBefore);
+        vault.reclaimExpired(goalId, seq);
+        processAllOperations();
+
+        (, bool approved) = _spendAndFinalize(200_000);
+        assertTrue(approved, "a reclaimed amount must be spendable again");
+    }
+
+    /// The boundary matches EIP-3009, which accepts an authorization only while
+    /// `block.timestamp < validBefore`. One second earlier the vendor could
+    /// still collect, so the amount cannot come back yet.
+    function testReclaimRefusedWhileTheAuthorizationIsLive() public {
+        (uint64 seq,) = _spendAndFinalize(50_000);
+        (, uint64 validBefore) = vault.validityWindow(goalId, seq);
+
+        vm.warp(validBefore - 1);
+        assertFalse(vault.isReclaimable(goalId, seq));
+        vm.expectRevert(PolicyVault.AuthorizationLive.selector);
+        vault.reclaimExpired(goalId, seq);
+
+        vm.warp(validBefore);
+        assertTrue(vault.isReclaimable(goalId, seq));
+        vault.reclaimExpired(goalId, seq);
+    }
+
+    /// Paid is paid. Once the token has consumed the authorization, the money
+    /// left the payer and the budget must stay debited.
+    function testReclaimRefusedOnceTheTokenConsumedTheAuthorization() public {
+        (uint64 seq,) = _spendAndFinalize(50_000);
+        MockAuthorizationState(ASSET).markUsed(PAYER, vault.spendNonce(goalId, seq));
+
+        (, uint64 validBefore) = vault.validityWindow(goalId, seq);
+        vm.warp(validBefore + 1 days);
+
+        assertFalse(vault.isReclaimable(goalId, seq));
+        vm.expectRevert(PolicyVault.AuthorizationUsed.selector);
+        vault.reclaimExpired(goalId, seq);
+        assertEq(_budget(), BUDGET - 50_000, "a paid amount went back to the budget");
+    }
+
+    function testReclaimRefusedForARejectedSpend() public {
+        (uint64 seq, bool approved) = _spendAndFinalize(PER_CALL_CAP + 1);
+        assertFalse(approved);
+        vm.warp(block.timestamp + 2 hours);
+
+        vm.expectRevert(PolicyVault.NotApproved.selector);
+        vault.reclaimExpired(goalId, seq);
+    }
+
+    /// Unfinalized means the decision is unknown, and so is whether anything was
+    /// debited.
+    function testReclaimRefusedBeforeFinalization() public {
+        uint64 seq = _requestSpend(50_000);
+        vm.warp(block.timestamp + 2 hours);
+
+        vm.expectRevert(PolicyVault.NotApproved.selector);
+        vault.reclaimExpired(goalId, seq);
+    }
+
+    function testReclaimOnlyOnce() public {
+        (uint64 seq,) = _spendAndFinalize(50_000);
+        (, uint64 validBefore) = vault.validityWindow(goalId, seq);
+        vm.warp(validBefore);
+        vault.reclaimExpired(goalId, seq);
+        processAllOperations();
+
+        assertFalse(vault.isReclaimable(goalId, seq));
+        vm.expectRevert(PolicyVault.AlreadyReclaimed.selector);
+        vault.reclaimExpired(goalId, seq);
+        assertEq(_budget(), BUDGET, "a second reclaim credited the budget twice");
+    }
+
+    /// Permissionless, like `finalizeDecision`: every condition is on chain, so
+    /// requiring the relay would only let a stuck relay strand the amount.
+    function testAnyoneMayReclaim() public {
+        (uint64 seq,) = _spendAndFinalize(50_000);
+        (, uint64 validBefore) = vault.validityWindow(goalId, seq);
+        vm.warp(validBefore);
+
+        vm.prank(address(0xBEEF));
+        vault.reclaimExpired(goalId, seq);
+        processAllOperations();
+        assertEq(_budget(), BUDGET);
+    }
+
+    function testReclaimUnknownSpend() public {
+        vm.expectRevert(PolicyVault.UnknownSpend.selector);
+        vault.reclaimExpired(goalId, 7);
+        assertFalse(vault.isReclaimable(goalId, 7));
     }
 
     /// Two encrypted inputs cost two Inco fees, and one is refused.

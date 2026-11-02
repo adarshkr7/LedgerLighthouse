@@ -50,11 +50,11 @@ deployments:
       - name: SERVICE_TOKEN
         value: pGJwa1gg5wgt7DJtpDY2ALIZc6pKvsSHguw8JX4GgmmIdfNu0R1kbmFtZVgdq7zYYpaveQ3psMzsYxHMShewY4870JFs6IEj5ftlbm9uY2VPZytz7zRlNn5561lUICgpZXZhbHVlWFC9fr0pyvKY248T9j1X5ZIl1zvh8AHmMuJtt5usakMH9kumNNy+Buf+hHqRsakfUY5zCG7FC1R46ysW0XrVYUXCsHFkBoz8Gd8k+TCXEG+1JQ==
       - name: POLICY_VAULT_ADDRESS
-        value: pGJwa1ggDE6ZSep48KaRDk41M3j1n9quCukSLOtrIeOm/mU+iABkbmFtZVgkF1bq5yFeH2o/x4MThyPgnzA+gl/5G2FZrNAmOC/XhWuOgPm3ZW5vbmNlT9fE8Gw2o64YACE1qEWZEmV2YWx1ZVg6k6cvN4x7fzgKcxHJBU3Ru5Sr0n0QuDmKfFG+kMnpZEm0T0NZW2n7IOD9s7yCxrlImkb6Cl1qSutZpQ==
+        value: pGJwa1gg20wcAw/Sb/C3iJ1OQAfBvOs1lWMaspolS8aVUgEy7EJkbmFtZVgkIheYpL1Wv3LtAcy9T9zJeJ9RWwCLmvHuK3F8NG02Ef4wtvXaZW5vbmNlT89Pod/GkM4wNpkMnbqvYGV2YWx1ZVg6OvWyn+OnjyikE9Luc+QfRBoW6QHzUcP8WEf67Il3gRMC7X34U0M1J81Dbl42YFuO4HZerKdjsZEw0Q==
     machines:
       default:
         provider: oasis1qp2ens0hsp7gh23wajxa4hpetkdek3swyyulyrmz
         offer: playground_short
-        id: 00000000000006ea
+        id: "0000000000000745"
 tooling:
   version: 0.19.1

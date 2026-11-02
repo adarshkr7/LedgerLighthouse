@@ -1,0 +1,46 @@
+$ tsx src/adversary.ts "--" "--only-c14"
+
+--- Track 2 — A2 adversary campaign -----------------------------------
+
+  Threat model: arbitrary code execution in the orchestrator.
+  No agent, no model. The adversary calls requestSpend directly.
+
+  chain  84532 (Base Sepolia)
+  vault  0x7F5833730033a1d320b3536CE08FD641330a4966
+  signer https://p8402.m1861.opf-testnet-rofl-25.rofl.app
+
+--- C14 - probing the encrypted cap -----------------------------------
+
+  goal 6 (probe)
+    budget      5.0 USDC  (encrypted)
+    cap x calls 0.137391 x 4 = 0.549564 USDC  (encrypted cap, public call count)
+    payer       0x83c58796539e8F5eAF6096A0B9c160DEF7bAdc1D
+    opened      https://sepolia.basescan.org/tx/0x2b1078e3ee675417eb2a2d23d58167ca552933a29b1b74b70cd413d06d7c3403
+
+  C14 on goal 6: binary search of the cap over 0 to 1.0
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x565b64e6c0e0fdeba0830407d225566fa1d00a5a87111026da95d22e20c60000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x565b64e6c0e0fdeba0830407d225566fa1d00a5a87111026da95d22e20c60000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x565b64e6c0e0fdeba0830407d225566fa1d00a5a87111026da95d22e20c60000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x565b64e6c0e0fdeba0830407d225566fa1d00a5a87111026da95d22e20c60000 not found, it might not have been processed yet, try again later
+    probe 1: 0.5 -> REJECTED; cap in [0.0, 0.5)
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x30aa10cf63d6ea360325657d9a47654fbe690276c767f7546855b0fceaf80000 not found, it might not have been processed yet, try again later
+    probe 2: 0.25 -> REJECTED; cap in [0.0, 0.25)
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0xde4c7cbc84e55bb7ee7358a26d94a54fcd95f39b660b11496ce1ffb3bbe30000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0xde4c7cbc84e55bb7ee7358a26d94a54fcd95f39b660b11496ce1ffb3bbe30000 not found, it might not have been processed yet, try again later
+    probe 3: 0.125 -> APPROVED; cap in [0.125, 0.25)
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0xf488078c36b329ad3d996b10c97b1f30bcf1d3fe750c89fd6b749eff52970000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0xf488078c36b329ad3d996b10c97b1f30bcf1d3fe750c89fd6b749eff52970000 not found, it might not have been processed yet, try again later
+    probe 4: 0.1875 -> REJECTED; cap in [0.125, 0.1875)
+[  ok  ] C14  binary-search the encrypted cap
+         expected: 4 answers, cap left in an interval at least 0.0625 wide, then NoAttemptsLeft
+         observed: 4 answers; cap in [0.125, 0.1875), width 0.0625; next request reverted NoAttemptsLeft; attemptsRemaining 0
+         tx:       open goal                  https://sepolia.basescan.org/tx/0x2b1078e3ee675417eb2a2d23d58167ca552933a29b1b74b70cd413d06d7c3403
+         tx:       probe 1 commit             https://sepolia.basescan.org/tx/0x015cdc8698ad54046abb32c7ef5d493ffda9c9b0b3f14ea693b60c7b137fb55d
+         tx:       probe 1 finalize           https://sepolia.basescan.org/tx/0xbbdf45fb6786917c4b6c3954266dd6949d30ac60a1c1c6b1d0c9bb13b6029467
+         tx:       probe 2 commit             https://sepolia.basescan.org/tx/0xb3ec9b4e6fb32f1a6d83d08e85936d75c42dd4c136f563c87b879554da5e638c
+         tx:       probe 2 finalize           https://sepolia.basescan.org/tx/0x2049daf1c71a6017e8f89ce05f68ef03c951a8dc75da3e7dd03bc8c3614fa6c4
+         tx:       probe 3 commit             https://sepolia.basescan.org/tx/0x1ec72bdf874d8c3f3b446cf696278afeb62e285417040cffba295a692c7b6014
+         tx:       probe 3 finalize           https://sepolia.basescan.org/tx/0xbce735ac2e8390b80eded597548dcfaa7f5f05f2ced4635dff0ec89e47166643
+         tx:       probe 4 commit             https://sepolia.basescan.org/tx/0xd14718eb41d43fb8d3fdda934c274e1e52ed2e5e90b5111c5a684b672dd00263
+         tx:       probe 4 finalize           https://sepolia.basescan.org/tx/0x6facd1e98184d4ffd87d4c08149d5373c21700d7d1167d28d6a464c1d4d95709
+         no tx:    the fifth request reverts in gas estimation and is never broadcast

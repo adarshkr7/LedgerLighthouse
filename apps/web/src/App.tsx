@@ -80,6 +80,12 @@ const FUNDING_HEADROOM = 100_000n; // 0.10 USDC
  */
 const PER_CALL_CAP = 6_000_000n; // 6.00 USDC
 const CALLS_REMAINING = 5;
+/**
+ * Every request spends one, approved or rejected, and none comes back. Twice the
+ * calls leaves room for honest rejections while capping what a compromised relay
+ * can learn about the encrypted limits at ten yes/no answers.
+ */
+const MAX_ATTEMPTS = 10;
 
 /** How far over the chosen budget the overcharge vendor asks. */
 const OVERCHARGE_MARGIN = 50_000n; // 0.05 USDC
@@ -284,6 +290,77 @@ function OrphanNotice({ events }: { events: readonly PaymentEvent[] }) {
     );
   }
   return null;
+}
+
+/**
+ * What became of an approved amount that was not paid.
+ *
+ * Below the stages, because it happens after them: a run that failed past
+ * approval waits for its authorization to expire, then asks the vault for the
+ * amount back. Without this the budget would look spent by a run that paid
+ * nothing.
+ */
+function ReclaimNotice({ events }: { events: readonly PaymentEvent[] }) {
+  const last = events.filter((e) => e.type === "reclaim").at(-1);
+  if (last?.type !== "reclaim") return null;
+  const expires = new Date(Number(last.validBefore) * 1_000).toLocaleTimeString();
+
+  switch (last.outcome) {
+    case "waiting":
+      return (
+        <div className="d-notice">
+          <strong>Approved, not paid. Waiting for the authorization to expire</strong>
+          <p>
+            The vendor's hold ends at {expires}. Until then the authorization could still be used, so
+            the amount stays out of the budget. After that it comes back.
+          </p>
+        </div>
+      );
+    case "reclaimed":
+      return (
+        <div className="d-notice">
+          <strong>Budget restored for seq {last.seq}</strong>
+          <p>
+            The authorization expired at {expires} without being used, so the vault put the amount and
+            the call back.{" "}
+            {last.txHash ? (
+              <a href={explorer.tx(last.txHash)} target="_blank" rel="noreferrer">
+                reclaimExpired
+              </a>
+            ) : (
+              last.reason
+            )}
+          </p>
+        </div>
+      );
+    case "collected":
+      return (
+        <div className="d-notice" data-tone="error">
+          <strong>The vendor collected seq {last.seq}</strong>
+          <p>
+            The token consumed the authorization, so the money left the payer even though this run did
+            not get what it paid for. The vault cannot give it back.
+          </p>
+        </div>
+      );
+    case "deferred":
+      return (
+        <div className="d-notice">
+          <strong>Seq {last.seq} can be reclaimed after {expires}</strong>
+          <p>
+            The authorization is still usable until then.{" "}
+            <code>pnpm --filter @ntux402/e2e run reclaim</code> gives the amount back afterwards.
+          </p>
+        </div>
+      );
+    case "failed":
+      return (
+        <div className="d-notice" data-tone="error">
+          <strong>Reclaim for seq {last.seq} failed</strong>
+          <p>{last.reason}</p>
+        </div>
+      );
+  }
 }
 
 export default function App() {
@@ -620,6 +697,7 @@ export default function App() {
             budgetCiphertext,
             perCallCapCiphertext,
             callsRemaining: CALLS_REMAINING,
+            maxAttempts: MAX_ATTEMPTS,
             payer,
             relay: config.relayAddress,
             asset: config.usdcAddress,
@@ -1177,6 +1255,7 @@ export default function App() {
                 stages are a fixed list precisely so the shape of the flow is
                 legible before anything has happened. */}
             <Timeline events={events} running={running} />
+            <ReclaimNotice events={events} />
 
             {!started ? (
               <p className="d-tl-legend">
