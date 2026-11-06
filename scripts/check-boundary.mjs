@@ -82,6 +82,36 @@ if (existsSync(orchestratorPkgPath)) {
   }
 }
 
+/*
+ * The signer's own boundary. The x402 SDKs are large and had 25 vulnerabilities reported
+ * against them in 2026. They belong in the facilitator, which is outside the trust model,
+ * and must never be linked into the process that holds payer keys, directly or through
+ * the shared package it imports.
+ */
+for (const [label, srcDir, pkgPath] of [
+  ["services/signer", join(repoRoot, "services", "signer", "src"), join(repoRoot, "services", "signer", "package.json")],
+  ["packages/shared", join(repoRoot, "packages", "shared", "src"), join(repoRoot, "packages", "shared", "package.json")],
+]) {
+  for (const file of walk(srcDir)) {
+    const src = readFileSync(file, "utf8");
+    let match;
+    IMPORT_RE.lastIndex = 0;
+    while ((match = IMPORT_RE.exec(src))) {
+      const specifier = match[1] ?? match[2];
+      if (specifier && (specifier.startsWith("@x402/") || specifier === "x402")) {
+        const line = src.slice(0, match.index).split("\n").length;
+        violations.push(`${relative(repoRoot, file)}:${line} imports "${specifier}" — the x402 SDKs stay out of the signer`);
+      }
+    }
+  }
+  const pkg = JSON.parse(readFileSync(pkgPath, "utf8"));
+  for (const name of Object.keys({ ...pkg.dependencies, ...pkg.devDependencies })) {
+    if (name.startsWith("@x402/") || name === "x402") {
+      violations.push(`${label}/package.json declares a dependency on ${name} — the x402 SDKs stay out of the signer`);
+    }
+  }
+}
+
 if (violations.length > 0) {
   console.error(
     "Dependency boundary violated: services/orchestrator must not reach the signer.\n",

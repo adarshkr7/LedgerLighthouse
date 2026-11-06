@@ -12,14 +12,19 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 
 import {
+  SCHEME_AUTH_CAPTURE,
   SCHEME_EXACT,
   X402_VERSION,
+  X402_VERSION_V2,
+  parseAuthCapturePayload,
+  parseAuthCaptureRequirements,
   parsePaymentPayload,
   parsePaymentRequirements,
 } from "@ntux402/shared";
 
 import { RateLimiter, corsHeaders, rejected } from "@ntux402/shared/node";
 
+import type { AuthCaptureFacilitator } from "./auth-capture.js";
 import type { Facilitator } from "./facilitator.js";
 
 const MAX_BODY_BYTES = 32 * 1024;
@@ -64,11 +69,13 @@ function send(
 export interface FacilitatorServerOptions {
   readonly facilitator: Facilitator;
   readonly network: string;
+  /** Settles `auth-capture`. Omit and such payments are refused. */
+  readonly authCapture?: AuthCaptureFacilitator;
   readonly log?: (line: string) => void;
 }
 
 export function createFacilitatorServer(options: FacilitatorServerOptions): Server {
-  const { facilitator, network } = options;
+  const { facilitator, network, authCapture } = options;
   const log = options.log ?? (() => {});
 
   return createServer((req, res) => {
@@ -103,7 +110,16 @@ export function createFacilitatorServer(options: FacilitatorServerOptions): Serv
       }
 
       if (req.method === "GET" && path === "/supported") {
-        send(res, 200, { kinds: [{ x402Version: X402_VERSION, scheme: SCHEME_EXACT, network }] }, cors);
+        const kinds: unknown[] = [{ x402Version: X402_VERSION, scheme: SCHEME_EXACT, network }];
+        if (authCapture) {
+          kinds.push({
+            x402Version: X402_VERSION_V2,
+            scheme: SCHEME_AUTH_CAPTURE,
+            network: authCapture.network,
+            extra: { operators: authCapture.operators.map((address) => ({ address, operatorType: "custom" })) },
+          });
+        }
+        send(res, 200, { kinds }, cors);
         return;
       }
 
@@ -125,6 +141,41 @@ export function createFacilitatorServer(options: FacilitatorServerOptions): Serv
         return;
       }
       const envelope = body as Record<string, unknown>;
+
+      // Chooses the parser and nothing else: each is strict about its own scheme.
+      const declared = envelope["paymentRequirements"] as { scheme?: unknown } | null | undefined;
+      if (declared?.scheme === SCHEME_AUTH_CAPTURE) {
+        if (!authCapture) {
+          send(res, 400, { error: "auth-capture is not enabled on this facilitator" }, cors);
+          return;
+        }
+        const escrowPayment = parseAuthCapturePayload(envelope["paymentPayload"]);
+        if (!escrowPayment.ok) {
+          send(res, 400, { error: escrowPayment.error }, cors);
+          return;
+        }
+        const escrowTerms = parseAuthCaptureRequirements(envelope["paymentRequirements"]);
+        if (!escrowTerms.ok) {
+          send(res, 400, { error: escrowTerms.error }, cors);
+          return;
+        }
+        if (path === "/verify") {
+          const result = await authCapture.verify(escrowPayment.value, escrowTerms.value);
+          log(`POST /verify auth-capture -> ${result.isValid ? "valid" : `invalid: ${result.invalidReason}`}`);
+          send(res, 200, result, cors);
+          return;
+        }
+        const result = await authCapture.settle(escrowPayment.value, escrowTerms.value);
+        log(
+          `POST /settle auth-capture -> ${
+            result.success
+              ? `${result.alreadySettled ? "already settled" : "held"} ${result.transaction ?? ""}`
+              : `failed: ${result.errorReason}`
+          }`,
+        );
+        send(res, result.success ? 200 : 402, result, cors);
+        return;
+      }
 
       const payment = parsePaymentPayload(envelope["paymentPayload"]);
       if (!payment.ok) {
