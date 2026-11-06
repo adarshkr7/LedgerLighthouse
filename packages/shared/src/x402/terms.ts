@@ -32,7 +32,8 @@ const MAX_TIMEOUT_SECONDS = 86_400;
  * attacker-controlled *content* — validated as data, never trusted as meaning.
  */
 export interface Terms {
-  readonly scheme: typeof SCHEME_EXACT;
+  /** `exact` comes from this file's parser, `auth-capture` from `auth-capture.ts`. */
+  readonly scheme: typeof SCHEME_EXACT | "auth-capture";
   readonly network: string;
   readonly asset: Address;
   readonly payTo: Address;

@@ -12,7 +12,7 @@
 
 import { AUTH_CAPTURE_ESCROW, ERC3009_TOKEN_COLLECTOR, type PaymentInfo } from "../chain/escrow.js";
 import type { Address } from "./protocol.js";
-import type { ParseResult } from "./terms.js";
+import type { ParseResult, Terms } from "./terms.js";
 
 export const SCHEME_AUTH_CAPTURE = "auth-capture";
 /** `auth-capture` exists only in x402 v2. The `exact` flow stays on v1. */
@@ -193,6 +193,143 @@ export function parseAuthCapturePayload(raw: unknown): ParseResult<AuthCapturePa
   if (a["value"] !== accepted.value.amount) return fail("authorization.value: must equal the amount");
 
   return { ok: true, value: { ...(p as unknown as AuthCapturePayload), accepted: accepted.value } };
+}
+
+/** A parsed v2 402. `accepts` holds only the offers this profile can pay. */
+export interface AuthCapturePaymentRequired {
+  readonly x402Version: typeof X402_VERSION_V2;
+  readonly accepts: readonly AuthCaptureRequirements[];
+  readonly resource: {
+    readonly url: string;
+    /** Written by the vendor. Attacker-controlled, as in `Terms.description`. */
+    readonly description: string;
+  };
+  /** Why the server is still asking, on a retry. Written by the vendor. */
+  readonly error?: string | undefined;
+}
+
+/**
+ * Parses a decoded `PAYMENT-REQUIRED`. Offers under other schemes are dropped, since a
+ * vendor may list several, and an `auth-capture` offer outside this profile rejects the
+ * whole 402: it is a vendor asking for something this system has decided not to do, and
+ * quietly picking another of its offers would be guessing what it meant.
+ */
+export function parseAuthCapturePaymentRequired(raw: unknown): ParseResult<AuthCapturePaymentRequired> {
+  const p = record(raw);
+  if (!p) return fail("body: expected an object");
+  if (p["x402Version"] !== X402_VERSION_V2) return fail(`x402Version: must be ${X402_VERSION_V2}`);
+  if (!Array.isArray(p["accepts"])) return fail("accepts: expected an array");
+
+  const resource = record(p["resource"]);
+  if (!resource) return fail("resource: expected an object");
+  const url = resource["url"];
+  if (typeof url !== "string" || !URL.canParse(url)) return fail("resource.url: expected an absolute URL");
+  const description = resource["description"];
+  if (typeof description !== "string" || description === "") {
+    return fail("resource.description: expected a string");
+  }
+
+  const accepts: AuthCaptureRequirements[] = [];
+  for (const entry of p["accepts"] as unknown[]) {
+    if (record(entry)?.["scheme"] !== SCHEME_AUTH_CAPTURE) continue;
+    const parsed = parseAuthCaptureRequirements(entry);
+    if (!parsed.ok) return fail(`accepts: ${parsed.error}`);
+    accepts.push(parsed.value);
+  }
+  if (accepts.length === 0) return fail(`accepts: no ${SCHEME_AUTH_CAPTURE} offer`);
+
+  const error = p["error"];
+  return {
+    ok: true,
+    value: {
+      x402Version: X402_VERSION_V2,
+      accepts,
+      resource: { url, description },
+      ...(typeof error === "string" && error !== "" ? { error } : {}),
+    },
+  };
+}
+
+function encodeJson(value: unknown): string {
+  return Buffer.from(JSON.stringify(value), "utf8").toString("base64");
+}
+
+function decodeJson<T>(header: string, name: string, parse: (raw: unknown) => ParseResult<T>): ParseResult<T> {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(Buffer.from(header, "base64").toString("utf8"));
+  } catch (e) {
+    return fail(`${name}: not base64 JSON (${e instanceof Error ? e.message : String(e)})`);
+  }
+  return parse(raw);
+}
+
+export const encodePaymentRequiredHeader = (value: unknown): string => encodeJson(value);
+export const encodePaymentSignatureHeader = (payload: AuthCapturePayload): string => encodeJson(payload);
+
+export function decodePaymentRequiredHeader(header: string): ParseResult<AuthCapturePaymentRequired> {
+  return decodeJson(header, HEADER_PAYMENT_REQUIRED, parseAuthCapturePaymentRequired);
+}
+
+export function decodePaymentSignatureHeader(header: string): ParseResult<AuthCapturePayload> {
+  return decodeJson(header, HEADER_PAYMENT_SIGNATURE, parseAuthCapturePayload);
+}
+
+/** What we require of an offer before it is worth considering at all. */
+export interface ExpectedEscrowOffer {
+  readonly network: string;
+  readonly asset: Address;
+  /** The buyer's own vault. A vendor naming any other operator cannot be paid. */
+  readonly operator: Address;
+}
+
+/**
+ * Chooses the first offer matching our own configuration, as `selectTerms` does. The 402
+ * is a claim, and the operator most of all: it is the contract whose checks stand between
+ * a signature and the money.
+ */
+export function selectEscrowOffer(
+  parsed: AuthCapturePaymentRequired,
+  expected: ExpectedEscrowOffer,
+): ParseResult<AuthCaptureRequirements> {
+  const match = parsed.accepts.find(
+    (offer) =>
+      offer.network === expected.network &&
+      sameAddress(offer.asset, expected.asset) &&
+      sameAddress(offer.extra.captureAuthorizer, expected.operator),
+  );
+  if (match) return { ok: true, value: match };
+  const offered = parsed.accepts.map((o) => `${o.network}/${o.asset}/${o.extra.captureAuthorizer}`).join(", ");
+  return fail(
+    `no offer matches ${expected.network}/${expected.asset} with this vault (${expected.operator}) ` +
+      `as operator; offered: ${offered}`,
+  );
+}
+
+/** The same `Terms` the `exact` flow uses, so the agent and the trace see one shape. */
+export function termsFromOffer(offer: AuthCaptureRequirements, parsed: AuthCapturePaymentRequired): Terms {
+  return {
+    scheme: SCHEME_AUTH_CAPTURE,
+    network: offer.network,
+    asset: offer.asset,
+    payTo: offer.payTo,
+    amount: BigInt(offer.amount),
+    resource: parsed.resource.url,
+    description: parsed.resource.description,
+    maxTimeoutSeconds: offer.maxTimeoutSeconds,
+    extra: offer.extra as unknown as Readonly<Record<string, unknown>>,
+  };
+}
+
+/** A payment salt as the 32 bytes of hex the wire carries. */
+export function saltToHex(salt: bigint): `0x${string}` {
+  return `0x${salt.toString(16).padStart(64, "0")}`;
+}
+
+/** The reverse of `paymentSalt`. A vendor reads these out of the salt to claim. */
+export function splitPaymentSalt(salt: `0x${string}`): { goalId: bigint; seq: bigint } {
+  const value = BigInt(salt);
+  return { goalId: value >> 64n, seq: value & (2n ** 64n - 1n) };
 }
 
 /** Rebuilds the on-chain `PaymentInfo` a payload describes. */

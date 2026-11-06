@@ -1,10 +1,16 @@
 import { describe, expect, it } from "vitest";
 
-import { AUTH_CAPTURE_ESCROW, ERC3009_TOKEN_COLLECTOR } from "../chain/escrow.js";
+import { AUTH_CAPTURE_ESCROW, ERC3009_TOKEN_COLLECTOR, paymentSalt } from "../chain/escrow.js";
+import type { Address } from "./protocol.js";
 import {
+  decodePaymentRequiredHeader,
   parseAuthCapturePayload,
+  parseAuthCapturePaymentRequired,
   parseAuthCaptureRequirements,
   paymentInfoFromWire,
+  saltToHex,
+  selectEscrowOffer,
+  splitPaymentSalt,
   type AuthCapturePayload,
 } from "./auth-capture.js";
 
@@ -106,6 +112,85 @@ describe("parseAuthCapturePayload", () => {
     const p = payload();
     mutate(p);
     expect(parseAuthCapturePayload(p).ok).toBe(false);
+  });
+});
+
+describe("parseAuthCapturePaymentRequired", () => {
+  const body = (accepts: unknown[]) => ({
+    x402Version: 2,
+    resource: { url: "https://vendor.example/r", description: "A feed." },
+    accepts,
+  });
+
+  it("keeps the offers this profile can pay, and carries the vendor's text as data", () => {
+    const parsed = parseAuthCapturePaymentRequired({ ...body([requirements()]), error: "try again" });
+    if (!parsed.ok) throw new Error(parsed.error);
+    expect(parsed.value.accepts).toHaveLength(1);
+    expect(parsed.value.resource.description).toBe("A feed.");
+    expect(parsed.value.error).toBe("try again");
+  });
+
+  it("drops offers under other schemes, which a vendor may list alongside", () => {
+    const parsed = parseAuthCapturePaymentRequired(body([{ scheme: "exact", network: "eip155:84532" }, requirements()]));
+    expect(parsed.ok && parsed.value.accepts.length).toBe(1);
+  });
+
+  /** A vendor asking for what this system refuses, not an offer to skip past. */
+  it("rejects the whole 402 when an auth-capture offer is outside the profile", () => {
+    const bad = requirements();
+    bad.extra["operatorType"] = "delegated";
+    expect(parseAuthCapturePaymentRequired(body([requirements(), bad])).ok).toBe(false);
+  });
+
+  it.each<[string, unknown]>([
+    ["no auth-capture offer", body([{ scheme: "exact" }])],
+    ["no offers at all", body([])],
+    ["x402 v1", { ...body([requirements()]), x402Version: 1 }],
+    ["no resource", { x402Version: 2, accepts: [requirements()] }],
+    ["a resource that is not a URL", { ...body([requirements()]), resource: { url: "nope", description: "x" } }],
+    ["no description", { ...body([requirements()]), resource: { url: "https://v.example" } }],
+  ])("rejects %s", (_name, raw) => {
+    expect(parseAuthCapturePaymentRequired(raw).ok).toBe(false);
+  });
+
+  it("rejects a header that is not base64 JSON", () => {
+    expect(decodePaymentRequiredHeader("not json").ok).toBe(false);
+  });
+});
+
+describe("selectEscrowOffer", () => {
+  const required = (accepts: ReturnType<typeof requirements>[]) => {
+    const parsed = parseAuthCapturePaymentRequired({
+      x402Version: 2,
+      resource: { url: "https://vendor.example/r", description: "A feed." },
+      accepts,
+    });
+    if (!parsed.ok) throw new Error(parsed.error);
+    return parsed.value;
+  };
+  const expected = { network: "eip155:84532", asset: USDC as Address, operator: VAULT as Address };
+
+  it("selects by network, token and operator, whatever the spelling of the address", () => {
+    const selected = selectEscrowOffer(required([requirements()]), { ...expected, asset: USDC.toLowerCase() as Address });
+    expect(selected.ok).toBe(true);
+  });
+
+  it.each<[string, (r: ReturnType<typeof requirements>) => void]>([
+    ["another network", (r) => (r.network = "eip155:8453")],
+    ["another token", (r) => (r.asset = VENDOR)],
+    ["another operator", (r) => (r.extra["captureAuthorizer"] = VENDOR)],
+  ])("refuses an offer on %s", (_name, mutate) => {
+    const r = requirements();
+    mutate(r);
+    expect(selectEscrowOffer(required([r]), expected).ok).toBe(false);
+  });
+});
+
+describe("the payment salt", () => {
+  it("round-trips the goal and sequence number through the wire's 32 bytes", () => {
+    const hex = saltToHex(paymentSalt(123n, 45n));
+    expect(hex).toHaveLength(66);
+    expect(splitPaymentSalt(hex)).toEqual({ goalId: 123n, seq: 45n });
   });
 });
 

@@ -45,6 +45,7 @@ import {
 import { descriptionFor, findDemoGoal, type DemoGoal } from "@ntux402/shared";
 
 import { DEFAULT_CONFIG, SCHEME_EXACT, X402_VERSION, type ServerConfig } from "./config.js";
+import { handleEscrowRequest, type EscrowVendorOptions } from "./escrow.js";
 
 export interface MockRequest {
   readonly method: string;
@@ -73,6 +74,8 @@ export interface HandlerOptions {
   readonly baseUrl?: string;
   /** Omit for stub mode: payloads are validated, but no money moves. */
   readonly gateway?: PaymentGateway;
+  /** Sell through x402 v2 `auth-capture` instead of v1 `exact`. See `escrow.ts`. */
+  readonly escrow?: EscrowVendorOptions;
 }
 
 const JSON_HEADERS = { "content-type": "application/json" } as const;
@@ -199,7 +202,9 @@ export async function handleRequest(
     return {
       status: 200,
       headers: JSON_HEADERS,
-      body: { ok: true, x402Version: X402_VERSION, settlement: options.gateway ? "live" : "stub" },
+      body: options.escrow
+        ? { ok: true, x402Version: 2, settlement: "escrow", vendor: options.escrow.vendor, vault: options.escrow.vault }
+        : { ok: true, x402Version: X402_VERSION, settlement: options.gateway ? "live" : "stub" },
     };
   }
 
@@ -209,6 +214,20 @@ export async function handleRequest(
   }
 
   const resource = new URL(barePath, baseUrl).toString();
+
+  if (options.escrow) {
+    const response = await handleEscrowRequest(
+      req.headers,
+      { amountAtomic: route.amountAtomic, description: route.description, resource },
+      options.escrow,
+    );
+    return {
+      status: response.status,
+      headers: response.headers,
+      body: response.paid ? premiumPayload(resource, route.mode) : response.body,
+    };
+  }
+
   const requirements = paymentRequirements({
     config,
     amountAtomic: route.amountAtomic,
