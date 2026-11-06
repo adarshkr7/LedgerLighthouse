@@ -3,7 +3,7 @@
  *
  * Non-negotiable #3 (ARCHITECTURE.md) — "the signer reads the chain, never
  * the caller." This module is that sentence in code. Every field the signer
- * later puts inside an EIP-3009 signature comes from here.
+ * later puts inside a signature comes from here.
  *
  * It is an interface with a viem implementation behind it so the service can be
  * tested against a fake chain. That is a testing seam, not a trust seam: the
@@ -55,18 +55,13 @@ export interface VaultReader {
   spend(goalId: bigint, seq: bigint): Promise<SpendRecord | undefined>;
   /** The token's own EIP-712 domain separator — the authoritative one. */
   tokenDomainSeparator(token: Address): Promise<Hex>;
-  /** True once the token has consumed this authorization. */
-  authorizationUsed(token: Address, authorizer: Address, nonce: Hex): Promise<boolean>;
   /** ERC-20 balance, for sweeping a payer back to its owner. */
   tokenBalance(token: Address, holder: Address): Promise<bigint>;
-}
-
-/**
- * What the escrow signer also reads. None of it is trusted for safety: a false answer
- * yields a signature the vault refuses. These reads exist so a mistake fails here,
- * with a reason, and not later at the vault.
- */
-export interface EscrowVaultReader extends VaultReader {
+  /*
+   * The rest is not trusted for safety: a false answer yields a signature the vault
+   * refuses. These reads exist so a mistake fails here, with a reason, and not later
+   * at the vault.
+   */
   /** The vault's `escrow()` and `collector()`, or undefined if it has neither. */
   escrowBinding(): Promise<{ readonly escrow: Address; readonly collector: Address } | undefined>;
   /** When the vendor must claim by. */
@@ -79,7 +74,7 @@ export interface EscrowVaultReader extends VaultReader {
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
-export class OnChainVaultReader implements EscrowVaultReader {
+export class OnChainVaultReader implements VaultReader {
   readonly #client: PublicClient;
   readonly #vault: Address;
 
@@ -236,12 +231,4 @@ export class OnChainVaultReader implements EscrowVaultReader {
     }) as Promise<Hex>;
   }
 
-  async authorizationUsed(token: Address, authorizer: Address, nonce: Hex): Promise<boolean> {
-    return this.#client.readContract({
-      address: token,
-      abi: usdcAbi,
-      functionName: "authorizationState",
-      args: [authorizer, nonce],
-    }) as Promise<boolean>;
-  }
 }

@@ -321,12 +321,7 @@ export function createOrchestratorServer(options: OrchestratorServerOptions): Se
         // the bearer. Handing this the display URL is the bug that made every
         // sweep against the ROFL signer a 401 — after the console had already
         // closed the goal on chain.
-        const outcome = await sweepGoal(goalId, {
-          signer: options.signer,
-          facilitatorUrl: options.facilitatorUrl,
-          relay: options.relay,
-          usdcAddress: options.usdcAddress,
-        });
+        const outcome = await sweepGoal(goalId, { signer: options.signer, relay: options.relay });
         log(`POST /sweeps goal=${goalId} -> ${outcome.kind}`);
 
         if (outcome.kind === "settled") {

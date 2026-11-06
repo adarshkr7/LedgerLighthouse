@@ -1,8 +1,8 @@
 /**
- * The Authorization Signer for a vault that operates an auth-capture escrow.
+ * The Authorization Signer, for a vault that operates an auth-capture escrow.
  *
- * `service.ts` signs a transfer straight to the vendor, so it has to be right about
- * the chain: a false approval from its RPC becomes a payment. This class signs one
+ * A signer that signs a transfer straight to the vendor has to be right about the
+ * chain, because a false approval from its RPC becomes a payment. This class signs one
  * thing only, a `receiveWithAuthorization` to the escrow's collector, whose nonce
  * commits to a PaymentInfo naming the vault as operator. The token takes that only
  * from the collector, the collector only from the escrow, and the escrow only from
@@ -17,7 +17,7 @@
  * the token. They are fixed when this is constructed. That is the whole property, and
  * there is deliberately no route to a plain transfer anywhere in this file.
  *
- * Read `refuse()` as the specification, as in `service.ts`. What this does not defend
+ * Read `refuse()` as the specification. What this does not defend
  * against is a compromised enclave, which holds the key and can sign anything.
  */
 
@@ -33,8 +33,7 @@ import { escrowNonce } from "@ntux402/shared/viem";
 
 import type { KeyStore } from "./keystore.js";
 import { parseSignRequest, parseSweepRequest, type SignRequest } from "./schema.js";
-import type { SignOutcome, SignerService } from "./service.js";
-import type { EscrowVaultReader } from "./vault.js";
+import type { VaultReader } from "./vault.js";
 
 const ZERO_ADDRESS: Address = "0x0000000000000000000000000000000000000000";
 
@@ -93,7 +92,18 @@ export interface SignedEscrowAuthorization {
   readonly termsHash: Hex;
 }
 
-function refuse(status: number, error: string): SignOutcome<SignedEscrowAuthorization> {
+export type SignOutcome<T = SignedEscrowAuthorization> =
+  | { readonly ok: true; readonly value: T }
+  | { readonly ok: false; readonly status: number; readonly error: string };
+
+/** What the HTTP surface serves. */
+export interface SignerService<T = SignedEscrowAuthorization> {
+  mintPayer(): Promise<{ address: Address }>;
+  signRaw(body: unknown): Promise<SignOutcome<T>>;
+  sweep(goalIdRaw: unknown): Promise<SignOutcome<T>>;
+}
+
+function refuse(status: number, error: string): SignOutcome {
   return { ok: false, status, error };
 }
 
@@ -114,12 +124,12 @@ function samePayment(a: PaymentInfo, b: PaymentInfo): boolean {
   );
 }
 
-export class EscrowAuthorizationSigner implements SignerService<SignedEscrowAuthorization> {
-  readonly #vault: EscrowVaultReader;
+export class EscrowAuthorizationSigner implements SignerService {
+  readonly #vault: VaultReader;
   readonly #keys: KeyStore;
   readonly #config: Required<Omit<EscrowSignerConfig, "now">> & { now: () => number };
 
-  constructor(options: { vault: EscrowVaultReader; keys: KeyStore; config: EscrowSignerConfig }) {
+  constructor(options: { vault: VaultReader; keys: KeyStore; config: EscrowSignerConfig }) {
     this.#vault = options.vault;
     this.#keys = options.keys;
     const usdc = networkForChainId(options.config.chainId)?.usdc;
@@ -141,14 +151,14 @@ export class EscrowAuthorizationSigner implements SignerService<SignedEscrowAuth
     return { address: await this.#keys.mint() };
   }
 
-  async signRaw(body: unknown): Promise<SignOutcome<SignedEscrowAuthorization>> {
+  async signRaw(body: unknown): Promise<SignOutcome> {
     const parsed = parseSignRequest(body);
     if (!parsed.ok) return refuse(400, parsed.error);
     return this.sign(parsed.value);
   }
 
   /** Signs the collection of one approved spend. The caller supplies only the pointer. */
-  async sign(request: SignRequest): Promise<SignOutcome<SignedEscrowAuthorization>> {
+  async sign(request: SignRequest): Promise<SignOutcome> {
     const { goalId, seq } = request;
 
     const chainId = await this.#vault.chainId();
@@ -191,7 +201,7 @@ export class EscrowAuthorizationSigner implements SignerService<SignedEscrowAuth
       return refuse(410, `refused: (${goalId}, ${seq}) has already gone back to the budget.`);
     }
 
-    // Expiry is a refusal, not a re-issue, as in service.ts. Nothing here reads the
+    // Expiry is a refusal, not a re-issue. Nothing here reads the
     // clock into the signature, so a retry is byte-identical.
     const now = BigInt(this.#config.now());
     if (spend.validBefore <= now) {
@@ -236,7 +246,7 @@ export class EscrowAuthorizationSigner implements SignerService<SignedEscrowAuth
    * re-checks on chain that the goal is closed and that this is its owner, so an RPC
    * lying about the owner gets a signature the vault refuses.
    */
-  async sweep(goalIdRaw: unknown): Promise<SignOutcome<SignedEscrowAuthorization>> {
+  async sweep(goalIdRaw: unknown): Promise<SignOutcome> {
     const parsed = parseSweepRequest(goalIdRaw);
     if (!parsed.ok) return refuse(400, parsed.error);
     const { goalId } = parsed.value;
@@ -317,7 +327,7 @@ export class EscrowAuthorizationSigner implements SignerService<SignedEscrowAuth
     seq: string;
     payment: PaymentInfo;
     termsHash: Hex;
-  }): Promise<SignOutcome<SignedEscrowAuthorization>> {
+  }): Promise<SignOutcome> {
     const { payment } = fields;
 
     const account = await this.#keys.signerFor(payment.payer);

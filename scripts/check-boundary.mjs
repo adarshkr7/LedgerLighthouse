@@ -112,6 +112,21 @@ for (const [label, srcDir, pkgPath] of [
   }
 }
 
+/*
+ * The signer signs through the auth-capture escrow and nothing else. A plain transfer it
+ * could be talked into signing is a signature that works whatever the vault says, which
+ * undoes what the escrow is for. Tests may name the type, to prove what is not produced.
+ */
+for (const file of walk(join(repoRoot, "services", "signer", "src"))) {
+  if (file.endsWith(".test.ts")) continue;
+  const src = readFileSync(file, "utf8");
+  const found = /TRANSFER_WITH_AUTHORIZATION_TYPES|TransferWithAuthorization|transferWithAuthorization/.exec(src);
+  if (found) {
+    const line = src.slice(0, found.index).split("\n").length;
+    violations.push(`${relative(repoRoot, file)}:${line} names "${found[0]}" — the signer must have no route to a plain transfer`);
+  }
+}
+
 if (violations.length > 0) {
   console.error(
     "Dependency boundary violated: services/orchestrator must not reach the signer.\n",

@@ -279,7 +279,7 @@ for (const c of actionable) {
     // transfer to anyone but the goal's owner is not worth the gas to find out.
     const { payment, signature } = outcome.value;
     if (payment === undefined) {
-      throw new Error("the signer did not sign through the escrow. Restart it with SIGNER_SETTLEMENT=escrow.");
+      throw new Error("the signer did not sign through the escrow. Restart it on the current code.");
     }
     const value = BigInt(payment.maxAmount);
     if (

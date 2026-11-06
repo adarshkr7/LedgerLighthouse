@@ -331,11 +331,11 @@ describe("PaymentLoop on an escrow vault", () => {
       expect(relay.reclaims).toBe(1);
     });
 
-    it("a signer not in escrow mode", async () => {
+    it("a signer that gives no escrow payment", async () => {
       signed = undefined;
       const result = await build().fetchPaid(URL_, 1n);
       expect(result).toMatchObject({ kind: "failed" });
-      if (result.kind === "failed") expect(result.reason).toMatch(/SIGNER_SETTLEMENT/);
+      if (result.kind === "failed") expect(result.reason).toMatch(/no escrow payment/);
       expect(vendor.received).toHaveLength(0);
     });
   });

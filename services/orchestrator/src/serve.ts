@@ -158,10 +158,7 @@ const loop = new PaymentLoop({
   signer,
   agent,
   asset: usdcAddress,
-  network: network.x402Network,
-  ...(process.env["SIGNER_SETTLEMENT"] === "escrow"
-    ? { escrow: { vault: vaultAddress, network: `eip155:${chainId}` } }
-    : {}),
+  escrow: { vault: vaultAddress, network: `eip155:${chainId}` },
   onEvent: (event) => log.info(renderEvent(event)),
 });
 

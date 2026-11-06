@@ -16,8 +16,9 @@
 
 An LLM agent buys API resources over x402 without ever holding spending authority. The budget is
 encrypted on chain, the debit is committed before the decision is knowable, the resulting attestation
-is verified in the contract, and only then is an EIP-3009 signature released from a key held inside
-an attested Intel TDX enclave.
+is verified in the contract, and only then is a signature released from a key held inside an attested
+Intel TDX enclave. That signature can only collect through the vault, which checks its own record again
+when the payment is made, through x402's auth-capture escrow.
 
 Full design: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
@@ -120,7 +121,7 @@ stating this bound precisely against it, is open work rather than finished work.
 
 ```text
 AI Orchestrator → attacker-controlled 402 terms → PolicyVault → Inco confidential computation
-→ APPROVE / REJECT → Authorization Signer (enclave key) → EIP-3009 → x402 facilitator → API
+→ APPROVE / REJECT → Authorization Signer (enclave key) → x402 facilitator → vault → escrow → API
 ```
 
 Everything left of `PolicyVault` is untrusted. Everything right of `APPROVE / REJECT` acts only on
@@ -227,9 +228,9 @@ pnpm --filter @ntux402/e2e run fund
 ```
 
 Two separate faucets: Base Sepolia ETH for gas, and test USDC from
-<https://faucet.circle.com> for the payments themselves. Without test USDC everything still runs and
-the resource server falls back to stub settlement — the confidential policy, the decision and the
-bounce are real either way.
+<https://faucet.circle.com> for the payments themselves. Settlement is always real: a hold is a
+transaction, so there is no stub mode. The mock vendor also needs `VENDOR_PRIVATE_KEY` and a little ETH,
+and the facilitator needs the vault in `FACILITATOR_ESCROW_OPERATORS`. See `.env.example`.
 
 ### Run
 

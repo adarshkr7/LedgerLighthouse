@@ -16,7 +16,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { RateLimiter, corsHeaders, rejected } from "@ntux402/shared/node";
 
 import { EnclaveRateLimitError } from "./enclave-limit.js";
-import type { SignerService } from "./service.js";
+import type { SignerService } from "./escrow-service.js";
 
 /** The fields the route handlers log. Every kind of signature has them. */
 interface LoggedAuthorization {

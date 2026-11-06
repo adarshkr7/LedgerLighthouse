@@ -408,7 +408,7 @@ await check(`mock vendor ${origin(mockApiUrl)}`, async () => {
   const { status, body } = await getJson(`${mockApiUrl}/health`);
   if (status !== 200) return { level: "fail", detail: `HTTP ${status}` };
   if (body["settlement"] !== "escrow") {
-    return { level: "fail", detail: `settlement ${String(body["settlement"])}`, fix: "set SIGNER_SETTLEMENT=escrow and VENDOR_PRIVATE_KEY, and restart it." };
+    return { level: "fail", detail: `settlement ${String(body["settlement"])}`, fix: "restart it on the current code." };
   }
   if (String(body["vault"]).toLowerCase() !== vault!.toLowerCase()) {
     return { level: "fail", detail: `it sells for vault ${String(body["vault"])}`, fix: "restart it so it reads the current .env." };

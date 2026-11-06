@@ -62,7 +62,7 @@ export async function mockVendor(mockApiUrl: string, vault: Address): Promise<Ad
     .catch(() => undefined)) as { settlement?: unknown; vendor?: unknown; vault?: unknown } | undefined;
   if (health === undefined) throw new Error(`the mock vendor is not reachable at ${mockApiUrl}. Start it first.`);
   if (health.settlement !== "escrow" || typeof health.vendor !== "string" || !isAddress(health.vendor)) {
-    throw new Error(`the mock vendor at ${mockApiUrl} is not selling through the escrow. Set SIGNER_SETTLEMENT=escrow.`);
+    throw new Error(`the mock vendor at ${mockApiUrl} is not selling through the escrow. Restart it on the current code.`);
   }
   if (typeof health.vault !== "string" || !isAddress(health.vault) || !isAddressEqual(health.vault, vault)) {
     throw new Error(`the mock vendor names vault ${String(health.vault)}, not ${vault}. Restart it on the current .env.`);

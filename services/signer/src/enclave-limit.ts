@@ -64,9 +64,9 @@ import type { KeyStore } from "./keystore.js";
 export type EnclaveOperation = "mint" | "derive";
 
 /**
- * Thrown instead of returned, unlike every refusal in `service.ts`.
+ * Thrown instead of returned, unlike every refusal in `escrow-service.ts`.
  *
- * `KeyStore` is an interface `AuthorizationSigner` shares with three
+ * `KeyStore` is an interface `EscrowAuthorizationSigner` shares with three
  * implementations, and widening its return types to carry a limiter outcome
  * would push this concern into `sign()` and `sweep()` — the two functions whose
  * whole value is that every branch in them is a payment-safety check. Throwing
@@ -196,7 +196,7 @@ export class RateLimitedKeyStore implements KeyStore {
    * budget being defended is the daemon's throughput for *legitimate* signing,
    * and a caller that can probe unknown addresses for free is a caller that can
    * measure the store. Reaching this line at all already costs an approved,
-   * finalized spend record on chain (`service.ts`), so misses are rare and the
+   * finalized spend record on chain (`escrow-service.ts`), so misses are rare and the
    * conservative charge is close to free.
    */
   async signerFor(address: Address): Promise<LocalAccount | undefined> {

@@ -136,7 +136,6 @@ export async function startForkStack(rpc: string): Promise<ForkStack> {
   const keys = new InMemoryKeyStore();
   const signerServer = createSignerServer({
     signer: await openSigner({
-      settlement: "escrow",
       vault: new OnChainVaultReader({ rpcUrl: rpc, vaultAddress: vault, chainId: CHAIN_ID }),
       keys,
       chainId: CHAIN_ID,
@@ -233,7 +232,6 @@ export async function startForkStack(rpc: string): Promise<ForkStack> {
       SIGNER_URL: signerUrl,
       MOCK_API_URL: vendor.url,
       X402_FACILITATOR_URL: facilitatorUrl,
-      SIGNER_SETTLEMENT: "escrow",
       FORK_DECISIONS_FROM_BLOCK: deployBlock.toString(),
       // Empty stops loadDotEnv filling these in from the operator's own .env.
       SIGNER_SERVICE_TOKEN: "",

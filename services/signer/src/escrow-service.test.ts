@@ -14,6 +14,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   createPublicClient,
   custom,
+  domainSeparator,
   recoverTypedDataAddress,
   type Address,
   type Hex,
@@ -24,6 +25,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import {
   AUTH_CAPTURE_ESCROW,
   ERC3009_TOKEN_COLLECTOR,
+  NETWORKS,
   RECEIVE_WITH_AUTHORIZATION_TYPES,
   TRANSFER_WITH_AUTHORIZATION_TYPES,
   paymentSalt,
@@ -34,9 +36,8 @@ import { escrowNonce, paymentInfoHash } from "@ntux402/shared/viem";
 import { EscrowAuthorizationSigner, type EscrowSignerConfig } from "./escrow-service.js";
 import { createSignerServer } from "./http.js";
 import { InMemoryKeyStore, type KeyStore } from "./keystore.js";
-import { AuthorizationSigner } from "./service.js";
-import { openSigner, settlementFromEnv } from "./settlement.js";
-import { OnChainVaultReader, type EscrowVaultReader, type GoalRecord, type SpendRecord } from "./vault.js";
+import { openSigner } from "./open-signer.js";
+import { OnChainVaultReader, type GoalRecord, type SpendRecord, type VaultReader } from "./vault.js";
 
 const CHAIN_ID = 84532;
 const USDC: Address = "0x036CbD53842c5426634e7929541eC2318f3dCF7e";
@@ -56,13 +57,14 @@ const DOMAIN = { name: "USDC", version: "2", chainId: CHAIN_ID, verifyingContrac
  * A chain that says whatever the test tells it to. Its answers are what a malicious
  * RPC could say, which is why it is a useful thing to test against.
  */
-class FakeChain implements EscrowVaultReader {
+class FakeChain implements VaultReader {
   chain = CHAIN_ID;
   goals = new Map<string, GoalRecord>();
   spends = new Map<string, SpendRecord>();
   reclaimed = false;
   deadline = DEADLINE;
   balance = 0n;
+  domain: Hex = "0x00";
   /** Replaces what `escrowPayment` answers. */
   vaultsOwn?: (derived: PaymentInfo) => PaymentInfo;
   binding: { escrow: Address; collector: Address } | undefined = {
@@ -80,10 +82,7 @@ class FakeChain implements EscrowVaultReader {
     return this.spends.get(`${goalId}:${seq}`);
   }
   async tokenDomainSeparator(): Promise<Hex> {
-    return "0x00";
-  }
-  async authorizationUsed() {
-    return false;
+    return this.domain;
   }
   async tokenBalance() {
     return this.balance;
@@ -315,7 +314,57 @@ describe("EscrowAuthorizationSigner", () => {
       expect(outcome).toMatchObject({ ok: false, status: 500 });
     });
 
-    /** No route takes terms, here as in service.ts. */
+    it("signs when the token's EIP-712 domain matches", async () => {
+      chain.domain = domainSeparator({ domain: DOMAIN });
+      const outcome = await makeSigner(chain, keys, { verifyDomainOnChain: true }).sign({ goalId: 1n, seq: 1n });
+      expect(outcome.ok).toBe(true);
+    });
+
+    /*
+     * USDC's name differs by network, "USDC" here and "USD Coin" on Base, so a signer on
+     * Base that kept the testnet name would produce signatures the token rejects. Written
+     * out and not read from NETWORKS, so the test pins it independently.
+     */
+    it("signs under Base USDC's own domain on Base", async () => {
+      const base = NETWORKS.base;
+      chain.chain = base.chainId;
+      setGoal({ asset: base.usdc.address });
+      chain.domain = domainSeparator({
+        domain: { name: "USD Coin", version: "2", chainId: base.chainId, verifyingContract: base.usdc.address },
+      });
+      const onBase = new EscrowAuthorizationSigner({
+        vault: chain,
+        keys,
+        config: {
+          chainId: base.chainId,
+          usdcAddress: base.usdc.address,
+          vaultAddress: VAULT,
+          escrow: AUTH_CAPTURE_ESCROW,
+          collector: ERC3009_TOKEN_COLLECTOR,
+          now: () => NOW,
+        },
+      });
+      expect((await onBase.sign({ goalId: 1n, seq: 1n })).ok).toBe(true);
+    });
+
+    it("refuses to start on a chain whose USDC domain it does not know", () => {
+      expect(
+        () =>
+          new EscrowAuthorizationSigner({
+            vault: chain,
+            keys,
+            config: {
+              chainId: 1,
+              usdcAddress: USDC,
+              vaultAddress: VAULT,
+              escrow: AUTH_CAPTURE_ESCROW,
+              collector: ERC3009_TOKEN_COLLECTOR,
+            },
+          }),
+      ).toThrow(/no USDC EIP-712 domain/);
+    });
+
+    /** No route takes terms. */
     it("refuses a body that carries terms", async () => {
       const outcome = await makeSigner(chain, keys).signRaw({ goalId: "1", seq: "1", payTo: THIEF });
       expect(outcome).toMatchObject({ ok: false, status: 400 });
@@ -349,6 +398,34 @@ describe("EscrowAuthorizationSigner", () => {
       chain.balance = 1n;
       expect(await sweep()).toMatchObject({ ok: false, status: 409 });
     });
+
+    it("refuses a payer it holds no key for", async () => {
+      setGoal({ open: false, payer: await new InMemoryKeyStore().mint() });
+      chain.balance = 1n;
+      expect(await sweep()).toMatchObject({ ok: false, status: 404 });
+    });
+
+    it("refuses a body carrying payment terms, and names them", async () => {
+      const outcome = await makeSigner(chain, keys).sweep({ goalId: "1", to: THIEF, value: "999999999" });
+      if (outcome.ok) throw new Error("it signed");
+      expect(outcome.status).toBe(400);
+      expect(outcome.error).toContain("payment terms");
+      expect(outcome.error).toContain("to");
+      expect(outcome.error).toContain("value");
+    });
+
+    it("refuses an unknown field, and a malformed body", async () => {
+      const signer = makeSigner(chain, keys);
+      expect(await signer.sweep({ goalId: "1", memo: "hello" })).toMatchObject({ ok: false, status: 400 });
+      expect(await signer.sweep({ goalId: "not a number" })).toMatchObject({ ok: false, status: 400 });
+      expect(await signer.sweep("1")).toMatchObject({ ok: false, status: 400 });
+    });
+  });
+
+  it("mints a payer and returns only its address", async () => {
+    const minted = await makeSigner(chain, keys).mintPayer();
+    expect(Object.keys(minted)).toEqual(["address"]);
+    expect(await keys.signerFor(minted.address)).toBeDefined();
   });
 
   it("serves through the same HTTP surface", async () => {
@@ -440,7 +517,7 @@ describe("the shared vector", () => {
   });
 });
 
-describe("choosing the settlement at boot", () => {
+describe("opening the signer at boot", () => {
   const base = async (chain: FakeChain) => ({
     vault: chain,
     keys: new InMemoryKeyStore(),
@@ -449,44 +526,22 @@ describe("choosing the settlement at boot", () => {
     vaultAddress: VAULT,
   });
 
-  it("reads the mode, and refuses a typo instead of falling back", () => {
-    expect(settlementFromEnv(undefined)).toBe("direct");
-    expect(settlementFromEnv("")).toBe("direct");
-    expect(settlementFromEnv("direct")).toBe("direct");
-    expect(settlementFromEnv("escrow")).toBe("escrow");
-    expect(() => settlementFromEnv("Escrow")).toThrow(/SIGNER_SETTLEMENT/);
-  });
-
-  /** The trap: the vault still has the old view, so this would sign plain transfers. */
-  it("refuses a direct signer on an escrow vault", async () => {
-    const chain = new FakeChain();
-    await expect(openSigner({ ...(await base(chain)), settlement: "direct" })).rejects.toThrow(/escrow vault/);
-  });
-
-  it("refuses an escrow signer on a vault with no escrow", async () => {
+  it("refuses a vault with no escrow", async () => {
     const chain = new FakeChain();
     chain.binding = undefined;
-    await expect(openSigner({ ...(await base(chain)), settlement: "escrow" })).rejects.toThrow(/has no escrow/);
+    await expect(openSigner(await base(chain))).rejects.toThrow(/has no escrow/);
   });
 
   it("refuses a vault using another escrow or collector", async () => {
     const chain = new FakeChain();
     chain.binding = { escrow: THIEF, collector: ERC3009_TOKEN_COLLECTOR };
-    await expect(openSigner({ ...(await base(chain)), settlement: "escrow" })).rejects.toThrow(/signs only for/);
+    await expect(openSigner(await base(chain))).rejects.toThrow(/signs only for/);
     chain.binding = { escrow: AUTH_CAPTURE_ESCROW, collector: THIEF };
-    await expect(openSigner({ ...(await base(chain)), settlement: "escrow" })).rejects.toThrow(/signs only for/);
+    await expect(openSigner(await base(chain))).rejects.toThrow(/signs only for/);
   });
 
-  it("opens the matching signer when mode and vault agree", async () => {
-    const escrowChain = new FakeChain();
-    expect(await openSigner({ ...(await base(escrowChain)), settlement: "escrow" })).toBeInstanceOf(
-      EscrowAuthorizationSigner,
-    );
-    const directChain = new FakeChain();
-    directChain.binding = undefined;
-    expect(await openSigner({ ...(await base(directChain)), settlement: "direct" })).toBeInstanceOf(
-      AuthorizationSigner,
-    );
+  it("opens on a vault using the pinned escrow and collector", async () => {
+    expect(await openSigner(await base(new FakeChain()))).toBeInstanceOf(EscrowAuthorizationSigner);
   });
 });
 

@@ -70,7 +70,7 @@ const NO_KEY_HASH = `0x${"00".repeat(32)}` as const;
  */
 function escrowMismatch(signed: SignedAuthorization, offer: AuthCaptureRequirements): string | undefined {
   const payment = signed.payment;
-  if (!payment) return "the signer returned no escrow payment: is SIGNER_SETTLEMENT=escrow set on it?";
+  if (!payment) return "the signer returned no escrow payment: is it running the current code?";
   const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
   if (!same(payment.operator, offer.extra.captureAuthorizer)) return `operator differs: ${payment.operator}`;
   if (!same(payment.receiver, offer.payTo)) return `receiver differs: ${payment.receiver}`;

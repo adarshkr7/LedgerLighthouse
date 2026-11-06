@@ -15,7 +15,7 @@
  *  - **The interface is async.** Not because the local stores need it, but
  *    because `RoflKeyStore` fetches from an enclave daemon over a socket. Making
  *    the *interface* async is what lets custody move into a TEE without
- *    `AuthorizationSigner` learning where its keys come from.
+ *    `EscrowAuthorizationSigner` learning where its keys come from.
  *
  * ## Which store to use
  *
@@ -235,7 +235,7 @@ export function normalizePrivateKey(key: string): Hex {
  *
  * ## What changes, and what does not
  *
- * `AuthorizationSigner` is untouched. Every refusal in `service.ts` still
+ * `EscrowAuthorizationSigner` is untouched. Every refusal in `escrow-service.ts` still
  * applies; the signer still accepts only `(goalId, seq)` and still reads every
  * signed field from the chain. The only difference is where the key came from.
  *
