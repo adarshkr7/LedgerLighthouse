@@ -87,6 +87,7 @@ contract PolicyVaultTest is IncoTest {
     /// build the struct here and issue the call themselves.
     function _paramsFor(uint256 budget, uint256 cap, uint32 calls, address payer, address opener)
         internal
+        view
         returns (PolicyVault.OpenGoalParams memory params)
     {
         return _paramsWithAttempts(budget, cap, calls, ATTEMPTS, payer, opener);
@@ -99,7 +100,7 @@ contract PolicyVaultTest is IncoTest {
         uint32 attempts,
         address payer,
         address opener
-    ) internal returns (PolicyVault.OpenGoalParams memory params) {
+    ) internal view returns (PolicyVault.OpenGoalParams memory params) {
         address[] memory allowlist = new address[](1);
         allowlist[0] = VENDOR;
 

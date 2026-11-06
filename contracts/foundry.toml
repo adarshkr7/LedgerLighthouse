@@ -9,6 +9,16 @@ evm_version = "cancun"
 optimizer = true
 optimizer_runs = 200
 
+# Every block.timestamp comparison in PolicyVault is a deadline: a goal's expiry,
+# a hold's payBy, or the end of an EIP-3009 authorization. None is a source of
+# randomness, and a few seconds of drift cannot move money the rules forbid:
+# reclaimExpired needs `now >= validBefore`, the exact opposite of what USDC
+# needs to accept the authorization, and timestamps never go backwards.
+# Set here rather than as inline comments so PolicyVault.sol stays byte-identical
+# to the deployed source. Comments would change the bytecode's metadata hash.
+[lint]
+exclude_lints = ["block-timestamp"]
+
 [rpc_endpoints]
 base_sepolia = "${BASE_SEPOLIA_RPC_URL}"
 

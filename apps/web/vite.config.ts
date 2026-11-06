@@ -1,5 +1,30 @@
-import { defineConfig } from "vite";
+import { defineConfig, type Rollup } from "vite";
 import react from "@vitejs/plugin-react";
+
+type RollupLog = Rollup.RollupLog;
+
+/**
+ * Build warnings from dependencies that need no action, matched narrowly so the
+ * same warning from anything else still prints.
+ *
+ * - `/*#__PURE__*\/` comments Rollup cannot place. It discards them, which can
+ *   only leave slightly more code in the bundle, and some sit in commented-out code.
+ * - `crypto` in mlkem and @hpke/common. It is their fallback for Node 18 and
+ *   older, after a `globalThis.crypto` check that browsers always pass.
+ */
+function isKnownDependencyWarning(warning: RollupLog): boolean {
+  const inDependency = (text: string | undefined, packages: RegExp) =>
+    text !== undefined && packages.test(text.replaceAll("\\", "/"));
+
+  if (warning.code === "INVALID_ANNOTATION") {
+    return inDependency(warning.id, /\/node_modules\/(mlkem|ox|@hpke\/common)\//);
+  }
+  return (
+    warning.plugin === "vite:resolve" &&
+    warning.message.includes('Module "crypto" has been externalized') &&
+    inDependency(warning.message, /\/node_modules\/(mlkem|@hpke\/common)\//)
+  );
+}
 
 export default defineConfig({
   plugins: [react()],
@@ -33,5 +58,20 @@ export default defineConfig({
   define: {
     // Some transitive dependencies still reference `global`.
     global: "globalThis",
+  },
+  build: {
+    rollupOptions: {
+      onwarn(warning, warn) {
+        if (!isKnownDependencyWarning(warning)) warn(warning);
+      },
+      output: {
+        // React only. A viem chunk would look like the obvious next split, but
+        // the lazily loaded Inco SDK uses viem as well, so naming one here pulls
+        // those modules back into what every page load downloads.
+        manualChunks(id) {
+          if (/\/node_modules\/(react|react-dom|scheduler)\//.test(id)) return "react";
+        },
+      },
+    },
   },
 });

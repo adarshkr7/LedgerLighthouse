@@ -19,8 +19,6 @@ import {
 } from "wagmi";
 import { createPublicClient, parseEventLogs, type Address, type Hex } from "viem";
 import { rpcTransport } from "@ntux402/shared/viem";
-import { Lightning } from "@inco/lightning-js/lite";
-import { handleTypes } from "@inco/lightning-js";
 import {
   DEMO_GOALS,
   DEMO_PAYEES,
@@ -659,6 +657,14 @@ export default function App() {
       // caches a stale chainId after a manual network change (ARCHITECTURE.md).
       const live = await wallet.getChainId();
       if (live !== CHAIN_ID) throw new Error(`Wallet is on chain ${live}, expected ${CHAIN_ID}`);
+
+      // Loaded here because encryption is the only thing that needs the SDK,
+      // and it and its dependencies are a large share of the page's JavaScript.
+      // Inside `guard`, so a failed download shows up like any other step error.
+      const [{ Lightning }, { handleTypes }] = await Promise.all([
+        import("@inco/lightning-js/lite"),
+        import("@inco/lightning-js"),
+      ]);
 
       // Same endpoints the services use. Called bare, the SDK falls back to
       // the chain default — the endpoint observed returning -32011 on eth_call
