@@ -122,10 +122,10 @@ function routeFor(path: string): Route | undefined {
 /**
  * `?price=<atomic>` — a demo control, honoured for the overcharge vendor only.
  *
- * That vendor exists to ask for slightly more than the confidential budget, and
- * the budget is chosen by the operator at run time. A fixed price would simply
- * be affordable at a larger budget and the case would stop demonstrating
- * anything, so the price has to follow.
+ * That vendor exists to ask for more than the confidential budget, and the
+ * budget is chosen by the operator at run time, so the console asks for a fixed
+ * price above the largest budget it accepts. The price must never be derived
+ * from the budget: this query string goes to the vendor.
  *
  * Deliberately *not* honoured for the other three. The honest pair must stay
  * cheap enough to settle, and the injection vendor's ~500x ask is the point of

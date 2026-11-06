@@ -90,24 +90,27 @@ const CALLS_REMAINING = 5;
  */
 const MAX_ATTEMPTS = 10;
 
-/** How far over the chosen budget the overcharge vendor asks. */
-const OVERCHARGE_MARGIN = 50_000n; // 0.05 USDC
+/**
+ * What the overcharge vendor asks. Fixed, and above MAX_BUDGET so it is over
+ * every budget a viewer can choose. It used to be the budget plus a margin, which
+ * told the orchestrator and the vendor the budget before a single decision.
+ */
+const OVERCHARGE_PRICE = MAX_BUDGET + 50_000n; // 4.05 USDC
 
 /**
  * What a vendor asks for this run.
  *
- * Fixed for three of the four. The overcharge vendor is the exception: its
- * entire purpose is to sit *just* above the confidential budget while staying
- * far below the per-call cap, and the budget is now chosen by the viewer — so a
- * hardcoded 0.35 would simply be affordable at any budget above it, and the
- * case it exists to demonstrate would silently stop demonstrating anything.
+ * The catalog price, except for the overcharge vendor: the viewer chooses the
+ * budget, so the catalog's 0.35 would be affordable at any budget above it and
+ * the case would stop demonstrating anything. This value leaves the browser, so
+ * it must not depend on the budget.
  *
  * Returns undefined when the catalog price already stands, so the request
  * carries no override and the vendor's own number is used.
  */
-function priceFor(goal: DemoGoal, budget: bigint): string | undefined {
+function priceFor(goal: DemoGoal): string | undefined {
   if (goal.tactic !== "overcharge") return undefined;
-  return (budget + OVERCHARGE_MARGIN).toString();
+  return OVERCHARGE_PRICE.toString();
 }
 
 /** Decimal USDC to atomic units. Undefined for anything unparseable. */
@@ -843,7 +846,7 @@ export default function App() {
       for await (const event of streamRun(
         goalId,
         which.key,
-        priceFor(which, budget),
+        priceFor(which),
       )) {
         if (event.channel === "payment") {
           collected.push(event.data);
@@ -877,14 +880,12 @@ export default function App() {
 
   /**
    * What the selected resource will actually be billed, not what the catalog
-   * lists. `priceFor` overrides the overcharge tactic to `budget + 0.05` —
-   * deliberately always just past whatever budget is chosen — so a display
-   * still showing the catalog's static price would tell a viewer the request
-   * is affordable right up until the encrypted budget disagrees. That gap is
-   * exactly what confused a viewer who set 0.40 and expected a listed 0.35 to
-   * clear; the real request was 0.45.
+   * lists. `priceFor` overrides the overcharge tactic to a fixed price above
+   * every budget, so a display still showing the catalog's static price would
+   * tell a viewer the request is affordable right up until the encrypted budget
+   * disagrees.
    */
-  const requestedPrice = BigInt(priceFor(resource, budget) ?? resource.priceAtomic);
+  const requestedPrice = BigInt(priceFor(resource) ?? resource.priceAtomic);
 
   /**
    * The five acts, and where the viewer is in them.
