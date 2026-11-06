@@ -67,8 +67,13 @@ const MIN_BUDGET = 300_000n; // 0.30 USDC
 const MAX_BUDGET = 4_000_000n; // 4.00 USDC — below the 5.00 injection ask
 const DEFAULT_BUDGET = MIN_BUDGET;
 
-/** Funded above the budget on purpose, so Inco binds before the balance does. */
-const FUNDING_HEADROOM = 100_000n; // 0.10 USDC
+/**
+ * The same for every goal, because the payer's balance is public: funding the
+ * budget plus a margin would publish the budget the moment the payer is funded.
+ * Above MAX_BUDGET and the largest overcharge, so Inco binds before the balance
+ * does. The unspent part comes back when the goal is closed.
+ */
+const PAYER_FUNDING = 5_000_000n; // 5.00 USDC
 
 /**
  * Encrypted like the budget, and deliberately above every price in the
@@ -614,8 +619,7 @@ export default function App() {
   }, [config, goalId, approvedCalls, closed, funded]);
 
   const wrongChain = isConnected && chainId !== undefined && chainId !== CHAIN_ID;
-  const funding = budget + FUNDING_HEADROOM;
-  const underfunded = usdcBalance !== undefined && usdcBalance < funding;
+  const underfunded = usdcBalance !== undefined && usdcBalance < PAYER_FUNDING;
   const guard = useCallback(
     async (label: string, fn: () => Promise<void>) => {
       setError(undefined);
@@ -743,7 +747,7 @@ export default function App() {
         address: config.usdcAddress,
         abi: usdcAbi,
         functionName: "transfer",
-        args: [payer, funding],
+        args: [payer, PAYER_FUNDING],
         chain: CHAIN,
         account: address,
       });
@@ -913,7 +917,7 @@ export default function App() {
    * back to the transfer this page confirmed, and to zero when there was none.
    */
   const ringFunded =
-    payerBalance !== undefined ? payerBalance + spent : funded ? funding : 0n;
+    payerBalance !== undefined ? payerBalance + spent : funded ? PAYER_FUNDING : 0n;
 
   /*
    * Clears the run view only.
@@ -1079,7 +1083,7 @@ export default function App() {
                       disabled={!!busy}
                       onClick={fundPayer}
                     >
-                      Fund {formatUsdc(funding)} USDC
+                      Fund {formatUsdc(PAYER_FUNDING)} USDC
                     </button>
                   )
                 ) : null}
@@ -1361,8 +1365,9 @@ export default function App() {
                 </div>
                 <p className="d-caption">
                   Minimum {formatUsdc(MIN_BUDGET)}, maximum {formatUsdc(MAX_BUDGET)}. You will fund
-                  the payer with {formatUsdc(funding)} — a little above the budget, so the
-                  confidential check binds before the balance does.
+                  the payer with {formatUsdc(PAYER_FUNDING)} whatever you choose, so its public
+                  balance says nothing about the budget. What is not spent comes back when you
+                  close the goal.
                 </p>
               </div>
 
@@ -1488,7 +1493,7 @@ export default function App() {
             )}
           </Field>
           <Field label="Last funded">
-            {funded ? `${formatUsdc(funding)} USDC` : <span className="d-muted">—</span>}
+            {funded ? `${formatUsdc(PAYER_FUNDING)} USDC` : <span className="d-muted">—</span>}
           </Field>
         </div>
         <p className="d-caption">
