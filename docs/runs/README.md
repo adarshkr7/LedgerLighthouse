@@ -21,9 +21,14 @@ flag; the signer refused to boot and said why on `/health`, and the second attem
 | `demo-2026-11-02-attempt-budget.log` | Exit 0. The 0.01 call approved, signed in the enclave and settled; the 0.35 call rejected on chain, nothing moved. The model's provider answered 503, so the scripted stand-in decided both, and the log says so |
 | `adversary-2026-11-02-attempt-budget.log` | C1 to C13 in 14 runs, all held, 21 transactions linked under the findings |
 | `adversary-2026-11-02-c14-probe.log` | C14: a binary search of a 0.137391 cap with 4 attempts. 0.5, 0.25 rejected, 0.125 approved, 0.1875 rejected; the fifth request reverted `NoAttemptsLeft` with the cap known only to lie in [0.125, 0.1875) |
-| `bench-2026-11-02-attempt-budget.log`, `bench-2026-11-02.json` | 30 approved and 20 rejected calls. Median 14.9 s per paid call, 10.0 s per rejected one; `requestSpend` about 327,000 gas either way |
+| `bench-2026-11-02-attempt-budget.log`, `bench-2026-11-02.json` | 30 approved and 20 rejected calls. Median 14.5 s per paid call, 10.0 s per rejected one; `requestSpend` about 327,000 gas either way. The `summary` in this JSON took the upper of the two middle values as the median (14.85 s), a bug since fixed in `bench.ts`; `records` holds the raw times |
 | `bench-2026-11-02-zero-calls.log`, `.json` | Kept as a record of a flawed run: the goal had exactly 30 calls, so the 20 "rejected" calls met a call count of zero and were refused in plaintext without the encrypted comparison. That is why they looked cheaper and faster. `bench.ts` now opens one spare call |
 | `tee-check-2026-11-02-equal-calldata.log` | `tee-check --equal`: the same amount and resource twice, one approved and one rejected by the budget. Both `requestSpend` calls used exactly 326,528 gas, so gas does not reveal the outcome |
+
+A note on every demo log recorded so far: they label the vendor's description "never sent to the
+model". That label was wrong, and `render.ts` now says otherwise. The agent passes the description
+to the model verbatim as untrusted text (`agent/llm.ts`), which is the point of the threat model; it
+never reaches a policy check. The model's reasoning in the logs quotes it.
 
 ## 1 November 2026: C6 live
 
@@ -66,8 +71,9 @@ first attempt left goal 1 open with no funds.
 
 ### `demo-2026-10-09-encrypted-cap-passing.log`
 
-Exit code 0, goal 3, live settlement, the live model deciding, the payer `0x2F8846E2…EfB7c`
-minted in the enclave.
+Exit code 0, goal 3, live settlement, the payer `0x2F8846E2…EfB7c` minted in the enclave. The live
+model decided run 2. Its gateway returned no message for run 1, so the scripted stand-in decided
+that one, as the log states.
 
 | | Run 1, honest | Run 2, overcharge |
 | --- | --- | --- |

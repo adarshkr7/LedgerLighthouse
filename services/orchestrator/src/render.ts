@@ -29,7 +29,7 @@ export function renderEvent(event: PaymentEvent): string {
       return [
         `  <-  402 payment required`,
         `      ${formatUsdc(event.terms.amount)} USDC -> ${event.terms.payTo}`,
-        `      description (attacker-controlled, never sent to the model):`,
+        `      description (attacker-controlled, sent to the model as untrusted text):`,
         indent(wrap(event.terms.description, 76), "        "),
       ].join("\n");
 

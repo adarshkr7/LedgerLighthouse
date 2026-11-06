@@ -78,8 +78,8 @@ const RECLAIM_GRACE_MS = 4_000;
  * Everything that happens, in order, as structured data. The trace builder
  * and the UI consume this; nothing in the loop formats a string for
  * display. `description` is carried verbatim on the terms event **because** it
- * is the attacker's text and the demo needs to show it — it just never reaches
- * a model or a policy check.
+ * is the attacker's text and the demo needs to show it. The model reads it as
+ * untrusted input; it never reaches a policy check.
  */
 export type PaymentEvent =
   | { readonly type: "request"; readonly url: string; readonly attempt: number }

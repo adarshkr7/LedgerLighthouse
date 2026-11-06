@@ -287,7 +287,14 @@ for (const [phase, count] of [["approved", APPROVED], ["rejected", REJECTED]] as
 function stats(values: number[]) {
   const v = [...values].sort((a, b) => a - b);
   if (v.length === 0) return undefined;
-  const q = (p: number) => v[Math.min(v.length - 1, Math.max(0, Math.round(p * (v.length - 1))))]!;
+  // Interpolates between neighbours, so the median of an even count is the mean
+  // of its two middle values and not the upper one.
+  const q = (p: number) => {
+    const at = p * (v.length - 1);
+    const below = Math.floor(at);
+    const above = Math.ceil(at);
+    return Math.round(v[below]! + (v[above]! - v[below]!) * (at - below));
+  };
   const mean = v.reduce((a, b) => a + b, 0) / v.length;
   return { n: v.length, median: q(0.5), mean: Math.round(mean), p10: q(0.1), p90: q(0.9), min: v[0]!, max: v[v.length - 1]! };
 }
