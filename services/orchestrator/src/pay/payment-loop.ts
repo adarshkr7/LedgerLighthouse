@@ -33,17 +33,23 @@
  */
 
 import {
+  saltToHex,
+  selectEscrowOffer,
   selectTerms,
+  termsFromOffer,
   toModelSafeSummary,
   type Address,
+  type AuthCaptureRequirements,
   type ModelSafeTerms,
   type PaymentPayload,
   type Terms,
   encodePaymentHeader,
+  encodePaymentSignatureHeader,
   decodeSettlementHeader,
   NETWORK_BASE_SEPOLIA,
   SCHEME_EXACT,
   X402_VERSION,
+  X402_VERSION_V2,
   type SettleResponse,
 } from "@ntux402/shared";
 
@@ -51,7 +57,30 @@ import type { X402Client, FailureReason, FetchOutcome } from "../x402/client.js"
 import type { DecisionReader, PollOptions } from "../inco/reveal.js";
 import { pollForDecision } from "../inco/reveal.js";
 import type { VaultRelay, SpendRequested } from "./relay.js";
-import type { AuthorizeOutcome, SignerClient } from "./signer-client.js";
+import type { AuthorizeOutcome, SignedAuthorization, SignerClient } from "./signer-client.js";
+
+/** No key: nothing yet makes delivery conditional. Signed offers will supply one. */
+const NO_KEY_HASH = `0x${"00".repeat(32)}` as const;
+
+/**
+ * Why a signature cannot be presented against this offer, or undefined if it can. The
+ * signer read its terms from the chain and the offer came from the vendor, and both must
+ * describe one payment before it is sent. Not a trust boundary, since the vault re-checks
+ * at collection, but a mismatch means something is badly wrong.
+ */
+function escrowMismatch(signed: SignedAuthorization, offer: AuthCaptureRequirements): string | undefined {
+  const payment = signed.payment;
+  if (!payment) return "the signer returned no escrow payment: is SIGNER_SETTLEMENT=escrow set on it?";
+  const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
+  if (!same(payment.operator, offer.extra.captureAuthorizer)) return `operator differs: ${payment.operator}`;
+  if (!same(payment.receiver, offer.payTo)) return `receiver differs: ${payment.receiver}`;
+  if (!same(payment.token, offer.asset)) return `token differs: ${payment.token}`;
+  if (payment.maxAmount !== offer.amount) return `amount differs: ${payment.maxAmount}`;
+  if (payment.authorizationExpiry !== offer.extra.captureDeadline) {
+    return `capture deadline differs: ${payment.authorizationExpiry}`;
+  }
+  return undefined;
+}
 
 /** How often a pending reveal reports that it is still waiting. */
 const REVEAL_WAITING_EVERY_MS = 5_000;
@@ -221,6 +250,12 @@ export interface PaymentLoopConfig {
   readonly agent: SpendAgent;
   readonly asset: Address;
   readonly network?: string;
+  /**
+   * Set when the vault is an EscrowPolicyVault, which can only pay through x402 v2
+   * `auth-capture`. This run's configuration decides the flow, never the vendor: a 402
+   * offering the other kind is refused, because neither kind can be paid on the wrong vault.
+   */
+  readonly escrow?: { readonly vault: Address; readonly network: string };
   readonly poll?: PollOptions;
   /** How long to keep asking the signer while the chain read catches up. */
   readonly signerRetries?: number;
@@ -347,12 +382,37 @@ export class PaymentLoop {
     }
 
     // --- 402: typed terms, not instructions --------------------------------
-    const selected = selectTerms(first.parsed, { network, asset: this.#config.asset });
-    if (!selected.ok) {
-      emit({ type: "terms-rejected", url, error: selected.error });
-      return { kind: "failed", reason: selected.error };
+    const escrow = this.#config.escrow;
+    if ((first.kind === "escrow-payment-required") !== (escrow !== undefined)) {
+      const error = escrow
+        ? "this vault pays only through x402 auth-capture, and the vendor did not offer it"
+        : "the vendor offered x402 auth-capture, and this vault cannot pay through it";
+      emit({ type: "terms-rejected", url, error });
+      return { kind: "failed", reason: error };
     }
-    const terms = selected.value;
+
+    let terms: Terms;
+    let offer: AuthCaptureRequirements | undefined;
+    if (first.kind === "escrow-payment-required") {
+      const selected = selectEscrowOffer(first.parsed, {
+        network: escrow!.network,
+        asset: this.#config.asset,
+        operator: escrow!.vault,
+      });
+      if (!selected.ok) {
+        emit({ type: "terms-rejected", url, error: selected.error });
+        return { kind: "failed", reason: selected.error };
+      }
+      offer = selected.value;
+      terms = termsFromOffer(offer, first.parsed);
+    } else {
+      const selected = selectTerms(first.parsed, { network, asset: this.#config.asset });
+      if (!selected.ok) {
+        emit({ type: "terms-rejected", url, error: selected.error });
+        return { kind: "failed", reason: selected.error };
+      }
+      terms = selected.value;
+    }
     emit({ type: "payment-required", url, terms });
 
     // --- the agent reads the attacker's text -------------------------------
@@ -399,7 +459,17 @@ export class PaymentLoop {
     // --- commit ------------------------------------------------------------
     let spend: SpendRequested;
     try {
-      spend = await relay.requestSpend(goalId, terms.amount, terms.payTo, terms.resource, payBy);
+      spend = offer
+        ? await relay.requestEscrowSpend(
+            goalId,
+            terms.amount,
+            terms.payTo,
+            terms.resource,
+            payBy,
+            offer.extra.captureDeadline,
+            NO_KEY_HASH,
+          )
+        : await relay.requestSpend(goalId, terms.amount, terms.payTo, terms.resource, payBy);
     } catch (e) {
       const reason = `requestSpend failed: ${e instanceof Error ? e.message : String(e)}`;
       emit({ type: "failed", reason });
@@ -525,18 +595,42 @@ export class PaymentLoop {
     }
 
     // --- pay and retry --------------------------------------------------------
-    const payload: PaymentPayload = {
-      x402Version: X402_VERSION,
-      scheme: SCHEME_EXACT,
-      network,
-      payload: {
-        signature: signed.signature,
-        authorization: signed.authorization,
-      },
-    };
+    let requestOptions: { payment: string } | { escrowPayment: string };
+    if (offer) {
+      const mismatch = escrowMismatch(signed, offer);
+      if (mismatch) {
+        const reason = `the signed payment does not match the vendor's offer: ${mismatch}`;
+        emit({ type: "failed", reason });
+        await this.#reclaim(goalId, spend.seq, spend.validBefore, emit, { wait: true });
+        return { kind: "failed", reason };
+      }
+      requestOptions = {
+        escrowPayment: encodePaymentSignatureHeader({
+          x402Version: X402_VERSION_V2,
+          resource: { url: terms.resource, method: "GET" },
+          accepted: offer,
+          payload: {
+            authorization: signed.authorization,
+            signature: signed.signature,
+            salt: saltToHex(BigInt(signed.payment!.salt)),
+          },
+        }),
+      };
+    } else {
+      const payload: PaymentPayload = {
+        x402Version: X402_VERSION,
+        scheme: SCHEME_EXACT,
+        network,
+        payload: {
+          signature: signed.signature,
+          authorization: signed.authorization,
+        },
+      };
+      requestOptions = { payment: encodePaymentHeader(payload) };
+    }
 
     emit({ type: "request", url, attempt: 2 });
-    const paid = await client.fetchResource(url, { payment: encodePaymentHeader(payload) });
+    const paid = await client.fetchResource(url, requestOptions);
 
     if (paid.kind !== "ok") {
       /*

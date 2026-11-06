@@ -19,14 +19,17 @@
     "reclaim": "tsx src/reclaim.ts",
     "diagnose": "tsx src/diagnose.ts",
     "bench": "tsx src/bench.ts",
-    "bench:stats": "tsx src/bench-stats.ts"
+    "bench:stats": "tsx src/bench-stats.ts",
+    "escrow-flow": "tsx src/escrow-flow.ts"
   },
   "dependencies": {
     "@inco/lightning-js": "^1.0.2",
     "viem": "^2.55.11",
     "@ntux402/shared": "workspace:*",
     "@ntux402/signer": "workspace:*",
-    "@ntux402/orchestrator": "workspace:*"
+    "@ntux402/orchestrator": "workspace:*",
+    "@ntux402/facilitator": "workspace:*",
+    "@ntux402/mock-api": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",

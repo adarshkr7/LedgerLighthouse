@@ -19,8 +19,13 @@
 
 import {
   HEADER_PAYMENT,
+  HEADER_PAYMENT_REQUIRED,
   HEADER_PAYMENT_RESPONSE,
+  HEADER_PAYMENT_RESPONSE_V2,
+  HEADER_PAYMENT_SIGNATURE,
+  decodePaymentRequiredHeader,
   parsePaymentRequired,
+  type AuthCapturePaymentRequired,
   type PaymentRequired,
 } from "@ntux402/shared";
 
@@ -45,6 +50,12 @@ export type FetchOutcome =
       readonly kind: "payment-required";
       readonly status: 402;
       readonly parsed: PaymentRequired;
+    }
+  /** An x402 v2 402 carrying an `auth-capture` offer this profile can pay. */
+  | {
+      readonly kind: "escrow-payment-required";
+      readonly status: 402;
+      readonly parsed: AuthCapturePaymentRequired;
     }
   | {
       readonly kind: "failed";
@@ -93,6 +104,11 @@ export interface RequestOptions {
    */
   readonly payment?: string;
   /**
+   * The same for x402 v2, sent as `PAYMENT-SIGNATURE`, and just as opaque here.
+   * Which header to use is the caller's decision: it knows which flow it is in.
+   */
+  readonly escrowPayment?: string;
+  /**
    * Skip the cache read: the caller intends a *new purchase*, not a retry.
    *
    * The cache cannot tell the two apart from the URL — a run retried after a
@@ -119,6 +135,10 @@ function headersToObject(headers: Headers): Record<string, string> {
   return out;
 }
 
+function settlementHeader(headers: Readonly<Record<string, string>>): string | undefined {
+  return headers[HEADER_PAYMENT_RESPONSE.toLowerCase()] ?? headers[HEADER_PAYMENT_RESPONSE_V2.toLowerCase()];
+}
+
 export class X402Client {
   readonly #cache: ResponseCache;
   readonly #retry: RetryPolicy;
@@ -143,7 +163,7 @@ export class X402Client {
     // retry after a network blip from re-entering the payment path. `fresh`
     // opts out for a caller making a deliberate repeat purchase — see
     // `RequestOptions.fresh` for why the URL alone cannot distinguish the two.
-    if (options.payment === undefined && options.fresh !== true) {
+    if (options.payment === undefined && options.escrowPayment === undefined && options.fresh !== true) {
       const cached = this.#cache.get(key);
       if (cached) {
         return {
@@ -152,7 +172,7 @@ export class X402Client {
           body: cached.body,
           headers: cached.headers,
           fromCache: true,
-          paymentResponse: cached.headers[HEADER_PAYMENT_RESPONSE.toLowerCase()],
+          paymentResponse: settlementHeader(cached.headers),
         };
       }
     }
@@ -165,7 +185,10 @@ export class X402Client {
       try {
         response = await this.#fetch(url, {
           method: "GET",
-          headers: options.payment === undefined ? {} : { [HEADER_PAYMENT]: options.payment },
+          headers: {
+            ...(options.payment === undefined ? {} : { [HEADER_PAYMENT]: options.payment }),
+            ...(options.escrowPayment === undefined ? {} : { [HEADER_PAYMENT_SIGNATURE]: options.escrowPayment }),
+          },
         });
       } catch (e) {
         // Transport failure. Same treatment as a 5xx: retry, bounded.
@@ -201,11 +224,22 @@ export class X402Client {
           body,
           headers,
           fromCache: false,
-          paymentResponse: headers[HEADER_PAYMENT_RESPONSE.toLowerCase()],
+          paymentResponse: settlementHeader(headers),
         };
       }
 
       if (response.status === 402) {
+        // x402 v2 carries the terms in a header, and a server is free to send any body.
+        // Rejected, not repaired, like a malformed v1 402.
+        const v2 = headers[HEADER_PAYMENT_REQUIRED.toLowerCase()];
+        if (v2 !== undefined) {
+          const parsed = decodePaymentRequiredHeader(v2);
+          if (!parsed.ok) {
+            return { kind: "failed", reason: { type: "malformed-402", error: parsed.error } };
+          }
+          return { kind: "escrow-payment-required", status: 402, parsed: parsed.value };
+        }
+
         let raw: unknown;
         try {
           raw = await response.json();

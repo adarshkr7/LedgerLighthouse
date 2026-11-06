@@ -47,6 +47,21 @@ export interface SignedAuthorization {
   };
   readonly signature: `0x${string}`;
   readonly termsHash: `0x${string}`;
+  /** Present when the signer settles through the escrow. See `EscrowPaymentTerms`. */
+  readonly payment?: EscrowPaymentTerms;
+}
+
+/** The payment an escrow signature is over, as the signer derived it from the chain. */
+export interface EscrowPaymentTerms {
+  readonly operator: `0x${string}`;
+  readonly payer: `0x${string}`;
+  readonly receiver: `0x${string}`;
+  readonly token: `0x${string}`;
+  readonly maxAmount: string;
+  readonly preApprovalExpiry: number;
+  readonly authorizationExpiry: number;
+  readonly refundExpiry: number;
+  readonly salt: string;
 }
 
 export type AuthorizeOutcome =

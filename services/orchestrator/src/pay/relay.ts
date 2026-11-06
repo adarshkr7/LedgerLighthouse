@@ -25,7 +25,7 @@ import {
   type PublicClient,
   type WalletClient,
 } from "viem";
-import { policyVaultAbi } from "@ntux402/shared";
+import { escrowPolicyVaultAbi, policyVaultAbi } from "@ntux402/shared";
 import { rpcTransport, sendingAccount, viemChainForId } from "@ntux402/shared/viem";
 
 export interface SpendRequested {
@@ -164,10 +164,41 @@ export class VaultRelay {
     resource: string,
     payBy: bigint,
   ): Promise<SpendRequested> {
+    return this.#withStaleRetry(goalId, () => this.#requestSpendOnce(goalId, amount, payTo, resource, payBy));
+  }
+
+  /**
+   * The same request on an EscrowPolicyVault, which also records when the vendor must
+   * claim by, and the hash of the key that releases the goods, or zero for none.
+   */
+  async requestEscrowSpend(
+    goalId: bigint,
+    amount: bigint,
+    payTo: Address,
+    resource: string,
+    payBy: bigint,
+    captureDeadline: number,
+    keyHash: Hex,
+  ): Promise<SpendRequested> {
+    return this.#withStaleRetry(goalId, () =>
+      this.#commit(goalId, "requestEscrowSpend", () =>
+        this.#wallet.writeContract({
+          address: this.#vault,
+          abi: escrowPolicyVaultAbi,
+          functionName: "requestEscrowSpend",
+          args: [goalId, amount, payTo, resource, payBy, captureDeadline, keyHash],
+          chain: this.#chain,
+          account: this.#wallet.account!,
+        }),
+      ),
+    );
+  }
+
+  async #withStaleRetry(goalId: bigint, once: () => Promise<SpendRequested>): Promise<SpendRequested> {
     const attempts = 5;
     for (let attempt = 1; ; attempt++) {
       try {
-        return await this.#requestSpendOnce(goalId, amount, payTo, resource, payBy);
+        return await once();
       } catch (error) {
         const text = error instanceof Error ? error.message : String(error);
         if (attempt >= attempts || !text.includes("SpendPending")) throw error;
@@ -186,20 +217,26 @@ export class VaultRelay {
     resource: string,
     payBy: bigint,
   ): Promise<SpendRequested> {
+    return this.#commit(goalId, "requestSpend", () =>
+      this.#wallet.writeContract({
+        address: this.#vault,
+        abi: policyVaultAbi,
+        functionName: "requestSpend",
+        args: [goalId, amount, payTo, resource, payBy],
+        chain: this.#chain,
+        account: this.#wallet.account!,
+      }),
+    );
+  }
+
+  async #commit(goalId: bigint, name: string, send: () => Promise<Hex>): Promise<SpendRequested> {
     await this.assertChain();
 
-    const hash = await this.#wallet.writeContract({
-      address: this.#vault,
-      abi: policyVaultAbi,
-      functionName: "requestSpend",
-      args: [goalId, amount, payTo, resource, payBy],
-      chain: this.#chain,
-      account: this.#wallet.account!,
-    });
+    const hash = await send();
 
     const receipt = await this.#public.waitForTransactionReceipt({ hash });
     if (receipt.status !== "success") {
-      throw new Error(`requestSpend reverted (${hash})`);
+      throw new Error(`${name} reverted (${hash})`);
     }
 
     const logs = parseEventLogs({
@@ -216,7 +253,7 @@ export class VaultRelay {
           validBefore: bigint;
         }
       | undefined;
-    if (!args) throw new Error(`requestSpend emitted no SpendRequested event (${hash})`);
+    if (!args) throw new Error(`${name} emitted no SpendRequested event (${hash})`);
 
     // The next write on this spend is a finalize, and a node that has not seen
     // this block yet refuses it with `UnknownSpend`. The adversary campaign hit
