@@ -10,7 +10,7 @@ import { createPublicClient, formatEther } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 
 import { rpcTransport, viemChain } from "@ntux402/shared/viem";
-import { NETWORKS, type Network } from "@ntux402/shared";
+import { AUTH_CAPTURE_ESCROW, ERC3009_TOKEN_COLLECTOR, NETWORKS, type Network } from "@ntux402/shared";
 import { IncoDecisionReader, IncoHealthProbe, connectLightning } from "@ntux402/orchestrator";
 
 import {
@@ -18,8 +18,8 @@ import {
   loadDotEnv,
   networkFromEnv,
   optional,
-  policyVaultAbi,
   requiredHexKey,
+  vaultAbi,
 } from "./config.js";
 
 loadDotEnv();
@@ -36,9 +36,9 @@ console.log("\npreflight\n");
 
 // --- artifact -------------------------------------------------------------
 try {
-  const abi = policyVaultAbi();
+  const abi = vaultAbi();
   const fns = abi.filter((x) => x.type === "function").length;
-  check("Foundry artifact", true, `PolicyVault.json, ${fns} functions`);
+  check("Foundry artifact", true, `EscrowPolicyVault.json, ${fns} functions`);
 } catch (e) {
   check("Foundry artifact", false, e instanceof Error ? e.message : String(e));
 }
@@ -131,6 +131,11 @@ if (rpcUrl) {
 
     const usdcCode = await client.getCode({ address: network.usdc.address });
     check("USDC deployed", (usdcCode?.length ?? 0) > 2, network.usdc.address);
+
+    const escrowCode = await client.getCode({ address: AUTH_CAPTURE_ESCROW });
+    check("auth-capture escrow deployed", (escrowCode?.length ?? 0) > 2, AUTH_CAPTURE_ESCROW);
+    const collectorCode = await client.getCode({ address: ERC3009_TOKEN_COLLECTOR });
+    check("ERC-3009 collector deployed", (collectorCode?.length ?? 0) > 2, ERC3009_TOKEN_COLLECTOR);
 
     if (deployer) {
       const balance = await client.getBalance({ address: deployer.address });

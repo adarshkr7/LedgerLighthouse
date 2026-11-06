@@ -17,11 +17,14 @@
  * ## What it trusts
  *
  * Nothing it decides. The vault says what qualifies (`isReclaimable`): approved,
- * not yet reclaimed, past its window, and never consumed by the token. Anyone
- * may call `reclaimExpired`, so DEPLOYER_PRIVATE_KEY pays the gas, and the call
- * can only write the vault's own budget and call count. No money moves.
+ * not yet reclaimed, and either never collected and past its window, or held by
+ * the escrow and past the vendor's capture deadline. Anyone may call
+ * `reclaimExpired`, so DEPLOYER_PRIVATE_KEY pays the gas. A held payment goes back
+ * to the payer, and nothing else moves money.
  *
- * It looks at open goals among the last 200, and at each one's last 50 spends.
+ * It looks at the last 200 goals, and at each one's last 50 spends. On a closed
+ * goal it lists only held payments: a budget restored there buys nothing, but the
+ * money is still in the escrow. Sweep that goal again afterwards.
  */
 
 import { createPublicClient, type Address } from "viem";
@@ -29,7 +32,8 @@ import { rpcTransport, viemChain } from "@ntux402/shared/viem";
 import { formatUsdc } from "@ntux402/shared";
 import { VaultRelay } from "@ntux402/orchestrator";
 
-import { loadDotEnv, networkFromEnv, policyVaultAbi, requiredAddress, requiredHexKey } from "./config.js";
+import { loadDotEnv, networkFromEnv, requiredAddress, requiredHexKey, vaultAbi } from "./config.js";
+import { assertEscrowVault, paymentState } from "./escrow.js";
 
 loadDotEnv();
 
@@ -54,7 +58,7 @@ const goalArgs = args.flatMap((a, i) => {
 
 const { network, rpcUrl } = networkFromEnv();
 const vault = requiredAddress("POLICY_VAULT_ADDRESS");
-const abi = policyVaultAbi();
+const abi = vaultAbi();
 const publicClient = createPublicClient({ chain: viemChain(network), transport: rpcTransport(rpcUrl) });
 const relay = new VaultRelay({
   rpcUrl,
@@ -72,6 +76,7 @@ const chainId = await publicClient.getChainId();
 if (chainId !== network.chainId) {
   throw new Error(`RPC is on chain ${chainId}, but NETWORK is ${network.label} (${network.chainId})`);
 }
+await assertEscrowVault(publicClient, vault);
 
 // --------------------------------------------------------------- the plan
 
@@ -79,6 +84,8 @@ interface Candidate {
   readonly goalId: bigint;
   readonly seq: bigint;
   readonly amount: bigint;
+  /** In the escrow now, and going back to the payer. */
+  readonly held: bigint;
 }
 
 const read = <T>(functionName: string, callArgs: readonly unknown[]): Promise<T> =>
@@ -97,13 +104,14 @@ for (const goalId of ids) {
     goalId,
   ]);
   const [, , , , , , lastSeq, open] = goal;
-  // A closed goal takes no more spends, so a budget restored there buys nothing.
-  if (!open && goalArgs.length === 0) continue;
   const from = lastSeq > SPENDS_SCANNED ? lastSeq - SPENDS_SCANNED + 1n : 1n;
   for (let seq = from; seq <= lastSeq; seq++) {
     if (!(await read<boolean>("isReclaimable", [goalId, seq]))) continue;
+    const { held } = await paymentState(publicClient, vault, goalId, seq);
+    // A closed goal takes no more spends, so only money in the escrow is worth the gas.
+    if (!open && held === 0n && goalArgs.length === 0) continue;
     const [, amount] = await read<readonly [Address, bigint, Address, Address, string]>("authorization", [goalId, seq]);
-    candidates.push({ goalId, seq, amount });
+    candidates.push({ goalId, seq, amount, held });
   }
 }
 
@@ -113,7 +121,10 @@ if (candidates.length === 0) {
 }
 
 for (const c of candidates) {
-  console.log(`  goal ${String(c.goalId).padStart(4)}  seq ${String(c.seq).padStart(3)}  ${formatUsdc(c.amount)} USDC`);
+  console.log(
+    `  goal ${String(c.goalId).padStart(4)}  seq ${String(c.seq).padStart(3)}  ${formatUsdc(c.amount)} USDC` +
+      (c.held > 0n ? "  held by the escrow, returns to the payer" : ""),
+  );
 }
 console.log();
 
@@ -134,7 +145,7 @@ for (const c of candidates) {
         : outcome.kind === "already"
           ? "someone reclaimed it first"
           : outcome.kind === "collected"
-            ? "the token consumed it after all: it was paid"
+            ? "the vendor claimed it after all: it was paid"
             : "the vault still reads its window as open";
     console.log(`  goal ${c.goalId} seq ${c.seq}  ${outcome.kind}  ${detail}`);
   } catch (error) {

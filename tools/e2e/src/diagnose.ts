@@ -28,13 +28,14 @@ import { spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { createPublicClient, domainSeparator, formatEther, toFunctionSelector, type Address, type Hex } from "viem";
+import { createPublicClient, domainSeparator, formatEther, toFunctionSelector, type Address, type PublicClient, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { rpcTransport, viemChain } from "@ntux402/shared/viem";
-import { formatUsdc, policyVaultAbi, rpcUrls, usdcAbi, type Network } from "@ntux402/shared";
+import { escrowPolicyVaultAbi, formatUsdc, rpcUrls, usdcAbi, type Network } from "@ntux402/shared";
 import { IncoDecisionReader, IncoHealthProbe, connectLightning } from "@ntux402/orchestrator";
 
 import { loadDotEnv, networkFromEnv, optional } from "./config.js";
+import { paymentState } from "./escrow.js";
 
 loadDotEnv();
 
@@ -215,13 +216,13 @@ await check("vault contract", async () => {
   if (!code || code === "0x") {
     return { level: "fail", detail: `no contract at ${vault}`, fix: `POLICY_VAULT_ADDRESS is wrong for ${net.label}, or the vault was never deployed there.` };
   }
-  const bound = code.includes(toFunctionSelector("payerGoal(address)").slice(2));
-  return bound
-    ? { level: "ok", detail: `deployed, payer binding present` }
+  const escrowVault = code.includes(toFunctionSelector("escrowPayment(uint256,uint64)").slice(2));
+  return escrowVault
+    ? { level: "ok", detail: "EscrowPolicyVault deployed" }
     : {
         level: "fail",
-        detail: "deployed before the payer binding (48805e9): one payer can be bound to two goals",
-        fix: "redeploy PolicyVault from current source and point POLICY_VAULT_ADDRESS at it. The signer also refuses to boot in the enclave without it.",
+        detail: "not an EscrowPolicyVault: this code spends through the escrow",
+        fix: "deploy EscrowPolicyVault and point POLICY_VAULT_ADDRESS at it, or use the arxiv-v1.1 tag for the old vault.",
       };
 });
 
@@ -249,7 +250,7 @@ async function gas(name: string, address: Address | undefined, floorEth: string,
       : { level: "ok", detail: `${formatEther(balance)} ETH` };
   });
 }
-await gas("relay gas", relay, "0.001", "requestSpend and finalizeDecision will fail. Top up with pnpm --filter @ntux402/e2e run fund.");
+await gas("relay gas", relay, "0.001", "requests and finalizeDecision will fail. Top up with pnpm --filter @ntux402/e2e run fund.");
 await gas("facilitator gas", settler, "0.0005", "settlement will fail. Top up with pnpm --filter @ntux402/e2e run fund.");
 await gas("deployer gas", deployer, "0.003", "opening goals and sweeping will fail. Fund it from a faucet.");
 
@@ -402,10 +403,20 @@ if (facilitatorUrl) {
 }
 
 const mockApiUrl = optional("MOCK_API_URL") ?? `http://127.0.0.1:${process.env["MOCK_API_PORT"] ?? 4021}`;
+let vendor: Address | undefined;
 await check(`mock vendor ${origin(mockApiUrl)}`, async () => {
   const { status, body } = await getJson(`${mockApiUrl}/health`);
-  return status === 200 ? { level: "ok", detail: `settlement ${String(body["settlement"])}` } : { level: "fail", detail: `HTTP ${status}` };
+  if (status !== 200) return { level: "fail", detail: `HTTP ${status}` };
+  if (body["settlement"] !== "escrow") {
+    return { level: "fail", detail: `settlement ${String(body["settlement"])}`, fix: "set SIGNER_SETTLEMENT=escrow and VENDOR_PRIVATE_KEY, and restart it." };
+  }
+  if (String(body["vault"]).toLowerCase() !== vault!.toLowerCase()) {
+    return { level: "fail", detail: `it sells for vault ${String(body["vault"])}`, fix: "restart it so it reads the current .env." };
+  }
+  vendor = body["vendor"] as Address;
+  return { level: "ok", detail: `settlement escrow, vendor ${vendor}` };
 }, "start it with pnpm dev.");
+await gas("vendor gas", vendor, "0.0005", "the vendor sends its own claim. Without gas it holds payments and cannot take them. Top it up.");
 
 // ----------------------------------------------------------- enclave machine
 
@@ -438,7 +449,7 @@ if (enclave) {
 area("vault");
 
 await check("goals", async () => {
-  const count = (await client.readContract({ address: vault!, abi: policyVaultAbi, functionName: "goalCount" })) as bigint;
+  const count = (await client.readContract({ address: vault!, abi: escrowPolicyVaultAbi, functionName: "goalCount" })) as bigint;
   const first = count > 200n ? count - 199n : 1n;
   const stuck: string[] = [];
   let stranded = 0n;
@@ -446,11 +457,11 @@ await check("goals", async () => {
   for (let id = first; id <= count; id++) {
     const [owner, payer, , , , , , open] = (await client.readContract({
       address: vault!,
-      abi: policyVaultAbi,
+      abi: escrowPolicyVaultAbi,
       functionName: "goals",
       args: [id],
     })) as readonly [Address, Address, Address, Address, number, bigint, bigint, boolean];
-    const pending = (await client.readContract({ address: vault!, abi: policyVaultAbi, functionName: "pendingSeq", args: [id] })) as bigint;
+    const pending = (await client.readContract({ address: vault!, abi: escrowPolicyVaultAbi, functionName: "pendingSeq", args: [id] })) as bigint;
     if (open && pending !== 0n) stuck.push(`${id} (seq ${pending})`);
     if (payer.toLowerCase() === owner.toLowerCase()) continue;
     const balance = (await client.readContract({ address: usdcAddress!, abi: usdcAbi, functionName: "balanceOf", args: [payer] })) as bigint;
@@ -477,30 +488,23 @@ await check("goals", async () => {
 
 await check("unpaid approvals", async () => {
   // An approved spend whose authorization expired unused still holds its amount
-  // out of the budget until `reclaimExpired`. The payment loop reclaims what
-  // expires within two minutes; this catches the rest, on recent open goals.
+  // out of the budget until `reclaimExpired`, and one the escrow holds past the
+  // capture deadline also holds money. The payment loop reclaims what expires
+  // within two minutes; this catches the rest, on recent goals.
   const read = (functionName: string, args: readonly unknown[]) =>
-    client.readContract({ address: vault!, abi: policyVaultAbi, functionName, args } as Parameters<
+    client.readContract({ address: vault!, abi: escrowPolicyVaultAbi, functionName, args } as Parameters<
       typeof client.readContract
     >[0]);
   const count = (await read("goalCount", [])) as bigint;
   const first = count > 200n ? count - 199n : 1n;
-  try {
-    await read("isReclaimable", [first, 1n]);
-  } catch {
-    return {
-      level: "warn",
-      detail: "this vault predates reclaimExpired, so an unpaid approval stays debited",
-      fix: "redeploy PolicyVault; authorizations on this one also live an hour, past any vendor's hold.",
-    };
-  }
   const found: string[] = [];
   for (let id = first; id <= count; id++) {
     const goal = (await read("goals", [id])) as readonly [Address, Address, Address, Address, number, bigint, bigint, boolean];
     const [, , , , , , lastSeq, open] = goal;
-    if (!open) continue;
     for (let seq = lastSeq > 10n ? lastSeq - 9n : 1n; seq <= lastSeq; seq++) {
-      if ((await read("isReclaimable", [id, seq])) as boolean) found.push(`${id}:${seq}`);
+      if (!((await read("isReclaimable", [id, seq])) as boolean)) continue;
+      // A closed goal takes no more spends, so only money in the escrow matters there.
+      if (open || (await paymentState(client as PublicClient, vault!, id, seq)).held > 0n) found.push(`${id}:${seq}`);
     }
   }
   return found.length > 0

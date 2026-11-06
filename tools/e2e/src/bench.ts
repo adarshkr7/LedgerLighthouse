@@ -4,12 +4,13 @@
  *
  *   pnpm --filter @ntux402/e2e run bench                  30 approved, 20 rejected
  *   pnpm --filter @ntux402/e2e run bench -- --approved 50 --rejected 30
+ *   pnpm --filter @ntux402/e2e run bench -- --out /some/dir
  *
  * ## What it runs
  *
  * One goal, then two phases on it, through exactly the path the demo uses:
  * `PaymentLoop`, the vault relay, Inco's attested reveal, the signer, the
- * facilitator and the mock seller.
+ * facilitator and the mock seller, through the auth-capture escrow.
  *
  *   - approved: `market-data` at 0.01 USDC, under the cap and the budget, so
  *     each call commits, is approved, signed, settled and served.
@@ -24,8 +25,9 @@
  * ## What it records
  *
  * Per call: wall time from first request to each stage, the reveal's own
- * latency and poll count, and the gas of `requestSpend` and `finalizeDecision`
- * read from their receipts. Everything goes to `docs/runs/bench-<date>.json`,
+ * latency and poll count, and the gas of `requestEscrowSpend`, `finalizeDecision`,
+ * the vendor's hold and its claim, read from their receipts. Everything goes to
+ * `docs/runs/bench-<date>.json` unless `--out` names another directory,
  * and a summary (median, mean, 10th and 90th percentile, min, max) is printed.
  * A call that ends in anything other than its expected outcome is recorded with
  * that outcome and excluded from the statistics, never silently dropped.
@@ -37,9 +39,8 @@ import { createPublicClient, createWalletClient, parseEventLogs, type Hex } from
 import { privateKeyToAccount } from "viem/accounts";
 import { handleTypes } from "@inco/lightning-js";
 import { rpcTransport, sendingAccount, viemChain } from "@ntux402/shared/viem";
-import { DEMO_PAYEES, formatUsdc, usdcAbi } from "@ntux402/shared";
+import { formatUsdc, usdcAbi } from "@ntux402/shared";
 import {
-  IncoDecisionReader,
   PaymentLoop,
   ScriptedAgent,
   SignerClient,
@@ -54,11 +55,12 @@ import {
   INCO_SINGLETON,
   loadDotEnv,
   optional,
-  policyVaultAbi,
   requiredAddress,
   requiredHexKey,
   networkFromEnv,
+  vaultAbi,
 } from "./config.js";
+import { assertEscrowVault, decisionSource, mockVendor } from "./escrow.js";
 
 loadDotEnv();
 
@@ -95,7 +97,10 @@ const relayKey = requiredHexKey("ORCHESTRATOR_RELAY_KEY");
 const relayAddress = privateKeyToAccount(relayKey).address;
 const publicClient = createPublicClient({ chain: viemChain(network), transport: rpcTransport(rpcUrl) });
 const userWallet = createWalletClient({ account: user, chain: viemChain(network), transport: rpcTransport(rpcUrl) });
-const abi = policyVaultAbi();
+const abi = vaultAbi();
+
+await assertEscrowVault(publicClient, vaultAddress);
+const vendor = await mockVendor(mockApiUrl, vaultAddress);
 
 const signerHealth = await fetch(`${signerUrl}/health`).then((r) => r.json()).catch(() => undefined) as
   | { vault?: string; custody?: { store?: string } }
@@ -135,7 +140,7 @@ const openHash = await userWallet.writeContract({
       relay: relayAddress,
       asset: usdcAddress,
       expiry: BigInt(Math.floor(Date.now() / 1000) + 24 * 3600),
-      allowlist: [...DEMO_PAYEES],
+      allowlist: [vendor],
     },
   ],
   value: 2n * incoFee,
@@ -174,11 +179,15 @@ interface CallRecord {
   readonly commitTx?: string | undefined;
   readonly finalizeTx?: string | undefined;
   readonly settleTx?: string | undefined;
+  readonly claimTx?: string | undefined;
+  readonly holdGas?: string | undefined;
+  readonly claimGas?: string | undefined;
 }
 
 let events: { at: number; event: PaymentEvent }[] = [];
 const relay = new VaultRelay({ rpcUrl, vaultAddress, relayKey, chainId: network.chainId });
-const decisions = new IncoDecisionReader(zap);
+const decisions = await decisionSource(zap, publicClient, vaultAddress);
+decisions.limits(goalId, BUDGET, CAP);
 // A fresh loop, and so a fresh x402 client, per call: the client caches a paid
 // response, which is right for an agent and would turn every repeat into a free
 // cache hit here.
@@ -190,7 +199,7 @@ const newLoop = () =>
     signer,
     agent: new ScriptedAgent(),
     asset: usdcAddress,
-    network: network.x402Network,
+    escrow: { vault: vaultAddress, network: `eip155:${network.chainId}` },
     onEvent: (event) => events.push({ at: performance.now(), event }),
   });
 
@@ -217,7 +226,8 @@ async function oneCall(phase: CallRecord["phase"], index: number): Promise<CallR
   let commitTx: Hex | undefined;
   let finalizeTx: Hex | undefined;
   let requestSpendGas: string | undefined;
-  let settleTx: string | undefined;
+  let settleTx: Hex | undefined;
+  let claimTx: Hex | undefined;
   for (const { at, event } of events) {
     switch (event.type) {
       case "payment-required": mark("402", at); break;
@@ -238,6 +248,7 @@ async function oneCall(phase: CallRecord["phase"], index: number): Promise<CallR
       case "settled":
         mark("settled", at);
         settleTx = event.settlement.transaction;
+        claimTx = event.settlement.claimTransaction;
         break;
       default: break;
     }
@@ -257,7 +268,8 @@ async function oneCall(phase: CallRecord["phase"], index: number): Promise<CallR
     ...(requestSpendGas ? { requestSpendGas } : {}),
     ...(finalizeTx ? { finalizeGas: await receiptGas(finalizeTx), finalizeTx } : {}),
     ...(commitTx ? { commitTx } : {}),
-    ...(settleTx ? { settleTx } : {}),
+    ...(settleTx ? { settleTx, holdGas: await receiptGas(settleTx) } : {}),
+    ...(claimTx ? { claimTx, claimGas: await receiptGas(claimTx) } : {}),
   };
 }
 
@@ -315,6 +327,8 @@ for (const phase of ["approved", "rejected"] as const) {
     settleMs: stats(pick((r) => (r.t["settled"] !== undefined && r.t["signed"] !== undefined ? r.t["settled"] - r.t["signed"] : undefined))),
     requestSpendGas: stats(pick((r) => (r.requestSpendGas ? Number(r.requestSpendGas) : undefined))),
     finalizeGas: stats(pick((r) => (r.finalizeGas ? Number(r.finalizeGas) : undefined))),
+    holdGas: stats(pick((r) => (r.holdGas ? Number(r.holdGas) : undefined))),
+    claimGas: stats(pick((r) => (r.claimGas ? Number(r.claimGas) : undefined))),
   };
 }
 
@@ -330,7 +344,8 @@ const out = {
   summary,
   records,
 };
-const dir = join(process.cwd(), "..", "..", "docs", "runs");
+const outArg = process.argv.indexOf("--out");
+const dir = outArg === -1 ? join(process.cwd(), "..", "..", "docs", "runs") : process.argv[outArg + 1]!;
 mkdirSync(dir, { recursive: true });
 const file = join(dir, `bench-${started.toISOString().slice(0, 10)}.json`);
 writeFileSync(file, JSON.stringify(out, null, 2));

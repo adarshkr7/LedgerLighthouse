@@ -10,8 +10,8 @@
  *
  * A goal's payer is funded up front and keeps whatever its runs did not spend.
  * Getting it back takes two steps nothing in the scripts performed: the owner
- * closes the goal, then the signer signs a transfer of the payer's whole
- * balance back to that owner. The console does both; the demo and every other
+ * closes the goal, then the signer signs the return of the payer's whole
+ * balance to that owner. The console does both; the demo and every other
  * script left the goal open. On 9 October 2026 that had left 106.4 test USDC
  * in 59 payers on Base Sepolia. On mainnet it would be real money.
  *
@@ -21,25 +21,29 @@
  *   - open, owned by DEPLOYER_PRIVATE_KEY: closes it first, then sweeps.
  *   - open, owned by anyone else: listed, never touched. Only the owner can
  *     close a goal, so that owner has to close it in the console.
- *   - a spend still pending: skipped. Closing does not stop the signer from
- *     signing an approved spend, so sweeping under a live run would race it.
+ *
+ * Closing stops the vault collecting anything more for a goal, so a run still in
+ * progress cannot race the sweep. A payment the escrow already holds is not in the
+ * payer's balance. If it comes back after the capture deadline, `reclaim` returns
+ * it to the payer, and sweeping again sends it home.
  *
  * Without `--execute` it prints that plan and sends nothing.
  *
  * ## What it trusts, and what it checks
  *
- * The signer decides the transfer: payee is the goal's owner read from the
+ * The signer decides the payment: receiver is the goal's owner read from the
  * chain, amount is the payer's balance, and it refuses an open goal. This
  * script only carries the result, and checks it before spending gas: the
- * authorization must come from the goal's payer, pay the goal's owner, in this
- * network's USDC, for a non-zero amount. It submits `transferWithAuthorization`
- * itself, with DEPLOYER_PRIVATE_KEY paying gas, so the facilitator does not
- * need to be running.
+ * payment must name this vault as operator, come from the goal's payer, pay the
+ * goal's owner, in this network's USDC, for a non-zero amount. It submits the
+ * vault's `charge` itself, with DEPLOYER_PRIVATE_KEY paying gas, so the facilitator
+ * does not need to be running. The vault checks the same things again on chain.
  *
  * Goal ids repeat across vaults, and the signer reads goals from the one vault
  * it was started with. So the script reads the signer's binding from /health
- * and refuses to act when it names a different vault. To sweep the previous
- * vault, start the signer with POLICY_VAULT_ADDRESS set to it.
+ * and refuses to act when it names a different vault. A vault that predates the
+ * escrow needs the direct signer, so its stranded payers are swept from the
+ * arxiv-v1.1 tag.
  *
  * A payer whose key the signer does not hold cannot be swept by anyone. The
  * signer says so only when asked for a sweep, so the plan cannot list those in
@@ -48,10 +52,11 @@
 
 import { createPublicClient, createWalletClient, isAddress, isAddressEqual, type Address, type Hex } from "viem";
 import { rpcTransport, sendingAccount, viemChain } from "@ntux402/shared/viem";
-import { formatUsdc, policyVaultAbi, usdcAbi } from "@ntux402/shared";
-import { SignerClient, askSignerToSweep } from "@ntux402/orchestrator";
+import { escrowPolicyVaultAbi, formatUsdc, usdcAbi } from "@ntux402/shared";
+import { SignerClient, VaultRelay, askSignerToSweep } from "@ntux402/orchestrator";
 
 import { loadDotEnv, networkFromEnv, optional, requiredAddress, requiredHexKey } from "./config.js";
+import { assertEscrowVault } from "./escrow.js";
 
 loadDotEnv();
 
@@ -96,6 +101,12 @@ const signer = new SignerClient(
 const chain = viemChain(network);
 const publicClient = createPublicClient({ chain, transport: rpcTransport(rpcUrl) });
 const wallet = createWalletClient({ account: operator, chain, transport: rpcTransport(rpcUrl) });
+const submitter = new VaultRelay({
+  rpcUrl,
+  vaultAddress: vault,
+  relayKey: requiredHexKey("DEPLOYER_PRIVATE_KEY"),
+  chainId: network.chainId,
+});
 const tx = (hash: Hex) => `${network.explorer}/tx/${hash}`;
 
 console.log(`\nsweep — ${execute ? "EXECUTE" : "plan only, nothing is sent (add --execute to act)"}\n`);
@@ -108,6 +119,7 @@ const chainId = await publicClient.getChainId();
 if (chainId !== network.chainId) {
   throw new Error(`RPC is on chain ${chainId}, but NETWORK is ${network.label} (${network.chainId})`);
 }
+await assertEscrowVault(publicClient, vault);
 
 // --------------------------------------------------------------- the plan
 
@@ -115,7 +127,6 @@ type Action =
   | "sweep"
   | "close-and-sweep"
   | "owner-must-close"
-  | "pending-spend"
   | "other-asset"
   | "shared-payer"
   | "payer-is-owner";
@@ -131,7 +142,7 @@ interface Candidate {
 
 const goalCount = (await publicClient.readContract({
   address: vault,
-  abi: policyVaultAbi,
+  abi: escrowPolicyVaultAbi,
   functionName: "goalCount",
 })) as bigint;
 
@@ -151,7 +162,7 @@ for (const goalId of ids) {
   }
   const [owner, payer, , asset, , , , open] = (await publicClient.readContract({
     address: vault,
-    abi: policyVaultAbi,
+    abi: escrowPolicyVaultAbi,
     functionName: "goals",
     args: [goalId],
   })) as readonly [Address, Address, Address, Address, number, bigint, bigint, boolean];
@@ -179,13 +190,7 @@ for (const goalId of ids) {
   } else if (!isAddressEqual(owner, operator.address)) {
     action = "owner-must-close";
   } else {
-    const pending = (await publicClient.readContract({
-      address: vault,
-      abi: policyVaultAbi,
-      functionName: "pendingSeq",
-      args: [goalId],
-    })) as bigint;
-    action = pending === 0n ? "close-and-sweep" : "pending-spend";
+    action = "close-and-sweep";
   }
   if (firstGoal === undefined) seenPayers.set(payer.toLowerCase(), goalId);
   const counted = action === "shared-payer" || action === "payer-is-owner" ? 0n : balance;
@@ -196,7 +201,6 @@ const LABEL: Record<Action, string> = {
   sweep: "sweep",
   "close-and-sweep": "close, then sweep",
   "owner-must-close": "owner must close it in the console",
-  "pending-spend": "skipped: a spend is pending",
   "other-asset": "skipped: goal is not in this network's USDC",
   "shared-payer": "skipped: same payer as an earlier goal, counted there",
   "payer-is-owner": "nothing to recover: the payer is the owner's own wallet",
@@ -252,7 +256,7 @@ for (const c of actionable) {
     if (c.action === "close-and-sweep") {
       const hash = await wallet.writeContract({
         address: vault,
-        abi: policyVaultAbi,
+        abi: escrowPolicyVaultAbi,
         functionName: "closeGoal",
         args: [c.goalId],
       });
@@ -273,30 +277,28 @@ for (const c of actionable) {
 
     // Carried, not trusted: the token re-verifies the signature, but a
     // transfer to anyone but the goal's owner is not worth the gas to find out.
-    const { authorization: a, signature, token } = outcome.value;
-    const value = BigInt(a.value);
+    const { payment, signature } = outcome.value;
+    if (payment === undefined) {
+      throw new Error("the signer did not sign through the escrow. Restart it with SIGNER_SETTLEMENT=escrow.");
+    }
+    const value = BigInt(payment.maxAmount);
     if (
-      !isAddressEqual(a.from, c.payer) ||
-      !isAddressEqual(a.to, c.owner) ||
-      !isAddressEqual(token, usdcAddress) ||
+      !isAddressEqual(payment.operator, vault) ||
+      !isAddressEqual(payment.payer, c.payer) ||
+      !isAddressEqual(payment.receiver, c.owner) ||
+      !isAddressEqual(payment.token, usdcAddress) ||
       value === 0n
     ) {
       throw new Error(
-        `the signer's authorization does not match the goal: from ${a.from} to ${a.to}, ` +
-          `${value} of ${token}; expected from ${c.payer} to ${c.owner} in ${usdcAddress}`,
+        `the signer's payment does not match the goal: operator ${payment.operator}, from ${payment.payer} ` +
+          `to ${payment.receiver}, ${value} of ${payment.token}; expected operator ${vault}, from ${c.payer} ` +
+          `to ${c.owner} in ${usdcAddress}`,
       );
     }
 
-    const hash = await wallet.writeContract({
-      address: usdcAddress,
-      abi: usdcAbi,
-      functionName: "transferWithAuthorization",
-      args: [a.from, a.to, value, BigInt(a.validAfter), BigInt(a.validBefore), a.nonce, signature],
-    });
-    const receipt = await publicClient.waitForTransactionReceipt({ hash });
-    if (receipt.status !== "success") throw new Error(`transferWithAuthorization reverted (${hash})`);
+    const { txHash } = await submitter.sweep(payment, signature);
     recovered += value;
-    console.log(`  ${label}: swept ${formatUsdc(value)} USDC to ${a.to.slice(0, 10)}…  ${tx(hash)}`);
+    console.log(`  ${label}: swept ${formatUsdc(value)} USDC to ${payment.receiver.slice(0, 10)}…  ${tx(txHash)}`);
   } catch (e) {
     const detail = e instanceof Error ? e.message.split("\n")[0]! : String(e);
     failures.push(`${label}: ${detail}`);

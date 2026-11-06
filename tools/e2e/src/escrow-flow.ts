@@ -6,56 +6,27 @@
  *   forge build --root contracts
  *   ESCROW_ANVIL_RPC=http://127.0.0.1:8599 pnpm --filter @ntux402/e2e run escrow-flow
  *
- * Real: EscrowPolicyVault, Inco's on-chain contract, the deployed escrow, collector and
- * USDC, the signer, the facilitator with @x402/evm, the vendor, the relay and the payment
- * loop, each over its own HTTP surface where it has one.
- *
- * Not real: Inco's off-chain evaluation. A fork has no covalidators, so the decision comes
- * from this script and Inco's verifier is replaced to accept it. So this says nothing about
- * the encrypted limits, or that a decision was earned. It says everything else in the flow
- * holds together, and the policy itself is tested in the vault's Foundry suite.
+ * See fork-stack.ts for what is real here and what is not. This script supplies the
+ * decisions, so it says nothing about the encrypted limits, or that a decision was
+ * earned. It says everything else in the flow holds together, and the policy itself is
+ * tested in the vault's Foundry suite.
  */
 
-import { readFileSync } from "node:fs";
-import type { AddressInfo } from "node:net";
-import { fileURLToPath } from "node:url";
-
 import { handleTypes } from "@inco/lightning-js";
-import {
-  createPublicClient,
-  createWalletClient,
-  http,
-  parseAbi,
-  toHex,
-  type Address,
-  type Hex,
-} from "viem";
-import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
-import { baseSepolia } from "viem/chains";
-import { AuthCaptureFacilitator, Facilitator, createFacilitatorServer } from "@ntux402/facilitator";
-import {
-  ChainEscrowGateway,
-  HttpFacilitatorGateway,
-  startMockApi,
-  type EscrowGateway,
-  type EscrowVendorOptions,
-} from "@ntux402/mock-api";
+import { createWalletClient, http, type Address, type Hex } from "viem";
+import { startMockApi, type EscrowGateway } from "@ntux402/mock-api";
 import {
   ScriptedAgent,
   connectLightning,
   PaymentLoop,
-  SignerClient,
   VaultRelay,
   X402Client,
+  paymentInfoFromTerms,
 } from "@ntux402/orchestrator";
-import {
-  AUTH_CAPTURE_ESCROW,
-  ERC3009_TOKEN_COLLECTOR,
-  USDC_BASE_SEPOLIA,
-  escrowPolicyVaultAbi,
-  networkForChainId,
-} from "@ntux402/shared";
-import { InMemoryKeyStore, OnChainVaultReader, createSignerServer, openSigner } from "@ntux402/signer";
+import { ERC3009_TOKEN_COLLECTOR, escrowPolicyVaultAbi, networkForChainId } from "@ntux402/shared";
+
+import { forkAttestation } from "./escrow.js";
+import { CHAIN_ID, USDC, startForkStack } from "./fork-stack.js";
 
 const RPC = process.env["ESCROW_ANVIL_RPC"];
 if (!RPC) {
@@ -63,25 +34,7 @@ if (!RPC) {
   process.exit(1);
 }
 
-const CHAIN_ID = 84532;
-const USDC = USDC_BASE_SEPOLIA as Address;
-const INCO: Address = "0x4b9911b0191B0b6a6eA8F2Ed562e20Cff5AC8624";
-/** Holds test USDC on the forked chain. */
-const HOLDER: Address = "0x1111111111111111111111111111111111111111";
-/** Returns true to anything: `PUSH1 1 PUSH1 0 MSTORE PUSH1 32 PUSH1 0 RETURN`. */
-const ALWAYS_TRUE: Hex = "0x600160005260206000f3";
 const PRICE = 10_000n; // market-data, 0.01 USDC
-
-const chain = { ...baseSepolia, rpcUrls: { default: { http: [RPC] } } };
-const pub = createPublicClient({ chain, transport: http(RPC) });
-const rpc = (method: string, params: unknown[]) => pub.request({ method, params } as never);
-
-const erc20 = parseAbi([
-  "function transfer(address,uint256) returns (bool)",
-  "function balanceOf(address) view returns (uint256)",
-]);
-const balance = (who: Address) =>
-  pub.readContract({ address: USDC, abi: erc20, functionName: "balanceOf", args: [who] });
 
 let failures = 0;
 function check(label: string, ok: boolean, detail = ""): void {
@@ -89,106 +42,16 @@ function check(label: string, ok: boolean, detail = ""): void {
   if (!ok) failures++;
 }
 
-const funded = async () => {
-  const key = generatePrivateKey();
-  const account = privateKeyToAccount(key);
-  await rpc("anvil_setBalance", [account.address, toHex(10n ** 18n)]);
-  return { key, account };
-};
-
-// ------------------------------------------------------------------ the chain
-
 console.log("\nsetting up on the fork");
-const user = await funded();
-const relayKey = await funded();
-const settler = await funded();
-const vendorKey = await funded();
-
-// Before the verifier is replaced: the SDK reads the network's public key from it.
-const network = networkForChainId(CHAIN_ID)!;
-const zap = await connectLightning(network, RPC);
-
-const incoAbi = parseAbi(["function incoVerifier() view returns (address)", "function getFee() view returns (uint256)"]);
-const verifier = await pub.readContract({ address: INCO, abi: incoAbi, functionName: "incoVerifier" });
-await rpc("anvil_setCode", [verifier, ALWAYS_TRUE]);
-console.log(`  replaced Inco's verifier ${verifier}: this run does not test decisions`);
-
-const artifact = JSON.parse(
-  readFileSync(
-    fileURLToPath(new URL("../../../contracts/out/EscrowPolicyVault.sol/EscrowPolicyVault.json", import.meta.url)),
-    "utf8",
-  ),
-) as { bytecode: { object: Hex } };
-const userWallet = createWalletClient({ chain, transport: http(RPC), account: user.account });
-const deployed = await pub.waitForTransactionReceipt({
-  hash: await userWallet.deployContract({
-    abi: escrowPolicyVaultAbi,
-    bytecode: artifact.bytecode.object,
-    args: [AUTH_CAPTURE_ESCROW, ERC3009_TOKEN_COLLECTOR],
-  }),
-});
-const vault = deployed.contractAddress!;
-console.log(`  EscrowPolicyVault ${vault}`);
-
-// --------------------------------------------------------------- the services
-
-async function listening(server: import("node:http").Server): Promise<string> {
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  return `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-}
-
-const signerService = await openSigner({
-  settlement: "escrow",
-  vault: new OnChainVaultReader({ rpcUrl: RPC, vaultAddress: vault, chainId: CHAIN_ID }),
-  keys: new InMemoryKeyStore(),
-  chainId: CHAIN_ID,
-  usdcAddress: USDC,
-  vaultAddress: vault,
-});
-const signerServer = createSignerServer({ signer: signerService });
-const signer = new SignerClient(await listening(signerServer));
-
-const facilitatorServer = createFacilitatorServer({
-  facilitator: new Facilitator({
-    rpcUrl: RPC,
-    chainId: CHAIN_ID,
-    asset: USDC,
-    network: "base-sepolia",
-    settlerKey: settler.key,
-  }),
-  network: "base-sepolia",
-  authCapture: new AuthCaptureFacilitator({
-    rpcUrl: RPC,
-    chainId: CHAIN_ID,
-    asset: USDC,
-    settlerKey: settler.key,
-    operators: [vault],
-  }),
-});
-const facilitatorUrl = await listening(facilitatorServer);
-
-const chainGateway = new ChainEscrowGateway({
-  facilitator: new HttpFacilitatorGateway(facilitatorUrl),
-  rpcUrl: RPC,
-  chainId: CHAIN_ID,
-  vault,
-  vendorKey: vendorKey.key,
-});
-const vendorAddress = chainGateway.vendor;
-const vendorOptions = (gateway: EscrowGateway): EscrowVendorOptions => ({
-  vault,
-  vendor: vendorAddress,
-  network: `eip155:${CHAIN_ID}`,
-  asset: USDC,
-  maxTimeoutSeconds: 60,
-  gateway,
-});
-const vendor = await startMockApi(0, { escrow: vendorOptions(chainGateway) });
-
-const relay = new VaultRelay({ rpcUrl: RPC, vaultAddress: vault, relayKey: relayKey.key, chainId: CHAIN_ID });
+const stack = await startForkStack(RPC);
+const { pub, chain, vault, signer, user, userWallet, settler, vendorAddress, balance, request: rpc } = stack;
+const zap = await connectLightning(networkForChainId(CHAIN_ID)!, RPC);
+const relay = new VaultRelay({ rpcUrl: RPC, vaultAddress: vault, relayKey: stack.relay.key, chainId: CHAIN_ID });
 
 let approve = true;
-const decisions = { read: async () => ({ approved: approve, signatures: [`0x${"33".repeat(65)}` as Hex] }) };
+const decisions = {
+  read: async (handle: Hex) => ({ approved: approve, signatures: [forkAttestation(handle, approve)] }),
+};
 const loopFor = () =>
   new PaymentLoop({
     client: new X402Client({ retry: { maxAttempts: 2, baseDelayMs: 50 } }),
@@ -208,14 +71,13 @@ async function openFundedGoal(budget: bigint): Promise<{ goalId: bigint; payer: 
   const encrypt = (value: bigint) =>
     zap.encrypt(value, { accountAddress: user.account.address, dappAddress: vault, handleType: handleTypes.euint256 });
   const [budgetCiphertext, perCallCapCiphertext] = (await Promise.all([encrypt(budget), encrypt(6_000_000n)])) as [Hex, Hex];
-  const fee = await pub.readContract({ address: INCO, abi: incoAbi, functionName: "getFee" });
 
   const { request, result } = await pub.simulateContract({
     address: vault,
     abi: escrowPolicyVaultAbi,
     functionName: "openGoal",
     account: user.account,
-    value: 2n * fee,
+    value: 2n * (await stack.incoFee()),
     args: [
       {
         budgetCiphertext,
@@ -233,12 +95,7 @@ async function openFundedGoal(budget: bigint): Promise<{ goalId: bigint; payer: 
   await pub.waitForTransactionReceipt({ hash: await userWallet.writeContract(request) });
 
   // A round amount, independent of the budget, after the goal is open.
-  await rpc("anvil_impersonateAccount", [HOLDER]);
-  await rpc("anvil_setBalance", [HOLDER, toHex(10n ** 18n)]);
-  const holder = createWalletClient({ chain, transport: http(RPC), account: HOLDER });
-  await pub.waitForTransactionReceipt({
-    hash: await holder.writeContract({ address: USDC, abi: erc20, functionName: "transfer", args: [payer, 1_000_000n] }),
-  });
+  await stack.sendUsdc(payer, 1_000_000n);
   return { goalId: result, payer };
 }
 
@@ -258,7 +115,7 @@ const isReclaimed = (goalId: bigint, seq: bigint) =>
 
 console.log("\n1. an approved purchase: held, claimed, delivered");
 const first = await openFundedGoal(200_000n);
-const url = `${vendor.url}/resource/market-data`;
+const url = `${stack.vendor.url}/resource/market-data`;
 const paid = await loopFor().fetchPaid(url, first.goalId, { fresh: true });
 check("the run paid", paid.kind === "paid", paid.kind === "failed" ? paid.reason : paid.kind);
 check("the vendor holds the price", (await balance(vendorAddress)) === PRICE, String(await balance(vendorAddress)));
@@ -295,22 +152,7 @@ const sweep = await signer.sweep(first.goalId.toString());
 if (sweep.kind !== "signed") {
   check("the signer signs a sweep", false, sweep.reason);
 } else {
-  const payment = sweep.value.payment!;
-  const info = {
-    operator: payment.operator,
-    payer: payment.payer,
-    receiver: payment.receiver,
-    token: payment.token,
-    maxAmount: BigInt(payment.maxAmount),
-    preApprovalExpiry: payment.preApprovalExpiry,
-    authorizationExpiry: payment.authorizationExpiry,
-    refundExpiry: payment.refundExpiry,
-    minFeeBps: 0,
-    maxFeeBps: 0,
-    feeReceiver: "0x0000000000000000000000000000000000000000" as Address,
-    salt: BigInt(payment.salt),
-  };
-  const anyone = createWalletClient({ chain, transport: http(RPC), account: settler.account });
+  const info = paymentInfoFromTerms(sweep.value.payment!);
   const refusedTheft = await pub
     .simulateContract({
       address: vault,
@@ -324,6 +166,7 @@ if (sweep.kind !== "signed") {
   check("a sweep to anyone else is refused", refusedTheft);
 
   const ownerBefore = await balance(user.account.address);
+  const anyone = createWalletClient({ chain, transport: http(RPC), account: settler.account });
   await pub.waitForTransactionReceipt({
     hash: await anyone.writeContract({
       address: vault,
@@ -339,10 +182,10 @@ if (sweep.kind !== "signed") {
 console.log("\n4. a vendor that takes the hold and never claims");
 const second = await openFundedGoal(300_000n);
 const silent: EscrowGateway = {
-  settle: (payment, requirements) => chainGateway.settle(payment, requirements),
+  settle: (payment, requirements) => stack.gateway.settle(payment, requirements),
   claim: async () => ({ ok: false, reason: "this vendor has gone silent" }),
 };
-const silentVendor = await startMockApi(0, { escrow: vendorOptions(silent) });
+const silentVendor = await startMockApi(0, { escrow: stack.vendorOptions(silent) });
 const vendorPaidSoFar = await balance(vendorAddress);
 const unpaid = await loopFor().fetchPaid(`${silentVendor.url}/resource/market-data`, second.goalId, { fresh: true });
 check("the run failed", unpaid.kind === "failed", unpaid.kind === "failed" ? unpaid.reason.slice(0, 90) : unpaid.kind);
@@ -363,11 +206,8 @@ check("the vendor still has nothing", (await balance(vendorAddress)) === vendorP
 check("the call is back", (await calls(second.goalId)) === 2);
 check("the record says so", await isReclaimed(second.goalId, seq));
 
-await Promise.all([vendor.close(), silentVendor.close()]);
-for (const server of [signerServer, facilitatorServer]) {
-  server.closeAllConnections();
-  await new Promise((resolve) => server.close(resolve));
-}
+await silentVendor.close();
+await stack.close();
 
 console.log(failures === 0 ? "\nEvery check held.\n" : `\n${failures} check(s) FAILED.\n`);
 process.exit(failures === 0 ? 0 : 1);

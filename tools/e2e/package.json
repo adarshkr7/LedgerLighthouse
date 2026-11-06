@@ -20,7 +20,8 @@
     "diagnose": "tsx src/diagnose.ts",
     "bench": "tsx src/bench.ts",
     "bench:stats": "tsx src/bench-stats.ts",
-    "escrow-flow": "tsx src/escrow-flow.ts"
+    "escrow-flow": "tsx src/escrow-flow.ts",
+    "fork-tools": "tsx src/fork-tools.ts"
   },
   "dependencies": {
     "@inco/lightning-js": "^1.0.2",
