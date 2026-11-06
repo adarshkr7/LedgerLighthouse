@@ -325,7 +325,7 @@ const out = {
   goalId: goalId.toString(),
   signer: { url: signerUrl, keyStore: custody },
   agent: "scripted",
-  policy: { budget: BUDGET.toString(), cap: CAP.toString(), calls: APPROVED, funding: FUNDING.toString() },
+  policy: { budget: BUDGET.toString(), cap: CAP.toString(), calls: APPROVED + 1, funding: FUNDING.toString() },
   openGoalGas: openReceipt.gasUsed.toString(),
   summary,
   records,

@@ -18,7 +18,8 @@
     "sweep": "tsx src/sweep.ts",
     "reclaim": "tsx src/reclaim.ts",
     "diagnose": "tsx src/diagnose.ts",
-    "bench": "tsx src/bench.ts"
+    "bench": "tsx src/bench.ts",
+    "bench:stats": "tsx src/bench-stats.ts"
   },
   "dependencies": {
     "@inco/lightning-js": "^1.0.2",

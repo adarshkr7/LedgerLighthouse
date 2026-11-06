@@ -67,9 +67,9 @@ const BUDGET = 100_000n;
 const PER_CALL_CAP = 6_000_000n;
 /**
  * `--equal` sends the same amount and resource twice, 0.06 each: the first is
- * approved, the second rejected by what the budget has left. Identical calldata,
- * so any gas difference between the two `requestSpend` calls comes from the
- * outcome, not from the inputs.
+ * approved, the second rejected by what the budget has left. Only `payBy` differs,
+ * being taken from the clock at each request, so a gas difference between the two
+ * `requestSpend` calls would come from the outcome and not the amount or resource.
  */
 const EQUAL = process.argv.includes("--equal");
 const FIRST_SPEND = EQUAL ? 60_000n : 40_000n; // inside the budget
