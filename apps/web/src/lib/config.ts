@@ -51,6 +51,20 @@ export const wagmiConfig = createConfig({
 export const ORCHESTRATOR_URL: string =
   (env["VITE_ORCHESTRATOR_URL"] as string | undefined) ?? "http://127.0.0.1:8404";
 
+/**
+ * The one payee a goal opened here allowlists, and the address the mock vendor is paid
+ * at. Build-time, like the network, and deliberately not from the orchestrator: the
+ * allowlist bounds where a compromised orchestrator can send money, so it cannot be the
+ * one to name it.
+ */
+export function vendorAddress(): `0x${string}` {
+  const vendor = env["VITE_VENDOR_ADDRESS"] as string | undefined;
+  if (vendor === undefined || !/^0x[0-9a-fA-F]{40}$/.test(vendor)) {
+    throw new Error("VITE_VENDOR_ADDRESS is not set to an address. Set it to the vendor's address and rebuild.");
+  }
+  return vendor as `0x${string}`;
+}
+
 export interface OrchestratorConfig {
   readonly vaultAddress: `0x${string}`;
   readonly usdcAddress: `0x${string}`;

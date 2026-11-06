@@ -21,7 +21,6 @@ import { createPublicClient, parseEventLogs, type Address, type Hex } from "viem
 import { rpcTransport } from "@ntux402/shared/viem";
 import {
   DEMO_GOALS,
-  DEMO_PAYEES,
   policyVaultAbi,
   usdcAbi,
   type DemoGoal,
@@ -43,6 +42,7 @@ import {
   RPC_URL,
   RPC_URLS,
   explorer,
+  vendorAddress,
   fetchIncoHealth,
   fetchOrchestratorConfig,
   type IncoHealth,
@@ -715,11 +715,11 @@ export default function App() {
             relay: config.relayAddress,
             asset: config.usdcAddress,
             expiry: BigInt(Math.floor(Date.now() / 1000) + 7 * 24 * 3600),
-            // Every vendor in the catalog is allowlisted on purpose: the
-            // hostile ones must fail the *confidential* check, not a public
-            // precondition. An unallowlisted payee would revert in `require`,
-            // which proves nothing about Inco.
-            allowlist: [...DEMO_PAYEES],
+            // The vendor sells the whole catalog from one address, allowlisted on
+            // purpose: the hostile offers must fail the *confidential* check, not
+            // a public precondition. An unallowlisted payee would revert in
+            // `require`, which proves nothing about Inco.
+            allowlist: [vendorAddress()],
           },
         ],
         chain: CHAIN,
