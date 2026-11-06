@@ -222,93 +222,104 @@ if (others.length > 0) {
   console.log(`  needs another owner  ${formatUsdc(total(others))} USDC in ${others.length} goal(s)`);
 }
 
-if (!execute || actionable.length === 0) {
-  console.log(execute ? "\n  Nothing to do.\n" : "\n  Plan only. Run again with --execute to close and sweep.\n");
-  process.exit(0);
-}
-
-// ------------------------------------------------------- the signer's vault
-
-const health = await fetch(`${signerUrl}/health`)
-  .then((r) => (r.ok ? (r.json() as Promise<{ vault?: string; chainId?: number }>) : undefined))
-  .catch(() => undefined);
-if (!health) throw new Error(`signer is not reachable at ${signerUrl}. Start it first.`);
-if (health.vault === undefined) {
-  throw new Error("the signer does not report which vault it reads. Restart it on the current code.");
-}
-if (!isAddressEqual(health.vault as Address, vault) || health.chainId !== network.chainId) {
-  throw new Error(
-    `the signer reads vault ${health.vault} on chain ${health.chainId}, not ${vault} on ${network.chainId}. ` +
-      `Goal ids repeat across vaults, so its sweeps would be for different goals. Restart it with ` +
-      `POLICY_VAULT_ADDRESS=${vault}.`,
-  );
-}
-
-// ---------------------------------------------------------------- execute
-
-console.log("");
-let recovered = 0n;
-const failures: string[] = [];
-
-for (const c of actionable) {
-  const label = `goal ${c.goalId}`;
-  try {
-    if (c.action === "close-and-sweep") {
-      const hash = await wallet.writeContract({
-        address: vault,
-        abi: escrowPolicyVaultAbi,
-        functionName: "closeGoal",
-        args: [c.goalId],
-      });
-      const receipt = await publicClient.waitForTransactionReceipt({ hash });
-      if (receipt.status !== "success") throw new Error(`closeGoal reverted (${hash})`);
-      console.log(`  ${label}: closed      ${tx(hash)}`);
-    }
-
-    // Every goal here is closed, so a "still open" is a stale read. See askSignerToSweep.
-    const outcome = await askSignerToSweep(signer, String(c.goalId));
-    if (outcome.kind === "unreachable") throw new Error(`signer unreachable: ${outcome.reason}`);
-    if (outcome.kind === "refused") {
-      // 404 with "no key held" is the unrecoverable case, and says so itself.
-      failures.push(`${label}: signer refused (HTTP ${outcome.status}): ${outcome.reason}`);
-      console.log(`  ${label}: signer refused (HTTP ${outcome.status}): ${outcome.reason}`);
-      continue;
-    }
-
-    // Carried, not trusted: the token re-verifies the signature, but a
-    // transfer to anyone but the goal's owner is not worth the gas to find out.
-    const { payment, signature } = outcome.value;
-    if (payment === undefined) {
-      throw new Error("the signer did not sign through the escrow. Restart it on the current code.");
-    }
-    const value = BigInt(payment.maxAmount);
-    if (
-      !isAddressEqual(payment.operator, vault) ||
-      !isAddressEqual(payment.payer, c.payer) ||
-      !isAddressEqual(payment.receiver, c.owner) ||
-      !isAddressEqual(payment.token, usdcAddress) ||
-      value === 0n
-    ) {
-      throw new Error(
-        `the signer's payment does not match the goal: operator ${payment.operator}, from ${payment.payer} ` +
-          `to ${payment.receiver}, ${value} of ${payment.token}; expected operator ${vault}, from ${c.payer} ` +
-          `to ${c.owner} in ${usdcAddress}`,
-      );
-    }
-
-    const { txHash } = await submitter.sweep(payment, signature);
-    recovered += value;
-    console.log(`  ${label}: swept ${formatUsdc(value)} USDC to ${payment.receiver.slice(0, 10)}…  ${tx(txHash)}`);
-  } catch (e) {
-    const detail = e instanceof Error ? e.message.split("\n")[0]! : String(e);
-    failures.push(`${label}: ${detail}`);
-    console.log(`  ${label}: FAILED  ${detail}`);
+/**
+ * Closes and sweeps what the plan lists, under --execute. Returns the exit status.
+ *
+ * The status is set and the process left to end by itself, because calling process.exit
+ * straight after these reads made Node on Windows abort (0xC0000409, a libuv assertion on
+ * a closing handle). The work was done by then, but the status said it had crashed.
+ */
+async function act(): Promise<number> {
+  if (!execute || actionable.length === 0) {
+    console.log(execute ? "\n  Nothing to do.\n" : "\n  Plan only. Run again with --execute to close and sweep.\n");
+    return 0;
   }
+
+  // ------------------------------------------------------- the signer's vault
+
+  const health = await fetch(`${signerUrl}/health`)
+    .then((r) => (r.ok ? (r.json() as Promise<{ vault?: string; chainId?: number }>) : undefined))
+    .catch(() => undefined);
+  if (!health) throw new Error(`signer is not reachable at ${signerUrl}. Start it first.`);
+  if (health.vault === undefined) {
+    throw new Error("the signer does not report which vault it reads. Restart it on the current code.");
+  }
+  if (!isAddressEqual(health.vault as Address, vault) || health.chainId !== network.chainId) {
+    throw new Error(
+      `the signer reads vault ${health.vault} on chain ${health.chainId}, not ${vault} on ${network.chainId}. ` +
+        `Goal ids repeat across vaults, so its sweeps would be for different goals. Restart it with ` +
+        `POLICY_VAULT_ADDRESS=${vault}.`,
+    );
+  }
+
+  // ---------------------------------------------------------------- execute
+
+  console.log("");
+  let recovered = 0n;
+  const failures: string[] = [];
+
+  for (const c of actionable) {
+    const label = `goal ${c.goalId}`;
+    try {
+      if (c.action === "close-and-sweep") {
+        const hash = await wallet.writeContract({
+          address: vault,
+          abi: escrowPolicyVaultAbi,
+          functionName: "closeGoal",
+          args: [c.goalId],
+        });
+        const receipt = await publicClient.waitForTransactionReceipt({ hash });
+        if (receipt.status !== "success") throw new Error(`closeGoal reverted (${hash})`);
+        console.log(`  ${label}: closed      ${tx(hash)}`);
+      }
+
+      // Every goal here is closed, so a "still open" is a stale read. See askSignerToSweep.
+      const outcome = await askSignerToSweep(signer, String(c.goalId));
+      if (outcome.kind === "unreachable") throw new Error(`signer unreachable: ${outcome.reason}`);
+      if (outcome.kind === "refused") {
+        // 404 with "no key held" is the unrecoverable case, and says so itself.
+        failures.push(`${label}: signer refused (HTTP ${outcome.status}): ${outcome.reason}`);
+        console.log(`  ${label}: signer refused (HTTP ${outcome.status}): ${outcome.reason}`);
+        continue;
+      }
+
+      // Carried, not trusted: the vault checks all of this again, but a payment
+      // to anyone but the goal's owner is not worth the gas to find out.
+      const { payment, signature } = outcome.value;
+      if (payment === undefined) {
+        throw new Error("the signer did not sign through the escrow. Restart it on the current code.");
+      }
+      const value = BigInt(payment.maxAmount);
+      if (
+        !isAddressEqual(payment.operator, vault) ||
+        !isAddressEqual(payment.payer, c.payer) ||
+        !isAddressEqual(payment.receiver, c.owner) ||
+        !isAddressEqual(payment.token, usdcAddress) ||
+        value === 0n
+      ) {
+        throw new Error(
+          `the signer's payment does not match the goal: operator ${payment.operator}, from ${payment.payer} ` +
+            `to ${payment.receiver}, ${value} of ${payment.token}; expected operator ${vault}, from ${c.payer} ` +
+            `to ${c.owner} in ${usdcAddress}`,
+        );
+      }
+
+      const { txHash } = await submitter.sweep(payment, signature);
+      recovered += value;
+      console.log(`  ${label}: swept ${formatUsdc(value)} USDC to ${payment.receiver.slice(0, 10)}…  ${tx(txHash)}`);
+    } catch (e) {
+      const detail = e instanceof Error ? e.message.split("\n")[0]! : String(e);
+      failures.push(`${label}: ${detail}`);
+      console.log(`  ${label}: FAILED  ${detail}`);
+    }
+  }
+
+  console.log(`\n  recovered  ${formatUsdc(recovered)} USDC`);
+  if (failures.length > 0) {
+    console.log(`  failed     ${failures.length} goal(s), listed above`);
+  }
+  console.log("");
+  return failures.length > 0 ? 1 : 0;
 }
 
-console.log(`\n  recovered  ${formatUsdc(recovered)} USDC`);
-if (failures.length > 0) {
-  console.log(`  failed     ${failures.length} goal(s), listed above`);
-}
-console.log("");
-process.exit(failures.length > 0 ? 1 : 0);
+process.exitCode = await act();
