@@ -324,6 +324,7 @@ export function createOrchestratorServer(options: OrchestratorServerOptions): Se
         const outcome = await sweepGoal(goalId, {
           signer: options.signer,
           facilitatorUrl: options.facilitatorUrl,
+          relay: options.relay,
           usdcAddress: options.usdcAddress,
         });
         log(`POST /sweeps goal=${goalId} -> ${outcome.kind}`);

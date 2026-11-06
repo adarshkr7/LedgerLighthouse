@@ -34,6 +34,13 @@
  * nonce, it was produced inside the signer from chain state, and the token
  * verifies it independently at `transferWithAuthorization`. Nothing this
  * process constructs can widen it.
+ *
+ * ## On an escrow vault
+ *
+ * The signer's response carries the `payment` it signed, and the sweep goes through the
+ * vault's `charge`, sent by the relay. The facilitator has no part in it. The vault
+ * re-checks that the goal is closed and that the receiver is its owner, so this process
+ * still has no say in where the money goes.
  */
 
 import {
@@ -44,7 +51,12 @@ import {
   type SettleResponse,
 } from "@ntux402/shared";
 
-import type { SignedAuthorization, SignerClient, SweepAuthorizationOutcome } from "./signer-client.js";
+import type {
+  EscrowPaymentTerms,
+  SignedAuthorization,
+  SignerClient,
+  SweepAuthorizationOutcome,
+} from "./signer-client.js";
 
 export type SweepOutcome =
   | { readonly kind: "settled"; readonly settlement: SettleResponse; readonly amount: string; readonly to: Address }
@@ -55,6 +67,10 @@ export interface SweepConfig {
   /** The signer, already carrying its bearer token. Never a bare URL — see the header. */
   readonly signer: SignerClient;
   readonly facilitatorUrl: string | undefined;
+  /** Submits a sweep the signer signed through the escrow. See the header. */
+  readonly relay?: {
+    sweep(payment: EscrowPaymentTerms, signature: `0x${string}`): Promise<{ readonly txHash: `0x${string}` }>;
+  };
   readonly usdcAddress: Address;
   /** For the facilitator leg only; the signer leg goes through `signer`. */
   readonly fetchImpl?: typeof fetch;
@@ -93,15 +109,14 @@ export async function askSignerToSweep(
 export async function sweepGoal(goalId: string, config: SweepConfig): Promise<SweepOutcome> {
   const doFetch = config.fetchImpl ?? globalThis.fetch;
 
-  if (config.facilitatorUrl === undefined) {
-    return {
-      kind: "refused",
-      status: 409,
-      reason:
-        "settlement is stubbed — there is no facilitator configured, so a sweep would sign an " +
-        "authorization nobody submits. Set X402_FACILITATOR_URL.",
-    };
-  }
+  const stubbed: SweepOutcome = {
+    kind: "refused",
+    status: 409,
+    reason:
+      "settlement is stubbed — there is no facilitator configured, so a sweep would sign an " +
+      "authorization nobody submits. Set X402_FACILITATOR_URL.",
+  };
+  if (config.facilitatorUrl === undefined && config.relay === undefined) return stubbed;
 
   // --- ask the signer ------------------------------------------------------
   const authorized = await askSignerToSweep(config.signer, goalId, config.retry);
@@ -121,6 +136,25 @@ export async function sweepGoal(goalId: string, config: SweepConfig): Promise<Sw
   if (network === undefined) {
     return { kind: "failed", reason: `signer signed for chain ${signed.chainId}, which is not a known network` };
   }
+
+  // --- through the escrow --------------------------------------------------
+  if (signed.payment !== undefined) {
+    if (config.relay === undefined) {
+      return { kind: "failed", reason: "the signer settles through the escrow, and no relay was given to submit it" };
+    }
+    try {
+      const { txHash } = await config.relay.sweep(signed.payment, signed.signature);
+      return {
+        kind: "settled",
+        settlement: { success: true, transaction: txHash, network: network.x402Network, payer: signed.payment.payer },
+        amount: signed.payment.maxAmount,
+        to: signed.payment.receiver,
+      };
+    } catch (e) {
+      return { kind: "failed", reason: `the vault refused the sweep: ${e instanceof Error ? e.message.split("\n")[0] : String(e)}` };
+    }
+  }
+  if (config.facilitatorUrl === undefined) return stubbed;
 
   // --- submit it -----------------------------------------------------------
   const envelope = {

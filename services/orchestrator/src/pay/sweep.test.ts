@@ -184,6 +184,102 @@ describe("sweepGoal", () => {
   });
 });
 
+describe("sweepGoal on an escrow vault", () => {
+  const VAULT = `0x${"66".repeat(20)}` as const;
+  const PAYMENT = {
+    operator: VAULT,
+    payer: PAYER,
+    receiver: OWNER,
+    token: USDC,
+    maxAmount: "250000",
+    preApprovalExpiry: 3700,
+    authorizationExpiry: 3700,
+    refundExpiry: 3700,
+    salt: "129127208515966861312",
+  };
+  const ESCROW_SIGNED = { ...SIGNED, payment: PAYMENT };
+  const TX = `0x${"ef".repeat(32)}` as const;
+
+  it("submits through the relay, with no facilitator, what the signer signed", async () => {
+    const { client } = signerReturning(200, ESCROW_SIGNED);
+    const sent: unknown[][] = [];
+
+    const outcome = await sweepGoal("7", {
+      signer: client,
+      facilitatorUrl: undefined,
+      relay: {
+        sweep: async (...args) => {
+          sent.push(args);
+          return { txHash: TX };
+        },
+      },
+      usdcAddress: USDC,
+      fetchImpl: (async () => {
+        throw new Error("the facilitator has no part in this");
+      }) as unknown as typeof fetch,
+    });
+
+    expect(sent).toEqual([[PAYMENT, SIGNED.signature]]);
+    expect(outcome).toMatchObject({
+      kind: "settled",
+      amount: "250000",
+      to: OWNER,
+      settlement: { success: true, transaction: TX },
+    });
+  });
+
+  it("reports the vault's refusal as a failure, not a settlement", async () => {
+    const { client } = signerReturning(200, ESCROW_SIGNED);
+
+    const outcome = await sweepGoal("7", {
+      signer: client,
+      facilitatorUrl: undefined,
+      relay: {
+        sweep: async () => {
+          throw new Error("execution reverted: PaymentMismatch\nmore detail");
+        },
+      },
+      usdcAddress: USDC,
+    });
+
+    expect(outcome).toEqual({
+      kind: "failed",
+      reason: "the vault refused the sweep: execution reverted: PaymentMismatch",
+    });
+  });
+
+  it("never sends an escrow signature to the facilitator", async () => {
+    const { client } = signerReturning(200, ESCROW_SIGNED);
+    let forwarded = false;
+
+    const outcome = await sweepGoal("7", {
+      signer: client,
+      facilitatorUrl: "http://facilitator.local",
+      usdcAddress: USDC,
+      fetchImpl: (async () => {
+        forwarded = true;
+        return new Response("{}", { status: 200 });
+      }) as unknown as typeof fetch,
+    });
+
+    expect(outcome.kind).toBe("failed");
+    expect(forwarded).toBe(false);
+  });
+
+  it("still says a direct signature cannot be submitted when no facilitator exists", async () => {
+    const { client } = signerReturning(200, SIGNED);
+
+    const outcome = await sweepGoal("7", {
+      signer: client,
+      facilitatorUrl: undefined,
+      relay: { sweep: async () => ({ txHash: TX }) },
+      usdcAddress: USDC,
+    });
+
+    expect(outcome).toMatchObject({ kind: "refused", status: 409 });
+  });
+});
+
 /** A signer that answers each `/sweeps` call with the next response in `script`. */
 function signerScripted(script: ReadonlyArray<{ status: number; body: unknown }>) {
   let calls = 0;
