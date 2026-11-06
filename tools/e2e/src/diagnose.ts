@@ -319,7 +319,14 @@ async function runChecks(): Promise<void> {
             : "restart the signer so it reads POLICY_VAULT_ADDRESS from .env.",
         };
       }
-      return { level: "ok", detail: `healthy, reads this vault${enclave ? ", in the ROFL enclave" : ", local key store"}` };
+      if (body["settlement"] !== "escrow") {
+        return {
+          level: "fail",
+          detail: "healthy, but it does not report escrow settlement, so it is an older build that signs plain transfers",
+          fix: "build the escrow-only image, pin it in services/signer/compose.yaml, update rofl.yaml and redeploy.",
+        };
+      }
+      return { level: "ok", detail: `healthy, escrow only, reads this vault${enclave ? ", in the ROFL enclave" : ", local key store"}` };
     },
     enclave
       ? "nothing answers at SIGNER_URL. If the machine is running, the container may be crash-looping: `oasis rofl machine logs` shows the VM side, and a current signer reports its own boot failure on /health."
@@ -500,7 +507,7 @@ async function runChecks(): Promise<void> {
     for (let id = first; id <= count; id++) {
       const goal = (await read("goals", [id])) as readonly [Address, Address, Address, Address, number, bigint, bigint, boolean];
       const [, , , , , , lastSeq, open] = goal;
-      for (let seq = lastSeq > 10n ? lastSeq - 9n : 1n; seq <= lastSeq; seq++) {
+      for (let seq = 1n; seq <= lastSeq; seq++) {
         if (!((await read("isReclaimable", [id, seq])) as boolean)) continue;
         // A closed goal takes no more spends, so only money in the escrow matters there.
         if (open || (await paymentState(client as PublicClient, vault!, id, seq)).held > 0n) found.push(`${id}:${seq}`);
@@ -512,7 +519,13 @@ async function runChecks(): Promise<void> {
           detail: `${found.length} approved spend(s) expired unpaid and still hold budget: ${found.slice(0, 8).join(", ")}`,
           fix: "pnpm --filter @ntux402/e2e run reclaim -- --execute gives them back.",
         }
-      : { level: "ok", detail: "every expired approval was paid or reclaimed" };
+      : {
+          level: "ok",
+          detail:
+            first > 1n
+              ? `none in the last 200 goals; goals before ${first} were not read`
+              : "every expired approval was paid or reclaimed",
+        };
   });
 
 }

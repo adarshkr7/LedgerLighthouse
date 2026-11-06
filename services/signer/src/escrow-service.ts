@@ -8,10 +8,10 @@
  * from the collector, the collector only from the escrow, and the escrow only from
  * the vault, which re-checks its own record when the payment is collected.
  *
- * So the safety of a signature here does not rest on anything an RPC says. The chain
- * reads below still matter, but for a different reason: they stop this from signing
- * something useless and tell the caller why. A lie gets past them and produces a
- * signature nobody can spend.
+ * So the bound on what can be paid does not rest on anything an RPC says. The chain reads
+ * below still matter, but for a different reason: they stop this from signing something
+ * useless and tell the caller why. A lie can get past them, and it can waste a signature,
+ * stall a run or get a smaller sweep to the real owner. It cannot widen what can be paid.
  *
  * Three values therefore never come from the chain: the operator, the collector and
  * the token. They are fixed when this is constructed. That is the whole property, and

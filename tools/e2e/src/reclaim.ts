@@ -22,8 +22,8 @@
  * `reclaimExpired`, so DEPLOYER_PRIVATE_KEY pays the gas. A held payment goes back
  * to the payer, and nothing else moves money.
  *
- * It looks at the last 200 goals, and at each one's last 50 spends. On a closed
- * goal it lists only held payments: a budget restored there buys nothing, but the
+ * It reads every spend of each goal it looks at: the last 200 goals, or the ones named
+ * with --goal, and says if older goals went unread. On a closed goal it lists only held payments: a budget restored there buys nothing, but the
  * money is still in the escrow. Sweep that goal again afterwards.
  */
 
@@ -38,7 +38,6 @@ import { assertEscrowVault, paymentState } from "./escrow.js";
 loadDotEnv();
 
 const GOALS_SCANNED = 200n;
-const SPENDS_SCANNED = 50n;
 
 // --------------------------------------------------------------- arguments
 
@@ -98,14 +97,17 @@ const first = goalCount > GOALS_SCANNED ? goalCount - GOALS_SCANNED + 1n : 1n;
 const ids =
   goalArgs.length > 0 ? goalArgs : Array.from({ length: Number(goalCount - first + 1n) }, (_, i) => first + BigInt(i));
 
+if (goalArgs.length === 0 && first > 1n) {
+  console.log(`  reading goals ${first} to ${goalCount}. Goals before ${first} are not read: name one with --goal.\n`);
+}
+
 const candidates: Candidate[] = [];
 for (const goalId of ids) {
   const goal = await read<readonly [Address, Address, Address, Address, number, bigint, bigint, boolean]>("goals", [
     goalId,
   ]);
   const [, , , , , , lastSeq, open] = goal;
-  const from = lastSeq > SPENDS_SCANNED ? lastSeq - SPENDS_SCANNED + 1n : 1n;
-  for (let seq = from; seq <= lastSeq; seq++) {
+  for (let seq = 1n; seq <= lastSeq; seq++) {
     if (!(await read<boolean>("isReclaimable", [goalId, seq]))) continue;
     const { held } = await paymentState(publicClient, vault, goalId, seq);
     // A closed goal takes no more spends, so only money in the escrow is worth the gas.

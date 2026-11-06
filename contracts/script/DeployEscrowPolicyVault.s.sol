@@ -84,7 +84,8 @@ contract DeployEscrowPolicyVault is Script {
         console.log("Set both of these to the vault's address, then restart the services:");
         console.log("  POLICY_VAULT_ADDRESS");
         console.log("  FACILITATOR_ESCROW_OPERATORS");
-        console.log("Then rebind the enclave signer, which reads goals from one vault:");
-        console.log("  update POLICY_VAULT_ADDRESS in its ROFL secrets and redeploy it.");
+        console.log("Then rebuild the enclave signer. The pinned v4 image still signs plain transfers:");
+        console.log("  build it, pin the digest in services/signer/compose.yaml, update rofl.yaml's measurements,");
+        console.log("  set POLICY_VAULT_ADDRESS in its ROFL secrets, redeploy, and check /health says escrow.");
     }
 }

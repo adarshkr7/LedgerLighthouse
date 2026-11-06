@@ -70,6 +70,23 @@ export async function mockVendor(mockApiUrl: string, vault: Address): Promise<Ad
   return health.vendor;
 }
 
+/**
+ * Refuses a signer that is not the escrow-only build, or reads another vault. Such a signer
+ * would sign plain transfers against an escrow vault and undo what it guarantees.
+ */
+export async function assertEscrowSigner(signerUrl: string, vault: Address): Promise<void> {
+  const health = (await fetch(`${signerUrl}/health`)
+    .then((r) => r.json())
+    .catch(() => undefined)) as { settlement?: unknown; vault?: unknown } | undefined;
+  if (health === undefined) throw new Error(`the signer is not reachable at ${signerUrl}. Start it first.`);
+  if (health.settlement !== "escrow") {
+    throw new Error(`the signer at ${signerUrl} does not report escrow settlement, so it is an older build. Rebuild it.`);
+  }
+  if (typeof health.vault !== "string" || !isAddress(health.vault) || !isAddressEqual(health.vault, vault)) {
+    throw new Error(`the signer reads vault ${String(health.vault)}, not ${vault}. Restart it with this vault.`);
+  }
+}
+
 export interface PaymentState {
   /** The escrow took the money from the payer at some point. */
   readonly collected: boolean;
@@ -136,7 +153,7 @@ export function forkAttestation(handle: Hex, approved: boolean): Hex {
  * The stand-in applies the policy to the limits it was told, in the clear, so a run on
  * the fork says nothing about the encrypted comparison. It could not fool a real
  * network: its attestations only verify where ForkVerifier replaced Inco's verifier,
- * and this refuses to run against anything but a local Anvil.
+ * and this refuses to run against anything but an Anvil on this machine.
  */
 export async function decisionSource(zap: LightningZap, client: PublicClient, vault: Address): Promise<DecisionSource> {
   const fromBlock = optional("FORK_DECISIONS_FROM_BLOCK");
@@ -145,8 +162,9 @@ export async function decisionSource(zap: LightningZap, client: PublicClient, va
     return { read: (handle) => inco.read(handle), limits: () => undefined };
   }
   const version = await client.request({ method: "web3_clientVersion" } as never);
-  if (!/anvil/i.test(String(version))) {
-    throw new Error(`FORK_DECISIONS_FROM_BLOCK is set, but this RPC is ${String(version)}, not a local Anvil.`);
+  const host = new URL(optional("RPC_URL") ?? "http://unset").hostname;
+  if (!/anvil/i.test(String(version)) || (host !== "127.0.0.1" && host !== "localhost")) {
+    throw new Error(`FORK_DECISIONS_FROM_BLOCK is set, but RPC_URL is ${host} (${String(version)}), not a local Anvil.`);
   }
 
   const remaining = new Map<bigint, { budget: bigint; cap: bigint }>();

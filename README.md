@@ -22,6 +22,11 @@ when the payment is made, through x402's auth-capture escrow.
 
 Full design: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
+> **This branch is ahead of what is deployed.** The code here spends through x402's auth-capture
+> escrow and has run only on a local fork, with a stand-in for Inco's decisions. The addresses,
+> transactions and vault named below describe the earlier design on tag `arxiv-v1.1`, whose signer
+> gave plain EIP-3009 transfers. This code refuses to run against that vault.
+
 ---
 
 ## The problem
@@ -170,8 +175,13 @@ Stated here rather than deferred to a roadmap.
 - **On-Base provability of custody is absent.** Base cannot verify Oasis attestations, so the binding
   between payer address and enclave identity is asserted by the app, not checkable by a third party
   from Base. Custody is real; its provability from Base is not.
-- **No refund-on-timeout accounting.** An approved-but-never-settled spend debits the budget
-  permanently.
+- **A payment that is never claimed needs someone to reclaim it.** The budget and call come back only
+  when `reclaimExpired` is called, once the window or the capture deadline has passed. Anyone may
+  call it; nothing calls it automatically. `pnpm --filter @ntux402/e2e run reclaim` finds them.
+- **The console trusts the orchestrator for the payer address.** A compromised orchestrator can name
+  an address it controls, and the money funded there is gone without touching the vault or the
+  enclave. Compare the address with the enclave's own log before funding. Fixing this needs an
+  attestation from the signer that the console verifies.
 - **Strictly sequential spends per goal.** `pendingSeq` must be zero, because the public call counter
   is only decremented at finalization and a second in-flight spend would read a stale count.
 - **No enclave measurement of our own application code** is attested, and Inco exposes no

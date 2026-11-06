@@ -237,16 +237,17 @@ describe("EscrowAuthorizationSigner", () => {
 
     it("does not produce a signature usable as a plain transfer", async () => {
       const value = await signed();
+      // Every field as signed, so the type is the only difference under test.
       const asTransfer = await recoverTypedDataAddress({
         domain: DOMAIN,
         types: TRANSFER_WITH_AUTHORIZATION_TYPES,
         primaryType: "TransferWithAuthorization",
         message: {
-          from: payer,
-          to: VENDOR,
-          value: AMOUNT,
-          validAfter: 0n,
-          validBefore: BigInt(WINDOW),
+          from: value.authorization.from,
+          to: value.authorization.to,
+          value: BigInt(value.authorization.value),
+          validAfter: BigInt(value.authorization.validAfter),
+          validBefore: BigInt(value.authorization.validBefore),
           nonce: value.authorization.nonce,
         },
         signature: value.signature,

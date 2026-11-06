@@ -67,7 +67,6 @@ describe("the orchestrator server", () => {
       mockApiUrl: "http://mock.test",
       signerUrl: "http://signer.test",
       anchors: undefined,
-      facilitatorUrl: undefined,
       agentSource: "scripted",
       traceDir: mkdtempSync(join(tmpdir(), "ll-traces-")),
     });
@@ -244,7 +243,6 @@ describe("the Inco gate", () => {
       },
       signerUrl: "http://signer.test",
       anchors: undefined,
-      facilitatorUrl: undefined,
       agentSource: "scripted",
       traceDir: mkdtempSync(join(tmpdir(), "ll-traces-")),
     });

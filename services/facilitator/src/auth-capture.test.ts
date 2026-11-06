@@ -10,7 +10,12 @@ import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import type { Address } from "viem";
 import { AUTH_CAPTURE_ESCROW, ERC3009_TOKEN_COLLECTOR, type AuthCapturePayload } from "@ntux402/shared";
 
-import { AuthCaptureFacilitator, type AuthCaptureConfig, type SettlementScheme } from "./auth-capture.js";
+import {
+  AuthCaptureFacilitator,
+  type AuthCaptureConfig,
+  type EscrowPaymentState,
+  type SettlementScheme,
+} from "./auth-capture.js";
 import { Facilitator } from "./facilitator.js";
 import { createFacilitatorServer } from "./http.js";
 
@@ -73,7 +78,7 @@ const payment = (requirements = terms()): AuthCapturePayload => ({
 
 describe("AuthCaptureFacilitator", () => {
   let scheme: { verify: ReturnType<typeof vi.fn>; settle: ReturnType<typeof vi.fn> };
-  let collected: boolean;
+  let state: EscrowPaymentState;
   let facilitator: AuthCaptureFacilitator;
 
   beforeEach(() => {
@@ -81,10 +86,10 @@ describe("AuthCaptureFacilitator", () => {
       verify: vi.fn(async () => ({ isValid: true, payer: PAYER })),
       settle: vi.fn(async () => ({ success: true, transaction: "0xabc" })),
     };
-    collected = false;
+    state = { collected: false, held: 0n, captured: 0n };
     facilitator = new AuthCaptureFacilitator(CONFIG, {
       scheme: scheme as unknown as SettlementScheme,
-      readCollected: async () => collected,
+      readState: async () => state,
     });
   });
 
@@ -99,9 +104,24 @@ describe("AuthCaptureFacilitator", () => {
   });
 
   /** A repeat after a lost response. The money moved, so it must not read as a refusal. */
-  it("reports a collected payment as settled without sending anything", async () => {
-    collected = true;
+  it("reports a held payment as settled without sending anything", async () => {
+    state = { collected: true, held: 1n, captured: 0n };
     expect(await facilitator.settle(payment(), terms())).toMatchObject({ success: true, alreadySettled: true });
+    expect(scheme.settle).not.toHaveBeenCalled();
+  });
+
+  it("reports a captured payment as settled without sending anything", async () => {
+    state = { collected: true, held: 0n, captured: 1n };
+    expect(await facilitator.settle(payment(), terms())).toMatchObject({ success: true, alreadySettled: true });
+    expect(scheme.settle).not.toHaveBeenCalled();
+  });
+
+  /** The flag stays set once the money has gone back, so it alone would claim a settlement. */
+  it("does not report a returned payment as settled", async () => {
+    state = { collected: true, held: 0n, captured: 0n };
+    const settled = await facilitator.settle(payment(), terms());
+    expect(settled).toMatchObject({ success: false });
+    expect(settled.errorReason).toMatch(/back to the payer/);
     expect(scheme.settle).not.toHaveBeenCalled();
   });
 
@@ -160,7 +180,7 @@ describe("POST /settle with auth-capture", () => {
         verify: async () => ({ isValid: true }),
         settle: async () => ({ success: true, transaction: "0xabc" }),
       } as unknown as SettlementScheme,
-      readCollected: async () => false,
+      readState: async () => ({ collected: false, held: 0n, captured: 0n }),
     });
 
   it("settles through the auth-capture path", async () => {

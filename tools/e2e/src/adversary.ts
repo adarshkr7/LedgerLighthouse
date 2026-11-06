@@ -22,7 +22,8 @@
  * on the first one would hide every later strategy behind it, and the campaign's
  * value is the full picture — including which controls held while another
  * failed. So each strategy records a verdict and the run continues. The exit
- * code is non-zero if anything deviated, so CI can still gate on it.
+ * code is non-zero unless every strategy held: an inconclusive one tested nothing, so
+ * it cannot count as a pass.
  *
  * ## Every finding names its transactions
  *
@@ -77,8 +78,10 @@
  * C15 to C25 are why the vault operates an escrow: a signature the adversary holds, and
  * does not need to steal, should still move no money except through the vault. Each
  * tries a way around it. Most are refused in simulation against live state, because a
- * mined revert would only cost gas to say the same thing. C25 is a real sweep, of a
- * small amount this campaign funds and gets back.
+ * mined revert would only cost gas to say the same thing. Where a refusal could come from
+ * some other missing precondition there is a control beside it: the same call from the
+ * right party, or at the right time, must pass. C22 holds a real payment and C25 is a real
+ * sweep, so this goal is funded, and the hold is left for `reclaim` to return.
  */
 
 import {
@@ -118,7 +121,7 @@ import {
   networkFromEnv,
   vaultAbi,
 } from "./config.js";
-import { CAPTURE_WINDOW_SECONDS, NO_KEY_HASH, assertEscrowVault, decisionSource } from "./escrow.js";
+import { CAPTURE_WINDOW_SECONDS, NO_KEY_HASH, assertEscrowSigner, assertEscrowVault, decisionSource } from "./escrow.js";
 
 loadDotEnv();
 
@@ -202,9 +205,9 @@ const GOAL_PROBE = {
 const PROBE_RANGE = 1_000_000n;
 
 /**
- * Goal F, for C15 to C25: one approved spend whose signature the adversary then tries
- * to use every way but the intended one. Funded with `ESCROW_FUNDING` only so C25 has
- * a balance to sweep, which goes back to the owner.
+ * Goal F, for C15 to C25: one approved spend whose signature the adversary tries to use
+ * every way but the intended one, and one that is really held for C22. Funded with
+ * `ESCROW_FUNDING` for C25 to sweep back, plus `SMALL_ASK` for the hold.
  */
 const GOAL_ESCROW = {
   label: "escrow",
@@ -1300,9 +1303,10 @@ async function escrowStrategies(goal: OpenedGoal): Promise<void> {
   const refused = (id: string, name: string, targets: string, match: string, call: () => Promise<unknown>) =>
     expectRefusal(id, name, targets, match, call, undefined, txs);
 
+  // Every field as signed, so that the only thing changed is the type of the authorization.
   await refused(
     "C16",
-    "the signature, as a plain transfer to the attacker",
+    "the same signature, read as a plain transfer",
     "the signature covers receiveWithAuthorization only",
     "invalid signature",
     () =>
@@ -1310,7 +1314,7 @@ async function escrowStrategies(goal: OpenedGoal): Promise<void> {
         address: usdcAddress,
         abi: usdcAbi,
         functionName: "transferWithAuthorization",
-        args: [auth.from, THIEF, BigInt(auth.value), 0n, BigInt(auth.validBefore), auth.nonce, signature],
+        args: [auth.from, auth.to, BigInt(auth.value), 0n, BigInt(auth.validBefore), auth.nonce, signature],
         account: relayAddress,
       }),
   );
@@ -1357,22 +1361,75 @@ async function escrowStrategies(goal: OpenedGoal): Promise<void> {
     "WrongCollector",
     simulated(vaultAddress, "authorize", [info, info.maxAmount, THIEF, signature]),
   );
+  // --- a payment really held, so that claiming it could otherwise succeed ---
+  const fundHash = await userWallet.writeContract({
+    address: usdcAddress,
+    abi: usdcAbi,
+    functionName: "transfer",
+    args: [goal.payer, ESCROW_FUNDING + SMALL_ASK],
+  });
+  await publicClient.waitForTransactionReceipt({ hash: fundHash });
+  txs.push({ label: "fund the payer", hash: fundHash });
+
+  const held = await request(goal.goalId, SMALL_ASK, PAYEE, "adversary/escrow-held", payBy());
+  txs.push({ label: `commit seq ${held.seq}`, hash: held.commitTx });
+  const heldDecision = await pollForDecision(decisions, held.decisionHandle, { timeoutMs: 180_000 });
+  if (heldDecision.kind === "timeout" || !heldDecision.decision.approved) {
+    inconclusive(heldDecision.kind === "timeout" ? "Inco gave no decision" : "the second spend was rejected", txs);
+    return;
+  }
+  const heldFinal = await relay.finalizeDecision(goal.goalId, held.seq, true, heldDecision.decision.signatures);
+  txs.push({ label: `finalize seq ${held.seq}`, hash: heldFinal.txHash });
+  const heldSigned = await authorizeWithRetry(goal.goalId, held.seq);
+  if (heldSigned.kind !== "signed" || heldSigned.value.payment === undefined) {
+    inconclusive(`the signer answered ${heldSigned.kind} for the second spend`, txs);
+    return;
+  }
+  const heldInfo = paymentInfoFromTerms(heldSigned.value.payment);
+  const holdHash = await userWallet.writeContract({
+    address: vaultAddress,
+    abi: chainAbi,
+    functionName: "authorize",
+    args: [heldInfo, heldInfo.maxAmount, collector, heldSigned.value.signature],
+  } as Parameters<typeof userWallet.writeContract>[0]);
+  const holdReceipt = await publicClient.waitForTransactionReceipt({ hash: holdHash });
+  txs.push({ label: `hold seq ${held.seq}`, hash: holdHash });
+  if (holdReceipt.status !== "success") {
+    inconclusive("the payment could not be held, so there is nothing to claim", txs);
+    return;
+  }
+
+  /** The refusal beside it means nothing unless the right party, or the right time, passes. */
+  const control = async (id: string, name: string, targets: string, call: () => Promise<unknown>) => {
+    try {
+      await call();
+      record({ id, name, targets, expected: "passes in simulation", observed: "passes", verdict: "held", txs });
+    } catch (error) {
+      const text = error instanceof Error ? error.message : String(error);
+      record({ id, name, targets, expected: "passes in simulation", observed: `failed: ${first(text)}`, verdict: "inconclusive", txs });
+    }
+  };
+
   await refused(
     "C22",
     "claiming a held payment without being the vendor",
     "only the vendor can claim",
     "NotVendor",
-    simulated(vaultAddress, "claim", [goal.goalId, requested.seq, NO_KEY_HASH]),
+    simulated(vaultAddress, "claim", [goal.goalId, held.seq, NO_KEY_HASH]),
+  );
+  await control("C22b", "control: the vendor can claim that same payment", "C22 refuses the caller, not the payment", () =>
+    publicClient.simulateContract({
+      address: vaultAddress,
+      abi: chainAbi,
+      functionName: "claim",
+      args: [goal.goalId, held.seq, NO_KEY_HASH],
+      account: PAYEE,
+    } as Parameters<typeof publicClient.simulateContract>[0]),
   );
 
+  await control("C23b", "control: the signature could still collect before the close", "C23 refuses because of the close", simulated(vaultAddress, "authorize", [info, info.maxAmount, collector, signature]));
+
   // --- the owner stops the goal ---
-  const fundHash = await userWallet.writeContract({
-    address: usdcAddress,
-    abi: usdcAbi,
-    functionName: "transfer",
-    args: [goal.payer, ESCROW_FUNDING],
-  });
-  await publicClient.waitForTransactionReceipt({ hash: fundHash });
   const closeHash = await userWallet.writeContract({
     address: vaultAddress,
     abi,
@@ -1448,6 +1505,7 @@ if (chainId !== network.chainId) {
 const health = await fetch(`${signerUrl}/health`).catch(() => undefined);
 if (!health?.ok) throw new Error(`signer is not reachable at ${signerUrl}. Start it first.`);
 await assertEscrowVault(publicClient, vaultAddress);
+await assertEscrowSigner(signerUrl, vaultAddress);
 console.log(`  chain  ${chainId} (${network.label})\n  vault  ${vaultAddress}\n  signer ${signerUrl}`);
 
 /** C14 alone, for a quick check of the attempt budget. Returns the exit status. */
@@ -1549,7 +1607,7 @@ async function campaign(): Promise<number> {
   );
   console.log(`  signature is the most the adversary can get, and C15 to C25 test what it is worth.`);
 
-  return deviated.length > 0 ? 1 : 0;
+  return deviated.length + inconclusive.length > 0 ? 1 : 0;
 }
 
 /*

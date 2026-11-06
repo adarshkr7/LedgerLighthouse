@@ -48,6 +48,15 @@ export interface AuthCaptureConfig {
   readonly operators: readonly Address[];
 }
 
+/** What the escrow reports. `collected` stays true for good, even once the money has gone back. */
+export interface EscrowPaymentState {
+  readonly collected: boolean;
+  /** In the escrow now. */
+  readonly held: bigint;
+  /** Paid to the vendor. The escrow calls this `refundableAmount`. */
+  readonly captured: bigint;
+}
+
 export interface AuthCaptureVerifyResponse {
   readonly isValid: boolean;
   readonly invalidReason?: string | undefined;
@@ -73,18 +82,18 @@ export interface SettlementScheme {
 export class AuthCaptureFacilitator {
   readonly #scheme: SettlementScheme;
   readonly #config: AuthCaptureConfig;
-  readonly #readState: (hash: Hex) => Promise<boolean>;
+  readonly #readState: (hash: Hex) => Promise<EscrowPaymentState>;
 
   constructor(
     config: AuthCaptureConfig,
-    injected?: { scheme: SettlementScheme; readCollected: (hash: Hex) => Promise<boolean> },
+    injected?: { scheme: SettlementScheme; readState: (hash: Hex) => Promise<EscrowPaymentState> },
   ) {
     if (config.operators.length === 0) throw new Error("auth-capture needs at least one operator");
     this.#config = config;
 
     if (injected) {
       this.#scheme = injected.scheme;
-      this.#readState = injected.readCollected;
+      this.#readState = injected.readState;
       return;
     }
 
@@ -110,13 +119,13 @@ export class AuthCaptureFacilitator {
     ) as unknown as SettlementScheme;
 
     this.#readState = async (hash) => {
-      const [collected] = (await reader.readContract({
+      const [collected, held, captured] = (await reader.readContract({
         address: AUTH_CAPTURE_ESCROW,
         abi: ESCROW_STATE_ABI,
         functionName: "paymentState",
         args: [hash],
       })) as readonly [boolean, bigint, bigint];
-      return collected;
+      return { collected, held, captured };
     };
   }
 
@@ -155,6 +164,14 @@ export class AuthCaptureFacilitator {
    * Idempotent, like `Facilitator.settle`. The SDK answers a repeat with a simulation
    * failure, which would read as a refused payment when the money did move. A caller
    * whose response was lost has to be able to ask again, so the escrow is asked first.
+   *
+   * Only a payment still held or already captured counts. One that was collected and then
+   * returned has its money back with the payer, so it is not settled, and the escrow would
+   * refuse to collect it again.
+   *
+   * This reports the state of the payment and does not authenticate who is asking: every
+   * field of a collected payment is public on chain. A vendor must not treat
+   * `alreadySettled` as proof that the caller bought anything.
    */
   async settle(payment: AuthCapturePayload, requirements: AuthCaptureRequirements): Promise<AuthCaptureSettleResponse> {
     const payer = payment.payload.authorization.from;
@@ -165,7 +182,16 @@ export class AuthCaptureFacilitator {
       escrow: AUTH_CAPTURE_ESCROW,
       chainId: this.#config.chainId,
     });
-    if (await this.#readState(hash)) {
+    const state = await this.#readState(hash);
+    if (state.collected) {
+      if (state.held === 0n && state.captured === 0n) {
+        return {
+          success: false,
+          errorReason: "this payment was collected and has since gone back to the payer",
+          network: this.network,
+          payer,
+        };
+      }
       return { success: true, alreadySettled: true, network: this.network, payer };
     }
     return this.#scheme.settle(payment as never, requirements as never);

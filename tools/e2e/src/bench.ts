@@ -60,7 +60,7 @@ import {
   networkFromEnv,
   vaultAbi,
 } from "./config.js";
-import { assertEscrowVault, decisionSource, mockVendor } from "./escrow.js";
+import { assertEscrowSigner, assertEscrowVault, decisionSource, mockVendor } from "./escrow.js";
 
 loadDotEnv();
 
@@ -100,6 +100,7 @@ const userWallet = createWalletClient({ account: user, chain: viemChain(network)
 const abi = vaultAbi();
 
 await assertEscrowVault(publicClient, vaultAddress);
+await assertEscrowSigner(signerUrl, vaultAddress);
 const vendor = await mockVendor(mockApiUrl, vaultAddress);
 
 const signerHealth = await fetch(`${signerUrl}/health`).then((r) => r.json()).catch(() => undefined) as
@@ -354,3 +355,10 @@ console.log(`\nsummary (milliseconds and gas; expected outcomes only)`);
 console.log(JSON.stringify(summary, null, 2));
 console.log(`\nwritten ${file}`);
 console.log(`goal ${goalId} is still open with leftover USDC; run the sweep to return it.`);
+
+// Statistics over the calls that behaved say nothing about the ones that did not.
+const unexpected = records.filter((r) => !r.expected);
+if (unexpected.length > 0) {
+  console.log(`\n${unexpected.length} call(s) of ${records.length} did not end as expected.`);
+  process.exitCode = 1;
+}

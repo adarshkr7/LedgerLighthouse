@@ -65,6 +65,19 @@ export function vendorAddress(): `0x${string}` {
   return vendor as `0x${string}`;
 }
 
+/**
+ * The vault a goal is opened on. Build-time for the same reason as the vendor: the
+ * orchestrator is the party this system assumes compromised, and a user who opened a goal
+ * on a vault it named would be trusting that vault's every check.
+ */
+function pinnedVault(): `0x${string}` {
+  const vault = env["VITE_POLICY_VAULT_ADDRESS"] as string | undefined;
+  if (vault === undefined || !/^0x[0-9a-fA-F]{40}$/.test(vault)) {
+    throw new Error("VITE_POLICY_VAULT_ADDRESS is not set to an address. Set it to the vault's address and rebuild.");
+  }
+  return vault as `0x${string}`;
+}
+
 export interface OrchestratorConfig {
   readonly vaultAddress: `0x${string}`;
   readonly usdcAddress: `0x${string}`;
@@ -90,6 +103,13 @@ export async function fetchOrchestratorConfig(): Promise<OrchestratorConfig> {
       `the orchestrator is on chain ${config.chainId}, but this console was built for ` +
         `${NETWORK.label} (${CHAIN_ID}). Set VITE_NETWORK to match NETWORK and rebuild.`,
     );
+  }
+  const vault = pinnedVault();
+  if (config.vaultAddress.toLowerCase() !== vault.toLowerCase()) {
+    throw new Error(`the orchestrator names vault ${config.vaultAddress}, but this console was built for ${vault}.`);
+  }
+  if (config.usdcAddress.toLowerCase() !== NETWORK.usdc.address.toLowerCase()) {
+    throw new Error(`the orchestrator names token ${config.usdcAddress}, which is not ${NETWORK.label} USDC.`);
   }
   return config;
 }

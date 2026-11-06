@@ -64,7 +64,7 @@ import {
   networkFromEnv,
   vaultAbi,
 } from "./config.js";
-import { assertEscrowVault, decisionSource, mockVendor } from "./escrow.js";
+import { assertEscrowSigner, assertEscrowVault, decisionSource, mockVendor } from "./escrow.js";
 
 loadDotEnv();
 
@@ -140,6 +140,7 @@ if (!facilitatorHealth?.ok) throw new Error(`facilitator is not reachable at ${f
 console.log(`  facilitator up at ${facilitatorUrl}`);
 
 await assertEscrowVault(publicClient, vaultAddress);
+await assertEscrowSigner(signerUrl, vaultAddress);
 const vendor = await mockVendor(mockApiUrl, vaultAddress);
 console.log(`  vendor     ${vendor}  (the only allowlisted payee)`);
 

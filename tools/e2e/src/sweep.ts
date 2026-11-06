@@ -56,7 +56,7 @@ import { escrowPolicyVaultAbi, formatUsdc, usdcAbi } from "@ntux402/shared";
 import { SignerClient, VaultRelay, askSignerToSweep } from "@ntux402/orchestrator";
 
 import { loadDotEnv, networkFromEnv, optional, requiredAddress, requiredHexKey } from "./config.js";
-import { assertEscrowVault } from "./escrow.js";
+import { assertEscrowSigner, assertEscrowVault } from "./escrow.js";
 
 loadDotEnv();
 
@@ -251,6 +251,8 @@ async function act(): Promise<number> {
         `POLICY_VAULT_ADDRESS=${vault}.`,
     );
   }
+
+  await assertEscrowSigner(signerUrl, vault);
 
   // ---------------------------------------------------------------- execute
 

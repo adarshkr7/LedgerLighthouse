@@ -25,7 +25,13 @@ services:
     # and the vault binding in /health, and crash-looped on that socket.
     # --provenance=false makes this a single linux/amd64 manifest, so there is no
     # attestation entry in an index for a runtime to trip over.
-    image: docker.io/schwarzite/totem-signer@sha256:ad385c57942cb5419bd3440c61429b8a4ac896ee4f122db675d18946544e6af3
+    #
+    # NOT BUILT YET. The last image, v4 (sha256:ad385c57942cb541...), still has the direct
+    # signer. Bound to an escrow vault it would sign plain transfers, and a transfer the
+    # escrow never collected can then be credited back, so the loss bound fails. This line
+    # refuses to deploy until the escrow-only image is built and pinned here. Update the
+    # enclave's measurements in rofl.yaml with it.
+    image: docker.io/schwarzite/totem-signer@sha256:BUILD-THE-ESCROW-SIGNER-AND-PIN-ITS-DIGEST-HERE
     platform: linux/amd64
     restart: on-failure
     ports:

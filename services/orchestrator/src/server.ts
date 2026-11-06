@@ -63,7 +63,6 @@ export interface OrchestratorServerOptions {
    * is unset, which leaves traces tamper-evident but not time-stamped.
    */
   readonly anchors: TraceAnchorClient | undefined;
-  readonly facilitatorUrl: string | undefined;
   readonly agentSource: "llm" | "scripted";
   /**
    * The model behind `agentSource: "llm"`, when there is one.
@@ -213,8 +212,9 @@ export function createOrchestratorServer(options: OrchestratorServerOptions): Se
             relayAddress: options.relay.relayAddress,
             signerUrl: options.signerUrl,
             mockApiUrl: options.mockApiUrl,
-            // Rendered in the UI so a stubbed run can never be mistaken for a real one.
-            settlement: options.facilitatorUrl ? "live" : "stub",
+            // The vendor settles, through the escrow, and a hold is a real transaction. So
+            // this process's own settings say nothing about whether money moves.
+            settlement: "live",
             agent: options.agentSource,
             agentModel: options.agentModel,
           },

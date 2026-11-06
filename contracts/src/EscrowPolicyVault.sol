@@ -51,7 +51,8 @@ interface IAuthCaptureEscrow {
 /// only takes calls from the operator, and the operator is this contract. So no
 /// signature can move money without passing the checks below, on the chain as it
 /// actually is at that moment. The Authorization Signer stops being trusted with
-/// what the chain says; a lie to it yields a signature nobody can use.
+/// what the chain says for the loss bound: a lie to it can waste a signature or stall a run,
+/// and cannot widen what can be paid.
 ///
 /// ## The life of an approved spend
 ///

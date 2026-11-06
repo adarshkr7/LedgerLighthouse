@@ -96,7 +96,10 @@ await run("sweep", ["--execute"]);
 
 console.log("\n=== what those scripts left behind\n");
 for (const [name, ok] of results) check(`${name} exited 0`, ok);
-check("the owner got back everything the vendor was not paid", (await balance(user.account.address)) === ownerStart - (await balance(vendorAddress)), `vendor was paid ${await balance(vendorAddress)}`);
+// Exact, so that a run whose purchases quietly failed cannot pass on its returned funding.
+check("the vendor was paid for the demo's one purchase and bench's three", (await balance(vendorAddress)) === 40_000n, String(await balance(vendorAddress)));
+// C22 leaves one 500-unit payment held until its capture deadline.
+check("the owner got back everything else", (await balance(user.account.address)) === ownerStart - 40_000n - 500n);
 
 // A vendor that takes the hold and never claims, on a goal the owner then closes. The
 // money is in neither the payer nor the vendor, so it needs reclaim and then sweep.
