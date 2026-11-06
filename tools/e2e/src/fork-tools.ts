@@ -59,7 +59,6 @@ const { pub, vault, user, userWallet, vendorAddress, balance, signer, request } 
 await stack.sendUsdc(user.account.address, 1_500_000n);
 const ownerStart = await balance(user.account.address);
 
-const WINDOWS_ABORT = 0xc0000409;
 const cwd = fileURLToPath(new URL("..", import.meta.url));
 const benchDir = mkdtempSync(join(tmpdir(), "fork-bench-"));
 
@@ -70,22 +69,16 @@ const benchDir = mkdtempSync(join(tmpdir(), "fork-bench-"));
  * it would leave them unable to answer the script being waited for.
  */
 async function script(name: string, args: readonly string[] = []): Promise<boolean> {
-  for (let attempt = 1; ; attempt++) {
-    console.log(`\n=== ${name} ${args.join(" ")} ${"=".repeat(Math.max(0, 60 - name.length))}\n`);
-    const child = spawn("pnpm", ["exec", "tsx", `src/${name}.ts`, ...args], {
-      cwd,
-      shell: true,
-      stdio: "inherit",
-      env: { ...process.env, ...stack.env },
-    });
-    const status = await new Promise<number | null>((resolve) => child.on("close", resolve));
-    console.log(`\n=== ${name} exited ${status}`);
-    if (status === 0) return true;
-    // Node on Windows sometimes fails a libuv assertion as a script exits, after its work
-    // is done. Once is retried, and every script here is safe to run twice. Twice is a fault.
-    if (status !== WINDOWS_ABORT || attempt > 1) return false;
-    console.log(`=== ${name} aborted in the runtime (0xC0000409), running it once more`);
-  }
+  console.log(`\n=== ${name} ${args.join(" ")} ${"=".repeat(Math.max(0, 60 - name.length))}\n`);
+  const child = spawn("pnpm", ["exec", "tsx", `src/${name}.ts`, ...args], {
+    cwd,
+    shell: true,
+    stdio: "inherit",
+    env: { ...process.env, ...stack.env },
+  });
+  const status = await new Promise<number | null>((resolve) => child.on("close", resolve));
+  console.log(`\n=== ${name} exited ${status}`);
+  return status === 0;
 }
 
 const results: Array<[string, boolean]> = [];
@@ -179,4 +172,5 @@ await stack.close();
 rmSync(benchDir, { recursive: true, force: true });
 
 console.log(failures === 0 ? "\nEvery script and check held.\n" : `\n${failures} check(s) FAILED.\n`);
-process.exit(failures === 0 ? 0 : 1);
+// Set, not process.exit: see reclaim.ts.
+process.exitCode = failures === 0 ? 0 : 1;

@@ -210,4 +210,5 @@ await silentVendor.close();
 await stack.close();
 
 console.log(failures === 0 ? "\nEvery check held.\n" : `\n${failures} check(s) FAILED.\n`);
-process.exit(failures === 0 ? 0 : 1);
+// Set, not process.exit: see reclaim.ts.
+process.exitCode = failures === 0 ? 0 : 1;

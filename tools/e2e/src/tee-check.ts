@@ -334,8 +334,10 @@ check("closeGoal confirmed", closeReceipt.status === "success", `gas ${closeRece
 rule();
 if (failures > 0) {
   console.error(`  ${failures} check(s) FAILED — the Inco path is not working.\n`);
-  process.exit(1);
+  // Set, not process.exit: see reclaim.ts.
+  process.exitCode = 1;
+} else {
+  console.log(`  Inco TEE round trip verified: encryption in, attested decryption out,`);
+  console.log(`  both decisions checked on chain, goal ${goalId} closed.`);
+  console.log(`\n  ${network.explorer}/address/${vaultAddress}\n`);
 }
-console.log(`  Inco TEE round trip verified: encryption in, attested decryption out,`);
-console.log(`  both decisions checked on chain, goal ${goalId} closed.`);
-console.log(`\n  ${network.explorer}/address/${vaultAddress}\n`);

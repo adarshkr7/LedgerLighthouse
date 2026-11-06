@@ -156,6 +156,8 @@ for (const note of notes) console.log(`\n  note: ${note}`);
 
 if (problems.length > 0) {
   console.log(`\n${problems.length} problem(s) must be fixed before deploying.\n`);
-  process.exit(1);
+  // Set, not process.exit: see reclaim.ts.
+  process.exitCode = 1;
+} else {
+  console.log("\nPreflight clean — ready to deploy.\n");
 }
-console.log("\nPreflight clean — ready to deploy.\n");

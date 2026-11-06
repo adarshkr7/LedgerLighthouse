@@ -1450,101 +1450,111 @@ if (!health?.ok) throw new Error(`signer is not reachable at ${signerUrl}. Start
 await assertEscrowVault(publicClient, vaultAddress);
 console.log(`  chain  ${chainId} (${network.label})\n  vault  ${vaultAddress}\n  signer ${signerUrl}`);
 
-if (process.argv.includes("--only-c14")) {
+/** C14 alone, for a quick check of the attempt budget. Returns the exit status. */
+async function onlyC14(): Promise<number> {
   rule("C14 - probing the encrypted cap");
   const probe = await openGoal(GOAL_PROBE);
   await c14Probe({ ...probe, attempts: GOAL_PROBE.attempts });
-  const bad = findings.filter((f) => f.verdict !== "held");
-  process.exit(bad.length > 0 ? 1 : 0);
+  return findings.some((f) => f.verdict !== "held") ? 1 : 0;
 }
 
-rule("opening goals");
-const budgetBound = await openGoal(GOAL_BUDGET_BOUND);
-const capBound = await openGoal(GOAL_CAP_BOUND);
-const refusals = await openGoal(GOAL_REFUSALS);
+/** The whole campaign. Returns the exit status: non-zero if anything deviated. */
+async function campaign(): Promise<number> {
+  rule("opening goals");
+  const budgetBound = await openGoal(GOAL_BUDGET_BOUND);
+  const capBound = await openGoal(GOAL_CAP_BOUND);
+  const refusals = await openGoal(GOAL_REFUSALS);
 
-rule("C13 — the encrypted cap alone");
-await c13CapAlone(capBound);
+  rule("C13 — the encrypted cap alone");
+  await c13CapAlone(capBound);
 
-rule("C1 — maximum extraction");
-const extractedA = await c1MaxExtraction(budgetBound);
-const extractedB = await c1MaxExtraction(capBound);
+  rule("C1 — maximum extraction");
+  const extractedA = await c1MaxExtraction(budgetBound);
+  const extractedB = await c1MaxExtraction(capBound);
 
-rule("C2, C3, C4, C8, C9, C10 — refusals");
-const replayable = await refusalStrategies(refusals);
+  rule("C2, C3, C4, C8, C9, C10 — refusals");
+  const replayable = await refusalStrategies(refusals);
 
-rule("C11, C12 — payer capture");
-await c11PayerCapture(budgetBound);
+  rule("C11, C12 — payer capture");
+  await c11PayerCapture(budgetBound);
 
-rule("C5 — idempotency");
-if (replayable === undefined) {
+  rule("C5 — idempotency");
+  if (replayable === undefined) {
+    record({
+      id: "C5",
+      name: "authorization replay returns an identical tuple",
+      targets: "signature idempotency",
+      expected: "byte-identical, including validAfter/validBefore",
+      observed: "no approved spend was produced to replay",
+      verdict: "inconclusive",
+    });
+  } else {
+    await idempotency(refusals, replayable);
+  }
+
+  rule("C6 — collecting after the vendor's hold");
+  await c6ExpiredHold(await openGoal(GOAL_EXPIRY));
+
+  rule("C14 - probing the encrypted cap");
+  {
+    const probe = await openGoal(GOAL_PROBE);
+    await c14Probe({ ...probe, attempts: GOAL_PROBE.attempts });
+  }
+
+  rule("C15 to C25 - around the vault");
+  await escrowStrategies(await openGoal(GOAL_ESCROW));
+
   record({
-    id: "C5",
-    name: "authorization replay returns an identical tuple",
-    targets: "signature idempotency",
-    expected: "byte-identical, including validAfter/validBefore",
-    observed: "no approved spend was produced to replay",
-    verdict: "inconclusive",
+    id: "C7",
+    name: "terms substituted between request and signature",
+    targets: "the signer's API surface",
+    expected: "no channel exists",
+    observed: "authorize() accepts (goalId, seq) only — nothing to substitute",
+    verdict: "held",
   });
-} else {
-  await idempotency(refusals, replayable);
+
+  // ------------------------------------------------------------------ report
+
+  rule("verdict");
+
+  const deviated = findings.filter((f) => f.verdict === "deviated");
+  const inconclusive = findings.filter((f) => f.verdict === "inconclusive");
+
+  console.log(`  strategies run   ${findings.length}`);
+  console.log(`  held             ${findings.filter((f) => f.verdict === "held").length}`);
+  console.log(`  deviated         ${deviated.length}`);
+  console.log(`  inconclusive     ${inconclusive.length}`);
+  console.log(
+    `  transactions     ${new Set(findings.flatMap((f) => (f.txs ?? []).map((t) => t.hash))).size} distinct, linked under each finding`,
+  );
+  console.log();
+  console.log(`  extraction, budget-bound goal   ${formatUsdc(extractedA)} USDC`);
+  console.log(
+    `    predicted ceiling             ${formatUsdc(GOAL_BUDGET_BOUND.budget)} (budget binds first)`,
+  );
+  console.log(`  extraction, cap-bound goal      ${formatUsdc(extractedB)} USDC`);
+  console.log(
+    `    predicted ceiling             ${formatUsdc(
+      GOAL_CAP_BOUND.perCallCap * BigInt(GOAL_CAP_BOUND.calls),
+    )} (cap x calls binds first)`,
+  );
+
+  if (deviated.length > 0) {
+    console.log(`\n  DEVIATIONS — each of these is a finding, not a flake:`);
+    for (const f of deviated) console.log(`    ${f.id}  ${f.name}: ${f.observed}`);
+  }
+
+  console.log(
+    `\n  Note: extraction is counted as *authorized*, not settled. A released`,
+  );
+  console.log(`  signature is the most the adversary can get, and C15 to C25 test what it is worth.`);
+
+  return deviated.length > 0 ? 1 : 0;
 }
 
-rule("C6 — collecting after the vendor's hold");
-await c6ExpiredHold(await openGoal(GOAL_EXPIRY));
-
-rule("C14 - probing the encrypted cap");
-{
-  const probe = await openGoal(GOAL_PROBE);
-  await c14Probe({ ...probe, attempts: GOAL_PROBE.attempts });
-}
-
-rule("C15 to C25 - around the vault");
-await escrowStrategies(await openGoal(GOAL_ESCROW));
-
-record({
-  id: "C7",
-  name: "terms substituted between request and signature",
-  targets: "the signer's API surface",
-  expected: "no channel exists",
-  observed: "authorize() accepts (goalId, seq) only — nothing to substitute",
-  verdict: "held",
-});
-
-// ------------------------------------------------------------------ report
-
-rule("verdict");
-
-const deviated = findings.filter((f) => f.verdict === "deviated");
-const inconclusive = findings.filter((f) => f.verdict === "inconclusive");
-
-console.log(`  strategies run   ${findings.length}`);
-console.log(`  held             ${findings.filter((f) => f.verdict === "held").length}`);
-console.log(`  deviated         ${deviated.length}`);
-console.log(`  inconclusive     ${inconclusive.length}`);
-console.log(
-  `  transactions     ${new Set(findings.flatMap((f) => (f.txs ?? []).map((t) => t.hash))).size} distinct, linked under each finding`,
-);
-console.log();
-console.log(`  extraction, budget-bound goal   ${formatUsdc(extractedA)} USDC`);
-console.log(
-  `    predicted ceiling             ${formatUsdc(GOAL_BUDGET_BOUND.budget)} (budget binds first)`,
-);
-console.log(`  extraction, cap-bound goal      ${formatUsdc(extractedB)} USDC`);
-console.log(
-  `    predicted ceiling             ${formatUsdc(
-    GOAL_CAP_BOUND.perCallCap * BigInt(GOAL_CAP_BOUND.calls),
-  )} (cap x calls binds first)`,
-);
-
-if (deviated.length > 0) {
-  console.log(`\n  DEVIATIONS — each of these is a finding, not a flake:`);
-  for (const f of deviated) console.log(`    ${f.id}  ${f.name}: ${f.observed}`);
-}
-
-console.log(
-  `\n  Note: extraction is counted as *authorized*, not settled. A released`,
-);
-console.log(`  signature is the most the adversary can get, and C15 to C25 test what it is worth.`);
-
-process.exit(deviated.length > 0 ? 1 : 0);
+/*
+ * The status is set and the process left to end by itself, because calling process.exit
+ * straight after network reads made Node on Windows abort (0xC0000409), which reads as a
+ * crash after the work was done.
+ */
+process.exitCode = process.argv.includes("--only-c14") ? await onlyC14() : await campaign();

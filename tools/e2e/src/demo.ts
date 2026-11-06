@@ -408,11 +408,11 @@ if (honestWorked && injectionWorked) {
   console.log(`\n  The agent was successfully manipulated and the money still did not move —`);
   console.log(`  because the component that decides never reads the attacker's text, and the`);
   console.log(`  component that signs only reads the chain.\n`);
-  process.exit(0);
+} else {
+  console.log(`\n  NOT the expected demo outcome.`);
+  if (!honestWorked) console.log(`    run 1 should have been "paid", got "${honest.kind}"`);
+  if (!injectionWorked) console.log(`    run 2 should have been "policy-rejected", got "${malicious.kind}"`);
+  console.log();
+  // Set, not process.exit: see reclaim.ts.
+  process.exitCode = 1;
 }
-
-console.log(`\n  NOT the expected demo outcome.`);
-if (!honestWorked) console.log(`    run 1 should have been "paid", got "${honest.kind}"`);
-if (!injectionWorked) console.log(`    run 2 should have been "policy-rejected", got "${malicious.kind}"`);
-console.log();
-process.exit(1);

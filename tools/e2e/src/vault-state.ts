@@ -39,7 +39,6 @@ const goalCount = (await client.readContract({
 
 if (goalCount === 0n) {
   console.log("No goals opened yet.\n");
-  process.exit(0);
 }
 
 for (let goalId = 1n; goalId <= goalCount; goalId++) {
