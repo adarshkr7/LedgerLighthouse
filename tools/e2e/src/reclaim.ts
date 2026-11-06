@@ -115,43 +115,52 @@ for (const goalId of ids) {
   }
 }
 
-if (candidates.length === 0) {
-  console.log("  nothing to reclaim: every approved spend was paid, or its window is still open\n");
-  process.exit(0);
-}
-
-for (const c of candidates) {
-  console.log(
-    `  goal ${String(c.goalId).padStart(4)}  seq ${String(c.seq).padStart(3)}  ${formatUsdc(c.amount)} USDC` +
-      (c.held > 0n ? "  held by the escrow, returns to the payer" : ""),
-  );
-}
-console.log();
-
-if (!execute) {
-  console.log(`  ${candidates.length} reclaimable. Run again with --execute to give them back.\n`);
-  process.exit(0);
-}
-
-// ------------------------------------------------------------------ execute
-
-let failed = 0;
-for (const c of candidates) {
-  try {
-    const outcome = await relay.reclaimExpired(c.goalId, c.seq);
-    const detail =
-      outcome.kind === "reclaimed"
-        ? `${network.explorer}/tx/${outcome.txHash}`
-        : outcome.kind === "already"
-          ? "someone reclaimed it first"
-          : outcome.kind === "collected"
-            ? "the vendor claimed it after all: it was paid"
-            : "the vault still reads its window as open";
-    console.log(`  goal ${c.goalId} seq ${c.seq}  ${outcome.kind}  ${detail}`);
-  } catch (error) {
-    failed++;
-    console.log(`  goal ${c.goalId} seq ${c.seq}  FAILED  ${error instanceof Error ? error.message.split("\n")[0] : error}`);
+/**
+ * Lists what qualifies and, with --execute, gives it back. Returns the exit status.
+ *
+ * The status is set and the process left to end by itself, because calling process.exit
+ * straight after these reads made Node on Windows abort (0xC0000409, a libuv assertion on
+ * a closing handle). The work was done by then, but the status said it had crashed.
+ */
+async function act(): Promise<number> {
+  if (candidates.length === 0) {
+    console.log("  nothing to reclaim: every approved spend was paid, or its window is still open\n");
+    return 0;
   }
+
+  for (const c of candidates) {
+    console.log(
+      `  goal ${String(c.goalId).padStart(4)}  seq ${String(c.seq).padStart(3)}  ${formatUsdc(c.amount)} USDC` +
+        (c.held > 0n ? "  held by the escrow, returns to the payer" : ""),
+    );
+  }
+  console.log();
+
+  if (!execute) {
+    console.log(`  ${candidates.length} reclaimable. Run again with --execute to give them back.\n`);
+    return 0;
+  }
+
+  let failed = 0;
+  for (const c of candidates) {
+    try {
+      const outcome = await relay.reclaimExpired(c.goalId, c.seq);
+      const detail =
+        outcome.kind === "reclaimed"
+          ? `${network.explorer}/tx/${outcome.txHash}`
+          : outcome.kind === "already"
+            ? "someone reclaimed it first"
+            : outcome.kind === "collected"
+              ? "the vendor claimed it after all: it was paid"
+              : "the vault still reads its window as open";
+      console.log(`  goal ${c.goalId} seq ${c.seq}  ${outcome.kind}  ${detail}`);
+    } catch (error) {
+      failed++;
+      console.log(`  goal ${c.goalId} seq ${c.seq}  FAILED  ${error instanceof Error ? error.message.split("\n")[0] : error}`);
+    }
+  }
+  console.log();
+  return failed > 0 ? 1 : 0;
 }
-console.log();
-process.exit(failed > 0 ? 1 : 0);
+
+process.exitCode = await act();
