@@ -93,15 +93,22 @@ export interface SignedAuthorization {
   readonly termsHash: Hex;
 }
 
-export type SignOutcome =
-  | { readonly ok: true; readonly value: SignedAuthorization }
+export type SignOutcome<T = SignedAuthorization> =
+  | { readonly ok: true; readonly value: T }
   | { readonly ok: false; readonly status: number; readonly error: string };
+
+/** What the HTTP surface serves, whichever kind of signature this signer gives. */
+export interface SignerService<T = SignedAuthorization> {
+  mintPayer(): Promise<{ address: Address }>;
+  signRaw(body: unknown): Promise<SignOutcome<T>>;
+  sweep(goalIdRaw: unknown): Promise<SignOutcome<T>>;
+}
 
 function refuse(status: number, error: string): SignOutcome {
   return { ok: false, status, error };
 }
 
-export class AuthorizationSigner {
+export class AuthorizationSigner implements SignerService {
   readonly #vault: VaultReader;
   readonly #keys: KeyStore;
   readonly #config: Required<Omit<SignerConfig, "now">> & { now: () => number };

@@ -18,6 +18,7 @@ const check = process.argv.includes("--check");
 /** Each contract whose ABI the TypeScript side consumes. */
 const CONTRACTS = [
   { contract: "PolicyVault", file: "policyVault.abi.ts", exportName: "policyVaultAbi" },
+  { contract: "EscrowPolicyVault", file: "escrowPolicyVault.abi.ts", exportName: "escrowPolicyVaultAbi" },
   { contract: "TraceAnchor", file: "traceAnchor.abi.ts", exportName: "traceAnchorAbi" },
 ];
 

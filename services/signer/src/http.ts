@@ -16,7 +16,14 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { RateLimiter, corsHeaders, rejected } from "@ntux402/shared/node";
 
 import { EnclaveRateLimitError } from "./enclave-limit.js";
-import type { AuthorizationSigner } from "./service.js";
+import type { SignerService } from "./service.js";
+
+/** The fields the route handlers log. Every kind of signature has them. */
+interface LoggedAuthorization {
+  readonly goalId: string;
+  readonly seq: string;
+  readonly authorization: { readonly value: string; readonly to: string };
+}
 
 /** Bounded so a hostile body cannot be used to exhaust memory. */
 const MAX_BODY_BYTES = 8 * 1024;
@@ -78,7 +85,7 @@ function send(
 }
 
 export interface SignerServerOptions {
-  readonly signer: AuthorizationSigner;
+  readonly signer: SignerService<LoggedAuthorization>;
   /** Called for each request. Never receives a key or a signature payload. */
   readonly log?: (line: string) => void;
   /**
@@ -86,7 +93,7 @@ export interface SignerServerOptions {
    * Goal ids repeat across vaults, so a caller acting on one vault's goal ids
    * has to know this signer reads the same vault. Both values are public.
    */
-  readonly binding?: { readonly chainId: number; readonly vault: string };
+  readonly binding?: { readonly chainId: number; readonly vault: string; readonly settlement?: string };
   /**
    * Which key store holds the payer keys and how many it can reach, for
    * /health. Lets a caller check custody from the signer's own account instead

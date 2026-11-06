@@ -166,6 +166,42 @@ contract EscrowPolicyVaultTest is IncoTest {
         (,,,, calls,,,) = vault.goals(goalId);
     }
 
+    // ------------------------------------------------------- the signer service
+
+    /// A signature produced by the TypeScript signer, for the fixed payment in
+    /// services/signer/src/escrow-service.test.ts. Submitted here to the deployed USDC,
+    /// collector and escrow, so a mistake in any field of the signer's hashing or typed
+    /// data makes the token refuse it. The operator is pranked: this checks the signer
+    /// against the deployed contracts, and the vault's own checks are tested below.
+    function testTheSignerServicesSignatureIsAcceptedByTheDeployedContracts() public {
+        address operator = address(uint160(0xAB0B1));
+        address receiver = address(uint160(0x7E57));
+        IAuthCaptureEscrow.PaymentInfo memory info = IAuthCaptureEscrow.PaymentInfo({
+            operator: operator,
+            payer: payer,
+            receiver: receiver,
+            token: address(USDC),
+            maxAmount: 100_000,
+            preApprovalExpiry: 4102444800,
+            authorizationExpiry: 4102445100,
+            refundExpiry: 4102445100,
+            minFeeBps: 0,
+            maxFeeBps: 0,
+            feeReceiver: address(0),
+            salt: (uint256(1) << 64) | 1
+        });
+        bytes memory signature =
+            hex"16da224649ab955655569ae0f24e443910acb33263451cd2c5b383d85f6939ae743f8e9be901b93dc1d2ceb0d3f516fe3f793fb34a3b915115ddf101c1011e651b";
+
+        vm.prank(operator);
+        ESCROW.authorize(info, 100_000, COLLECTOR, signature);
+        assertEq(USDC.balanceOf(payer), FUNDED - 100_000, "the token accepted it");
+
+        vm.prank(operator);
+        ESCROW.capture(info, 100_000, 0, address(0));
+        assertEq(USDC.balanceOf(receiver), 100_000, "and the escrow paid it out");
+    }
+
     // ------------------------------------------------------------- happy path
 
     function testClaimPaysTheVendorAndPublishesTheKey() public {

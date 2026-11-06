@@ -39,7 +39,7 @@ import {
 } from "./enclave-limit.js";
 import { FileKeyStore, RoflKeyStore, openKeyStore } from "./keystore.js";
 import { createBootFailureServer, createSignerServer, type BootFailure } from "./http.js";
-import { AuthorizationSigner } from "./service.js";
+import { openSigner, settlementFromEnv } from "./settlement.js";
 import { OnChainVaultReader } from "./vault.js";
 import { hintFor, summarize } from "./boot-failure.js";
 
@@ -157,6 +157,7 @@ async function boot(step: (name: string) => void) {
   // Read before the store is opened so a malformed limit fails next to the
   // other configuration errors, rather than after a socket has been probed.
   const enclaveLimits = enclaveLimitsFromEnv();
+  const settlement = settlementFromEnv(process.env["SIGNER_SETTLEMENT"]);
   const vault = new OnChainVaultReader({ rpcUrl, vaultAddress, chainId });
 
   // ROFL when a socket is configured, file/memory otherwise. See keystore.ts
@@ -195,11 +196,12 @@ async function boot(step: (name: string) => void) {
    * apart and this is the bound that actually holds.
    */
   const keys = new RateLimitedKeyStore(store, enclaveLimits);
-  const signer = new AuthorizationSigner({ vault, keys, config: { chainId, usdcAddress } });
+  step("settlement binding");
+  const signer = await openSigner({ settlement, vault, keys, chainId, usdcAddress, vaultAddress });
   const kind = store instanceof RoflKeyStore ? "rofl" : store instanceof FileKeyStore ? "file" : "memory";
   const server = createSignerServer({
     signer,
-    binding: { chainId, vault: vaultAddress },
+    binding: { chainId, vault: vaultAddress, settlement },
     custody: async () => ({
       store: kind,
       keys: (await keys.addresses()).length,
@@ -214,7 +216,7 @@ async function boot(step: (name: string) => void) {
     log.info("enclave key operations are rate limited", {
       limits: describeEnclaveLimits(enclaveLimits),
     });
-    log.info("bound to chain", { network: network.label, chainId, vault: vaultAddress });
+    log.info("bound to chain", { network: network.label, chainId, vault: vaultAddress, settlement });
     if (!network.testnet) log.warn(`${network.label} is mainnet: the payers this signer holds carry real USDC`);
     log.info("key store", {
       // The resolved absolute path, not the raw setting: which file this is

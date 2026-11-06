@@ -11,4 +11,6 @@ export * from "./schema.js";
 export * from "./keystore.js";
 export * from "./vault.js";
 export * from "./service.js";
+export * from "./escrow-service.js";
+export * from "./settlement.js";
 export * from "./http.js";

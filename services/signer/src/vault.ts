@@ -10,8 +10,17 @@
  * production path reads a real contract over a real RPC.
  */
 
-import { createPublicClient, http, type Address, type Hex, type PublicClient } from "viem";
-import { policyVaultAbi, usdcAbi } from "@ntux402/shared";
+import {
+  BaseError,
+  ContractFunctionRevertedError,
+  ContractFunctionZeroDataError,
+  createPublicClient,
+  http,
+  type Address,
+  type Hex,
+  type PublicClient,
+} from "viem";
+import { escrowPolicyVaultAbi, policyVaultAbi, usdcAbi, type PaymentInfo } from "@ntux402/shared";
 import { rpcTransport, viemChainForId } from "@ntux402/shared/viem";
 
 /** The goal record, as stored on chain. */
@@ -52,9 +61,25 @@ export interface VaultReader {
   tokenBalance(token: Address, holder: Address): Promise<bigint>;
 }
 
+/**
+ * What the escrow signer also reads. None of it is trusted for safety: a false answer
+ * yields a signature the vault refuses. These reads exist so a mistake fails here,
+ * with a reason, and not later at the vault.
+ */
+export interface EscrowVaultReader extends VaultReader {
+  /** The vault's `escrow()` and `collector()`, or undefined if it has neither. */
+  escrowBinding(): Promise<{ readonly escrow: Address; readonly collector: Address } | undefined>;
+  /** When the vendor must claim by. */
+  captureDeadline(goalId: bigint, seq: bigint): Promise<number>;
+  /** The vault's own derivation of the payment, to compare with ours. */
+  escrowPayment(goalId: bigint, seq: bigint): Promise<PaymentInfo>;
+  /** True once this spend's amount has gone back to the budget. */
+  isReclaimed(goalId: bigint, seq: bigint): Promise<boolean>;
+}
+
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
-export class OnChainVaultReader implements VaultReader {
+export class OnChainVaultReader implements EscrowVaultReader {
   readonly #client: PublicClient;
   readonly #vault: Address;
 
@@ -144,6 +169,54 @@ export class OnChainVaultReader implements VaultReader {
       functionName: "payerGoal",
       args: [payer],
     })) as bigint;
+  }
+
+  async escrowBinding(): Promise<{ escrow: Address; collector: Address } | undefined> {
+    const base = { address: this.#vault, abi: escrowPolicyVaultAbi } as const;
+    try {
+      const [escrow, collector] = await Promise.all([
+        this.#client.readContract({ ...base, functionName: "escrow" }) as Promise<Address>,
+        this.#client.readContract({ ...base, functionName: "collector" }) as Promise<Address>,
+      ]);
+      return { escrow, collector };
+    } catch (e) {
+      // A vault without these functions says so by reverting or returning nothing.
+      // Anything else, such as the RPC being down, is not an answer and must not be
+      // read as one.
+      const noSuchFunction =
+        e instanceof BaseError &&
+        e.walk((c) => c instanceof ContractFunctionRevertedError || c instanceof ContractFunctionZeroDataError);
+      if (noSuchFunction) return undefined;
+      throw e;
+    }
+  }
+
+  async captureDeadline(goalId: bigint, seq: bigint): Promise<number> {
+    const order = (await this.#client.readContract({
+      address: this.#vault,
+      abi: escrowPolicyVaultAbi,
+      functionName: "order",
+      args: [goalId, seq],
+    })) as { readonly captureDeadline: number };
+    return order.captureDeadline;
+  }
+
+  async escrowPayment(goalId: bigint, seq: bigint): Promise<PaymentInfo> {
+    return (await this.#client.readContract({
+      address: this.#vault,
+      abi: escrowPolicyVaultAbi,
+      functionName: "escrowPayment",
+      args: [goalId, seq],
+    })) as PaymentInfo;
+  }
+
+  async isReclaimed(goalId: bigint, seq: bigint): Promise<boolean> {
+    return (await this.#client.readContract({
+      address: this.#vault,
+      abi: escrowPolicyVaultAbi,
+      functionName: "isReclaimed",
+      args: [goalId, seq],
+    })) as boolean;
   }
 
   async tokenBalance(token: Address, holder: Address): Promise<bigint> {
