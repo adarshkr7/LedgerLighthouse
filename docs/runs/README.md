@@ -5,6 +5,20 @@ Kept because a demo that depends on a venue's wifi is a demo with a single point
 of failure — and because a transaction hash is checkable by someone who does not
 trust us, which a live walkthrough is not.
 
+## 6 and 9 November 2026: the vault-gated escrow
+
+EscrowPolicyVault
+[`0x08AA…9C99`](https://sepolia.basescan.org/address/0x08AAb0cF0c3D2E7a8B3b52AD01B6db8Da70C9C99),
+operator of the deployed `AuthCaptureEscrow`. Real Inco decisions; the signer ran on a local machine
+with its keys in a file, so none of these runs says anything about the enclave.
+
+| Log | What it shows |
+| --- | --- |
+| `escrow-2026-11-06-demo.log` | Live model. The 0.01 call approved, held, claimed and delivered; the 0.35 call rejected by the vault, nothing moved |
+| `escrow-2026-11-06-adversary.log` | 28 of 28 results held, none inconclusive: version 1's 14 strategies in 15 runs, eleven escrow strategies and two controls |
+| `escrow-2026-11-06-bench.log` | Did not finish: Inco would not return goal 9's decision at seq 35 after 34 calls behaved. Kept as the record of that stall; its per-stage records were lost |
+| `escrow-2026-11-09-bench.log`, `bench-2026-11-09.json` | Goal 10, 30 approved and 20 rejected calls, all with the expected outcome. Median 24.8 s per paid call, 10.4 s per rejected one; `requestEscrowSpend` about 353,000 gas. `bench:stats` recomputes every figure from `records` |
+
 ## 2 November 2026: the attempt budget
 
 Every request now spends one of a goal's public attempts, approved or rejected, and reclaim never

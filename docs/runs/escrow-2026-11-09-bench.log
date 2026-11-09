@@ -1,0 +1,329 @@
+$ tsx src/bench.ts "--" "--out" "../../docs/runs"
+bench: 30 approved + 20 rejected calls
+  vault 0x08AAb0cF0c3D2E7a8B3b52AD01B6db8Da70C9C99
+  signer http://127.0.0.1:8402 (key store: file)
+  goal 10  openGoal gas 485299  payer 0x392C0ECCaD6c174E64C1ab02B0Da49736852fd62
+  funded 0.36 USDC; budget 0.31, cap 0.05 (both encrypted)
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0xad7f22079e91de89af05d35e68bf1f76ef29c922a4a06b3c943cb02ea5ba0000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0xad7f22079e91de89af05d35e68bf1f76ef29c922a4a06b3c943cb02ea5ba0000 not found, it might not have been processed yet, try again later
+  approved   1  paid              29675 ms  reveal 3827 ms (1)
+  approved   2  paid              24046 ms  reveal 3434 ms (1)
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x837ea6f22c156bc7994a21e5584135a95b1c5190b46a53ad4039fc9105120000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x837ea6f22c156bc7994a21e5584135a95b1c5190b46a53ad4039fc9105120000 not found, it might not have been processed yet, try again later
+  approved   3  paid              25211 ms  reveal 6722 ms (1)
+  approved   4  paid              21055 ms  reveal 2388 ms (1)
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x53a9ed09bd50180341c88db9cfbeebdf4659e3962d5abaca748f6c9890e60000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x53a9ed09bd50180341c88db9cfbeebdf4659e3962d5abaca748f6c9890e60000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x53a9ed09bd50180341c88db9cfbeebdf4659e3962d5abaca748f6c9890e60000 not found, it might not have been processed yet, try again later
+  approved   5  paid              25318 ms  reveal 6475 ms (1)
+  approved   6  paid              23265 ms  reveal 3013 ms (1)
+  approved   7  paid              28686 ms  reveal 2635 ms (1)
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x26107a9eed1a533d48d53968c9276709fdba033236719ed976fab6b4e8f30000 not found, it might not have been processed yet, try again later
+  approved   8  paid              26487 ms  reveal 4325 ms (1)
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0xc23d956451dbf14a16539a783347be06bf28ae90e13917368abdd285a0c40000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0xc23d956451dbf14a16539a783347be06bf28ae90e13917368abdd285a0c40000 not found, it might not have been processed yet, try again later
+  approved   9  paid              28036 ms  reveal 4517 ms (1)
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0xb27e6580756deb0c0316b950d4fd42f09450f1428829dbdc348564d37bc00000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0xb27e6580756deb0c0316b950d4fd42f09450f1428829dbdc348564d37bc00000 not found, it might not have been processed yet, try again later
+  approved  10  paid              23731 ms  reveal 4645 ms (1)
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0xf61c03f2b33079ffa9e6306666b61e93a082b3e8f1ee6371884508a634430000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0xf61c03f2b33079ffa9e6306666b61e93a082b3e8f1ee6371884508a634430000 not found, it might not have been processed yet, try again later
+  approved  11  paid              26143 ms  reveal 6866 ms (1)
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x7846fe3649048a0613699c3900ab50c55de44946731cabf7556a32662fd60000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x7846fe3649048a0613699c3900ab50c55de44946731cabf7556a32662fd60000 not found, it might not have been processed yet, try again later
+  approved  12  paid              27187 ms  reveal 4109 ms (1)
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x3fcc2627702b185c2812e4f6cab56fd8f85813f5a73d8b6ee24c4a8234da0000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x3fcc2627702b185c2812e4f6cab56fd8f85813f5a73d8b6ee24c4a8234da0000 not found, it might not have been processed yet, try again later
+  approved  13  paid              21472 ms  reveal 3896 ms (1)
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0xd0d01b50bade1274a2a52ca207b051af7c72b696a5e62e2ff86b2e4096f50000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0xd0d01b50bade1274a2a52ca207b051af7c72b696a5e62e2ff86b2e4096f50000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0xd0d01b50bade1274a2a52ca207b051af7c72b696a5e62e2ff86b2e4096f50000 not found, it might not have been processed yet, try again later
+  approved  14  paid              27114 ms  reveal 7609 ms (1)
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0xba09fbed82c672f1b2f8616d047f025f24cf90b57ac336e96f27c5d38cb40000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0xba09fbed82c672f1b2f8616d047f025f24cf90b57ac336e96f27c5d38cb40000 not found, it might not have been processed yet, try again later
+  approved  15  paid              22138 ms  reveal 3752 ms (1)
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x5744a859ebbe81aebee7320b0a073de1bc444e08b0a5bba94feb066adfd20000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x5744a859ebbe81aebee7320b0a073de1bc444e08b0a5bba94feb066adfd20000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x5744a859ebbe81aebee7320b0a073de1bc444e08b0a5bba94feb066adfd20000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x5744a859ebbe81aebee7320b0a073de1bc444e08b0a5bba94feb066adfd20000 not found, it might not have been processed yet, try again later
+  approved  16  paid              23647 ms  reveal 5652 ms (1)
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0xe082d43a5c6aa86e1770c41c97165d1d4f79e6a1e79211794153f293b9050000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0xe082d43a5c6aa86e1770c41c97165d1d4f79e6a1e79211794153f293b9050000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0xe082d43a5c6aa86e1770c41c97165d1d4f79e6a1e79211794153f293b9050000 not found, it might not have been processed yet, try again later
+  approved  17  paid              25700 ms  reveal 6065 ms (1)
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x690eba57dcad85cb42db8d0e954f0c53cdf403263322f92043dba9ed65690000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x690eba57dcad85cb42db8d0e954f0c53cdf403263322f92043dba9ed65690000 not found, it might not have been processed yet, try again later
+  approved  18  paid              23334 ms  reveal 4187 ms (1)
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x2375ab410ad4543c0eede2d3871f4fb77f644556701fa04c890bf4d492460000 not found, it might not have been processed yet, try again later
+  approved  19  paid              23281 ms  reveal 3912 ms (1)
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0xabd94fcda184bfe6cae3e78b9e968236ff8ebfc58a0ac786b428ca48d0dd0000 not found, it might not have been processed yet, try again later
+  approved  20  paid              24936 ms  reveal 5654 ms (2)
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x7cee59b1b6837f6a2ff92e4b21fb7c0607c1cb4a1c68c473f783553443890000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x7cee59b1b6837f6a2ff92e4b21fb7c0607c1cb4a1c68c473f783553443890000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x7cee59b1b6837f6a2ff92e4b21fb7c0607c1cb4a1c68c473f783553443890000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x7cee59b1b6837f6a2ff92e4b21fb7c0607c1cb4a1c68c473f783553443890000 not found, it might not have been processed yet, try again later
+  approved  21  paid              27927 ms  reveal 6693 ms (1)
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x0699f775df1bf6a4b26c4fb2620f5d6cd5c33af21e5eb3b35c684b1352400000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x0699f775df1bf6a4b26c4fb2620f5d6cd5c33af21e5eb3b35c684b1352400000 not found, it might not have been processed yet, try again later
+  approved  22  paid              27402 ms  reveal 4933 ms (1)
+  approved  23  paid              25108 ms  reveal 3235 ms (1)
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x7a4db260dcd96374095a01b09ac2efd6f6d8617f488518f9d1080440ff4e0000 not found, it might not have been processed yet, try again later
+  approved  24  paid              22362 ms  reveal 3478 ms (1)
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0xbd8d2340d56782a14d14ea2eb8aa9f65176b72d05e171eb345950f963b300000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0xbd8d2340d56782a14d14ea2eb8aa9f65176b72d05e171eb345950f963b300000 not found, it might not have been processed yet, try again later
+  approved  25  paid              22302 ms  reveal 4396 ms (1)
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0xbc5101f4f4cab043b15641d5d669918bfd2bf4e0ecb4cbc8244adc6bec770000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0xbc5101f4f4cab043b15641d5d669918bfd2bf4e0ecb4cbc8244adc6bec770000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0xbc5101f4f4cab043b15641d5d669918bfd2bf4e0ecb4cbc8244adc6bec770000 not found, it might not have been processed yet, try again later
+  approved  26  paid              24699 ms  reveal 6024 ms (1)
+  approved  27  paid              20698 ms  reveal 2282 ms (1)
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x50dfbab7b5dbe66fdbf1a1883586eef7e3873e90766e59d0782957c58d5c0000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x50dfbab7b5dbe66fdbf1a1883586eef7e3873e90766e59d0782957c58d5c0000 not found, it might not have been processed yet, try again later
+  approved  28  paid              22222 ms  reveal 4180 ms (1)
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0xd305918ec2881079cf8c31a475192dc99903e22d6813cf45712c1130f4ec0000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0xd305918ec2881079cf8c31a475192dc99903e22d6813cf45712c1130f4ec0000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0xd305918ec2881079cf8c31a475192dc99903e22d6813cf45712c1130f4ec0000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0xd305918ec2881079cf8c31a475192dc99903e22d6813cf45712c1130f4ec0000 not found, it might not have been processed yet, try again later
+  approved  29  paid              27031 ms  reveal 6906 ms (1)
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x3963c1479b585a69642bbea2b0408eed85b0328c7119041212210af1ac3b0000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x3963c1479b585a69642bbea2b0408eed85b0328c7119041212210af1ac3b0000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x3963c1479b585a69642bbea2b0408eed85b0328c7119041212210af1ac3b0000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x3963c1479b585a69642bbea2b0408eed85b0328c7119041212210af1ac3b0000 not found, it might not have been processed yet, try again later
+  approved  30  paid              24726 ms  reveal 5879 ms (1)
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0xa2543f0a8e18cd3d81f0397e7c5c11e67b1d40a6c87ae7583b8a9f1275ae0000 not found, it might not have been processed yet, try again later
+  rejected   1  policy-rejected   10339 ms  reveal 4156 ms (1)
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0xbacb1a64ab400fff37ea37247d14fb87c7b66f8981a382aeec5bb9cb61510000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0xbacb1a64ab400fff37ea37247d14fb87c7b66f8981a382aeec5bb9cb61510000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0xbacb1a64ab400fff37ea37247d14fb87c7b66f8981a382aeec5bb9cb61510000 not found, it might not have been processed yet, try again later
+  rejected   2  policy-rejected   12437 ms  reveal 6102 ms (1)
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0xed49543b28f47daec498b4a314bca36621b2774b5417e378c4d90b46e43b0000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0xed49543b28f47daec498b4a314bca36621b2774b5417e378c4d90b46e43b0000 not found, it might not have been processed yet, try again later
+  rejected   3  policy-rejected   10125 ms  reveal 3759 ms (1)
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x5b59007f9d34bf034beb72f3ed11400718c4204025f45e019f7eda3c64630000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x5b59007f9d34bf034beb72f3ed11400718c4204025f45e019f7eda3c64630000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x5b59007f9d34bf034beb72f3ed11400718c4204025f45e019f7eda3c64630000 not found, it might not have been processed yet, try again later
+  rejected   4  policy-rejected   11921 ms  reveal 5770 ms (1)
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0xd6194fe1d285cd33f2a013c2fcb654a6d5a5440fa17f6dbecd95b378b9cb0000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0xd6194fe1d285cd33f2a013c2fcb654a6d5a5440fa17f6dbecd95b378b9cb0000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0xd6194fe1d285cd33f2a013c2fcb654a6d5a5440fa17f6dbecd95b378b9cb0000 not found, it might not have been processed yet, try again later
+  rejected   5  policy-rejected   13268 ms  reveal 6128 ms (1)
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x3883641e2a5886843773a617729fff7c84714c58358da354d9f359eab4880000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x3883641e2a5886843773a617729fff7c84714c58358da354d9f359eab4880000 not found, it might not have been processed yet, try again later
+  rejected   6  policy-rejected    9583 ms  reveal 3750 ms (1)
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0xae9a4157dcc22ad7cd1da8108b3f14f826982cd9d169203e49ea1bc151930000 not found, it might not have been processed yet, try again later
+  rejected   7  policy-rejected    9209 ms  reveal 3032 ms (1)
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0xf7b1673433df325f8efead8072b12be115c0cbeff695f9bf1b847d15702c0000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0xf7b1673433df325f8efead8072b12be115c0cbeff695f9bf1b847d15702c0000 not found, it might not have been processed yet, try again later
+  rejected   8  policy-rejected   11886 ms  reveal 5892 ms (2)
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x2e11fb592961fe9f0a6f7b7fe0044849e7f7e16e075bc957f9801828e94c0000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x2e11fb592961fe9f0a6f7b7fe0044849e7f7e16e075bc957f9801828e94c0000 not found, it might not have been processed yet, try again later
+  rejected   9  policy-rejected   12507 ms  reveal 6570 ms (1)
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0xf61fff68807347bff81532ce186805ec26343521bad40f797bee418259700000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0xf61fff68807347bff81532ce186805ec26343521bad40f797bee418259700000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0xf61fff68807347bff81532ce186805ec26343521bad40f797bee418259700000 not found, it might not have been processed yet, try again later
+  rejected  10  policy-rejected   12256 ms  reveal 6699 ms (1)
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0xaec06fc91deb13fee3b60f6b13d24bd202f9fa59d876fed83038b2c09eec0000 not found, it might not have been processed yet, try again later
+  rejected  11  policy-rejected    9680 ms  reveal 3706 ms (1)
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x09649cf402a59ab7ca92a4aeeebebacfaa0895eb930e88a64428d2c7e46e0000 not found, it might not have been processed yet, try again later
+  rejected  12  policy-rejected    9414 ms  reveal 3706 ms (1)
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x84893c7d59f740cea258c4b51291fba4c837f29a3a0af3647909a5b4b4680000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x84893c7d59f740cea258c4b51291fba4c837f29a3a0af3647909a5b4b4680000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x84893c7d59f740cea258c4b51291fba4c837f29a3a0af3647909a5b4b4680000 not found, it might not have been processed yet, try again later
+  rejected  13  policy-rejected   11369 ms  reveal 5703 ms (1)
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x21eab71cf36e95fef1cedde498a8dd81d421668a00b3f98ec8eea28df8fc0000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x21eab71cf36e95fef1cedde498a8dd81d421668a00b3f98ec8eea28df8fc0000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x21eab71cf36e95fef1cedde498a8dd81d421668a00b3f98ec8eea28df8fc0000 not found, it might not have been processed yet, try again later
+  rejected  14  policy-rejected   11650 ms  reveal 5913 ms (1)
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x74c3f27221fbac6e63a85be777e0cc970e238c27c049772cc3e74fa907510000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x74c3f27221fbac6e63a85be777e0cc970e238c27c049772cc3e74fa907510000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x74c3f27221fbac6e63a85be777e0cc970e238c27c049772cc3e74fa907510000 not found, it might not have been processed yet, try again later
+  rejected  15  policy-rejected   12199 ms  reveal 5985 ms (1)
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x937c3640bf9ffca793190d0862a0c737dc006d1901e8fef46621450d70b10000 not found, it might not have been processed yet, try again later
+  rejected  16  policy-rejected   10464 ms  reveal 4129 ms (1)
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0xf9a17b61288336e2dcaf1730efe2ec2c93457219e4b1c6a649e80bb14b8e0000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0xf9a17b61288336e2dcaf1730efe2ec2c93457219e4b1c6a649e80bb14b8e0000 not found, it might not have been processed yet, try again later
+  rejected  17  policy-rejected   10032 ms  reveal 4613 ms (1)
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x6fc40328a1966f9231575f97d9ffb2fa4c5c7b35bd5677970239c0065a370000 not found, it might not have been processed yet, try again later
+  rejected  18  policy-rejected    8078 ms  reveal 3041 ms (1)
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x4465909b03ba204bd95f51335578b028903545d240637ac89e54b3977ab10000 not found, it might not have been processed yet, try again later
+  rejected  19  policy-rejected    9643 ms  reveal 3836 ms (1)
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x0b6b4364cddb88969304a4d9bc4d6fadd609f6bef13281e0e1f8cd9591120000 not found, it might not have been processed yet, try again later
+  rejected  20  policy-rejected   10249 ms  reveal 3526 ms (1)
+
+summary (milliseconds and gas; expected outcomes only)
+{
+  "approved": {
+    "expected": 30,
+    "unexpected": 0,
+    "endToEndMs": {
+      "n": 30,
+      "median": 24831,
+      "mean": 24831,
+      "p10": 22071,
+      "p90": 27938,
+      "min": 20698,
+      "max": 29675
+    },
+    "commitMs": {
+      "n": 30,
+      "median": 3713,
+      "mean": 3857,
+      "p10": 3179,
+      "p90": 4634,
+      "min": 2780,
+      "max": 6378
+    },
+    "revealMs": {
+      "n": 30,
+      "median": 4361,
+      "mean": 4723,
+      "p10": 2975,
+      "p90": 6736,
+      "min": 2282,
+      "max": 7609
+    },
+    "revealAttempts": {
+      "n": 30,
+      "median": 1,
+      "mean": 1,
+      "p10": 1,
+      "p90": 1,
+      "min": 1,
+      "max": 2
+    },
+    "finalizeMs": {
+      "n": 30,
+      "median": 2864,
+      "mean": 3064,
+      "p10": 2412,
+      "p90": 3902,
+      "min": 2147,
+      "max": 5415
+    },
+    "signMs": {
+      "n": 30,
+      "median": 3414,
+      "mean": 3478,
+      "p10": 3043,
+      "p90": 3957,
+      "min": 2523,
+      "max": 5143
+    },
+    "settleMs": {
+      "n": 30,
+      "median": 9535,
+      "mean": 9708,
+      "p10": 8522,
+      "p90": 11039,
+      "min": 8352,
+      "max": 13702
+    },
+    "requestSpendGas": {
+      "n": 30,
+      "median": 352928,
+      "mean": 352928,
+      "p10": 352928,
+      "p90": 352928,
+      "min": 352916,
+      "max": 352928
+    },
+    "finalizeGas": {
+      "n": 30,
+      "median": 106770,
+      "mean": 106764,
+      "p10": 106758,
+      "p90": 106770,
+      "min": 106746,
+      "max": 106770
+    },
+    "holdGas": {
+      "n": 30,
+      "median": 170788,
+      "mean": 170782,
+      "p10": 170762,
+      "p90": 170794,
+      "min": 170750,
+      "max": 170794
+    },
+    "claimGas": {
+      "n": 30,
+      "median": 87883,
+      "mean": 87883,
+      "p10": 87883,
+      "p90": 87883,
+      "min": 87883,
+      "max": 87883
+    }
+  },
+  "rejected": {
+    "expected": 20,
+    "unexpected": 0,
+    "endToEndMs": {
+      "n": 20,
+      "median": 10402,
+      "mean": 10815,
+      "p10": 9394,
+      "p90": 12444,
+      "min": 8078,
+      "max": 13268
+    },
+    "commitMs": {
+      "n": 20,
+      "median": 3090,
+      "mean": 3079,
+      "p10": 2623,
+      "p90": 3456,
+      "min": 2472,
+      "max": 4095
+    },
+    "revealMs": {
+      "n": 20,
+      "median": 4385,
+      "mean": 4801,
+      "p10": 3478,
+      "p90": 6172,
+      "min": 3032,
+      "max": 6699
+    },
+    "revealAttempts": {
+      "n": 20,
+      "median": 1,
+      "mean": 1,
+      "p10": 1,
+      "p90": 1,
+      "min": 1,
+      "max": 2
+    },
+    "finalizeMs": {
+      "n": 20,
+      "median": 2864,
+      "mean": 2928,
+      "p10": 2578,
+      "p90": 3409,
+      "min": 2272,
+      "max": 3925
+    },
+    "requestSpendGas": {
+      "n": 20,
+      "median": 353000,
+      "mean": 352759,
+      "p10": 353000,
+      "p90": 353000,
+      "min": 348188,
+      "max": 353000
+    },
+    "finalizeGas": {
+      "n": 20,
+      "median": 101357,
+      "mean": 101350,
+      "p10": 101333,
+      "p90": 101357,
+      "min": 101321,
+      "max": 101357
+    }
+  }
+}
+
+written ..\..\docs\runs\bench-2026-11-09.json
+goal 10 is still open with leftover USDC; run the sweep to return it.
+exit 0
