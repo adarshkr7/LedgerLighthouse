@@ -319,8 +319,7 @@ Two traps worth knowing: `oasis rofl build` will not run on native Windows, and 
 | `scripts/` | `dev`, `verify`, ABI sync, and the CI import-boundary check |
 | `docs/runs/` | Every recorded run: logs, raw benchmark records, enclave identity. Index in its README |
 | `docs/ARCHITECTURE.md` | The design, at more length than the paper |
-| `paper/arxiv-v3/` | The paper's source, built PDF, and the script that generates its tables from `docs/runs` and `paper/eval` |
-| `paper/eval/` | Injection study harnesses and answers; the leakage computation |
+| `paper/` | Not tracked on `main` for now. The paper's source, PDF, table generator and evaluation (injection study, leakage computation) are in tag `arxiv-v3` |
 | `ARTIFACT.md` | Which record backs which claim, and how to reproduce it |
 
 The standalone verifier referenced above lives in [`services/trace/`](services/trace/): it needs only

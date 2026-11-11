@@ -9,6 +9,10 @@ It holds the system, every test, every recorded run with its raw data, the evalu
 generates every data table in the paper from those records. Nothing in a table is typed by hand. Failed and stalled
 runs are kept beside the successful ones and are labelled as such.
 
+**On `main`, `paper/` is not tracked for now.** The paper's source, its table generator and the evaluation code and data
+(`paper/arxiv-v3/`, `paper/eval/`) are in the tag `arxiv-v3`, which the paper cites: run `git checkout arxiv-v3`, or browse
+[`https://github.com/adarshkr7/LedgerLighthouse/tree/arxiv-v3/paper`](https://github.com/adarshkr7/LedgerLighthouse/tree/arxiv-v3/paper). Rows below marked *(tag)* are there; everything else is on `main` too.
+
 Earlier versions of the paper cite the tags `arxiv-v1`, `arxiv-v1.1` and `arxiv-v2`. Their evidence is still in
 `docs/runs/`, and `docs/runs/README.md` says which vault and which design each record belongs to.
 
@@ -16,11 +20,11 @@ Earlier versions of the paper cite the tags `arxiv-v1`, `arxiv-v1.1` and `arxiv-
 
 | Path | What it is |
 | --- | --- |
-| `paper/arxiv-v3/` | The paper: LaTeX source (`main.tex`, `sec-*.tex`, `fig-*.tex`), the built `main.pdf`, and `build.sh` (TeX Live in Docker) |
-| `paper/arxiv-v3/tables/make_tables.py` | Regenerates every data table and every number macro (`numbers.tex`) from the records below |
-| `paper/eval/injection-v2.mts`, `paper/eval/results-v2/` | Injection study, version 2: harness and every model answer |
-| `paper/eval/injection-eval.mts`, `paper/eval/results/` | Injection study, version 1 (earlier versions of the paper) |
-| `paper/eval/leakage/` | Exact leakage computation on three cap priors, and its output |
+| `paper/arxiv-v3/` *(tag)* | The paper: LaTeX source (`main.tex`, `sec-*.tex`, `fig-*.tex`), the built `main.pdf`, and `build.sh` (TeX Live in Docker) |
+| `paper/arxiv-v3/tables/make_tables.py` *(tag)* | Regenerates every data table and every number macro (`numbers.tex`) from the records below |
+| `paper/eval/injection-v2.mts`, `paper/eval/results-v2/` *(tag)* | Injection study, version 2: harness and every model answer |
+| `paper/eval/injection-eval.mts`, `paper/eval/results/` *(tag)* | Injection study, version 1 (earlier versions of the paper) |
+| `paper/eval/leakage/` *(tag)* | Exact leakage computation on three cap priors, and its output |
 | `docs/runs/` | Every recorded run: console logs, raw benchmark records (JSON), enclave identity. Index: `docs/runs/README.md` |
 | `contracts/src/EscrowPolicyVault.sol`, `PolicyVault.sol` | The vault |
 | `contracts/src/baselines/` | Comparators: `PlaintextEscrowVault`, `EnclavePolicyVault`, `BaselineEscrowVault` |
@@ -44,14 +48,14 @@ Names refer to the paper's theorems, tables and sections. "Live" means Base Sepo
 | Authenticated enrollment (Section "Authenticated enrollment") | 12 Foundry tests in `contracts/test/Enrollment.t.sol`; C26 to C29 live | same campaign logs |
 | Recorded funding deadline; reclaim cannot double-pay (Properties) | Deadline boundary tests; C6 live | Foundry suites; campaign logs |
 | Decision-channel bound (Theorem) | Proof; C14 live; `contracts/test/ProbeLeak.t.sol` | campaign logs |
-| What the bound leaves in practice (leakage table) | Exact computation | `paper/eval/leakage/out/summary.json` |
+| What the bound leaves in practice (leakage table) | Exact computation | `paper/eval/leakage/out/summary.json` *(tag)* |
 | Matched baselines | 2 runs of 10 interleaved rounds, plain x402 / plaintext vault / confidential vault | `baseline-bench-2026-11-09T140550.{json,log}`, `baseline-bench-2026-11-09T141612.{json,log}` |
 | Full x402 path, local signer (benchmark table) | 2 runs, 100 calls, every one reported | `bench-v3-2026-11-09-run2.json`, `bench-2026-11-09T144203-0xdd45.json` and their logs |
 | Full x402 path, signer in the enclave (benchmark table) | 1 run, 50 calls, every one reported; one failed on a late finalization, described in the paper | `bench-2026-11-11T090222-0x466a.json`, `escrow-enclave-2026-11-11-bench.log` |
 | Recovery after a storage wipe | Machine restarted with its storage wiped; the enclave re-derived a payer's key from the chain and swept its 0.07 USDC to the owner | `enclave-v5-2026-11-11-after-wipe-sweep.log`, `enclave-v5-2026-11-11-identity.txt` |
 | Inco round trip, enclave vault | Approval, rejection, flipped plaintext refused | `escrow-enclave-2026-11-11-tee-check.log` |
 | Enclave identity | Image digest, measurements, app policy, replica, `/health` | `enclave-v5-2026-11-11-identity.txt`, `enclave-v5-2026-11-09-signer-image-build.log` |
-| Injection study | Nemotron 3 Ultra, 5 trajectories per arm, 5 adaptive-vendor runs per arm | `paper/eval/results-v2/` |
+| Injection study | Nemotron 3 Ultra, 5 trajectories per arm, 5 adaptive-vendor runs per arm | `paper/eval/results-v2/` *(tag)* |
 | Delivery predicate gas (key-release section) | 5 Foundry tests, 86,894 gas at 4 KiB | `contracts/test/KeyReleaseVerifier.t.sol` |
 | Enclave-held policy and plaintext comparator gas | Foundry tests on a pinned fork | `contracts/test/Baselines.t.sol` |
 
@@ -90,10 +94,11 @@ pnpm install
 pnpm verify                                   # typecheck, all TypeScript tests, Foundry tests, import boundary
 cd contracts && forge test --match-contract AccountingInvariants   # J1-J4 from the recorded snapshot
 cd contracts && python -I mutate-accounting.py                     # the 14 mutants
+pnpm --filter @ntux402/e2e run bench:stats ../../docs/runs/bench-v3-2026-11-09-run2.json   # any bench record's statistics
+git checkout arxiv-v3                                              # the three lines below need the tag
 python -I paper/eval/leakage/leakage.py                            # the leakage table's inputs
 python -I paper/arxiv-v3/tables/make_tables.py                     # every table, from docs/runs and paper/eval
 paper/arxiv-v3/build.sh                                            # the PDF (Docker)
-pnpm --filter @ntux402/e2e run bench:stats ../../docs/runs/bench-v3-2026-11-09-run2.json   # any bench record's statistics
 ```
 
 The fork suites (`Baselines`, `DeployEscrowPolicyVault`, the live-state variant of the invariants) skip without
@@ -111,7 +116,7 @@ ESCROW_ANVIL_RPC=http://127.0.0.1:8599 pnpm --filter @ntux402/e2e run fork-tools
 **3. Live on Base Sepolia.** Needs funded test keys and test USDC (`README.md`, "Configure"), Inco's covalidators,
 and `pnpm dev` running. Then `tee-check`, `adversary`, `bench` and `baseline-bench` from `tools/e2e`, as named in
 each log's first line. The injection study needs a model gateway:
-`pnpm --filter @ntux402/e2e exec tsx ../../paper/eval/injection-v2.mts <model>`.
+`pnpm --filter @ntux402/e2e exec tsx ../../paper/eval/injection-v2.mts <model>`, from the tag.
 
 **4. The enclave.** An Oasis ROFL machine on Sapphire testnet, deployed from `services/signer/rofl.yaml`
 (`README.md`, "Deploying the enclave"). Point `SIGNER_URL` at it; its `/health` reports `"store":"rofl"` and the

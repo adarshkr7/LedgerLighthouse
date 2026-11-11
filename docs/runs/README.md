@@ -32,7 +32,7 @@ design plus enrollment: a goal opens only with the signer's EIP-712 statement th
 opening wallet. Its enrollment key `0x6EbeBED3…94DE` comes from a local seed file, and the signer ran on a local
 machine, so none of these runs says anything about the enclave. Plaintext baseline
 [`0x9c9D…D224`](https://sepolia.basescan.org/address/0x9c9D87550C556cD51591CbBDbe6B28895761D224). Every table in the
-paper is generated from these files by `paper/arxiv-v3/tables/make_tables.py`.
+paper is generated from these files by `paper/arxiv-v3/tables/make_tables.py`, in tag `arxiv-v3`.
 
 | Record | What it shows |
 | --- | --- |

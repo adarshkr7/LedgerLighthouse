@@ -37,19 +37,10 @@ services/signer/.keys/
 # has to exist BEFORE those files are created rather than after.
 submission/
 
-# The paper. Its working material (drafts, earlier versions, notes, reviews) stays
-# local. What the published paper rests on is the artifact and is tracked: the v3
-# manuscript with its figures and table generator, and the evaluation code and data.
-# Ignored, not merely untracked, so `git clean -fd` leaves the local material alone.
-paper/*
-!paper/arxiv-v3/
-!paper/eval/
-paper/arxiv-v3/*
-!paper/arxiv-v3/*.tex
-!paper/arxiv-v3/build.sh
-!paper/arxiv-v3/main.pdf
-!paper/arxiv-v3/tables/
-paper/arxiv-v3/preamble.tex
+# The paper, all of it: manuscript, figures, evaluation code and data. Ignored on main for now;
+# the version the paper cites is fixed by the tag `arxiv-v3`, which still contains paper/arxiv-v3
+# and paper/eval. Ignored, not merely untracked, so `git clean -fd` leaves it alone.
+paper/
 
 
 # Execution traces are run records: prompts, vendor relationships, amounts. They
