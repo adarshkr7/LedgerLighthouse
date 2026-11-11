@@ -32,7 +32,8 @@ design plus enrollment: a goal opens only with the signer's EIP-712 statement th
 opening wallet. Its enrollment key `0x6EbeBED3…94DE` comes from a local seed file, and the signer ran on a local
 machine, so none of these runs says anything about the enclave. Plaintext baseline
 [`0x9c9D…D224`](https://sepolia.basescan.org/address/0x9c9D87550C556cD51591CbBDbe6B28895761D224). Every table in the
-paper is generated from these files by `paper/arxiv-v3/tables/make_tables.py`, in tag `arxiv-v3`.
+paper is generated from these files by `paper/arxiv-v3/tables/make_tables.py`, in tag `arxiv-v3`. What each record's
+fields mean is in [`../BENCHMARKS.md`](../BENCHMARKS.md).
 
 | Record | What it shows |
 | --- | --- |
@@ -157,6 +158,11 @@ with `UnknownSpend` rather than `InvalidAttestation`, because the relay sent `fi
 straight after its commit and a lagging RPC node had not seen the spend. The relay now waits until
 the spend is readable before returning from `requestSpend`, and C8 is back to
 `InvalidAttestation`.
+
+## 12 October 2026: benchmark on the encrypted-cap vault
+
+`bench-2026-10-12.json`: 50 calls (30 approved, 20 rejected) on PolicyVault `0x052E…feD8`, the signer in the enclave
+(key store `rofl`). Version 1's design; it predates the attempt budget and the escrow.
 
 ## 9 October 2026: the signer in the enclave
 

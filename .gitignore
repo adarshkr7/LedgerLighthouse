@@ -83,5 +83,7 @@ docs/*
 !docs/ARCHITECTURE.md
 !docs/lighthouse.webp
 !docs/runs/
+!docs/eval/
+!docs/BENCHMARKS.md
 docs/runs/*.partial.jsonl
 contracts/invariant-out/
