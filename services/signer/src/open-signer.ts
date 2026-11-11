@@ -44,9 +44,27 @@ export async function openSigner(options: {
         `signs only for ${escrow} and ${collector}.`,
     );
   }
-  return new EscrowAuthorizationSigner({
+  const signer = new EscrowAuthorizationSigner({
     vault,
     keys,
     config: { chainId, usdcAddress, vaultAddress, escrow, collector },
   });
+
+  // A vault that trusts another enrollment key would refuse every goal this signer
+  // enrolls. Like the checks above, this catches a mistake, not an attack.
+  const pinned = await vault.enrollmentSigner();
+  const ours = await signer.enrollmentSigner();
+  if (!pinned) {
+    throw new Error(
+      `${vaultAddress} has no enrollmentSigner, so it predates authenticated setup. Deploy a vault ` +
+        `with ENROLLMENT_SIGNER=${ours}.`,
+    );
+  }
+  if (!isAddressEqual(pinned, ours)) {
+    throw new Error(
+      `the vault accepts enrollments from ${pinned}, but this signer's enrollment key is ${ours}. ` +
+        `Deploy a vault with ENROLLMENT_SIGNER=${ours}, or run the signer that holds ${pinned}.`,
+    );
+  }
+  return signer;
 }

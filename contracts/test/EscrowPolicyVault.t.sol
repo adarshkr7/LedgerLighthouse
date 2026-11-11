@@ -55,6 +55,7 @@ contract EscrowPolicyVaultTest is IncoTest {
     bytes32 constant KEY = keccak256("the vendor's key");
 
     uint256 payerKey = 0xA11CE;
+    uint256 enrollmentKey = 0xE11;
     address payer;
 
     EscrowPolicyVault vault;
@@ -66,7 +67,11 @@ contract EscrowPolicyVaultTest is IncoTest {
             vm.skip(true);
             return;
         }
-        vm.createSelectFork(rpc);
+        // Pinned, so every run sees the same deployed escrow, collector and USDC.
+        // ESCROW_FORK_BLOCK overrides it; 0 means the latest block.
+        uint256 forkBlock = vm.envOr("ESCROW_FORK_BLOCK", uint256(56_480_000));
+        if (forkBlock == 0) vm.createSelectFork(rpc);
+        else vm.createSelectFork(rpc, forkBlock);
         // Inco's test double deploys CreateX and itself at fixed addresses, which a
         // live network already occupies. Clear them, in this fork only.
         _clear(CREATE_X_ADDRESS);
@@ -77,7 +82,7 @@ contract EscrowPolicyVaultTest is IncoTest {
         vm.setNonceUnsafe(CREATE_X_DEPLOYER, 0);
         super.setUp();
 
-        vault = new EscrowPolicyVault(ESCROW, COLLECTOR);
+        vault = new EscrowPolicyVault(ESCROW, COLLECTOR, vm.addr(enrollmentKey));
         payer = vm.addr(payerKey);
         deal(address(USDC), payer, FUNDED);
         // B0 = C = 0.20, as in the reorganization example the design answers.
@@ -110,8 +115,11 @@ contract EscrowPolicyVaultTest is IncoTest {
         });
         uint256 fee = 2 * inco.getFee();
         vm.deal(alice, fee);
+        bytes32 enrollmentId = keccak256(abi.encode(goalPayer, budget, cap));
+        (uint8 v, bytes32 r, bytes32 s) =
+            vm.sign(enrollmentKey, vault.enrollmentDigest(goalPayer, alice, enrollmentId));
         vm.prank(alice);
-        id = vault.openGoal{value: fee}(params);
+        id = vault.openEnrolledGoal{value: fee}(params, enrollmentId, abi.encodePacked(r, s, v));
         processAllOperations();
     }
 
@@ -454,6 +462,98 @@ contract EscrowPolicyVaultTest is IncoTest {
         vm.expectRevert(EscrowPolicyVault.InvalidCaptureDeadline.selector);
         vault.requestEscrowSpend(goalId, 100_000, VENDOR, RESOURCE, payBy, uint48(payBy) + 1 hours + 1, bytes32(0));
         assertEq(vault.attemptsRemaining(goalId), 4, "a refused request spends no attempt");
+    }
+
+    // -------------------------------------------------------- exact boundaries
+    //
+    // Each deadline is tested at its last valid second and at the first invalid
+    // one, since an off-by-one at any of them would either pay late or credit back
+    // something still payable.
+
+    function testTheHoldBoundaryAtRequest() public {
+        vm.expectRevert(PolicyVault.PayByPassed.selector);
+        vault.requestEscrowSpend(
+            goalId, 1, VENDOR, RESOURCE, uint64(block.timestamp), uint48(block.timestamp), bytes32(0)
+        );
+        uint64 payBy = uint64(block.timestamp) + 1;
+        vault.requestEscrowSpend(goalId, 1, VENDOR, RESOURCE, payBy, uint48(payBy), bytes32(0));
+        processAllOperations();
+    }
+
+    /// Collection works up to the second before preApprovalExpiry and not at it, and
+    /// a credit is refused before it and allowed at it. The two never overlap.
+    function testCollectionAndCreditMeetAtPreApprovalExpiry() public {
+        uint64 seq = _approved(100_000);
+        IAuthCaptureEscrow.PaymentInfo memory info = vault.escrowPayment(goalId, seq);
+        bytes memory signature = _sign(info);
+
+        vm.warp(info.preApprovalExpiry - 1);
+        assertFalse(vault.isReclaimable(goalId, seq));
+        vm.expectRevert(PolicyVault.AuthorizationLive.selector);
+        vault.reclaimExpired(goalId, seq);
+        uint256 snapshot = vm.snapshotState();
+        vault.authorize(info, info.maxAmount, COLLECTOR, signature);
+        vm.revertToState(snapshot);
+
+        vm.warp(info.preApprovalExpiry);
+        vm.expectRevert();
+        vault.authorize(info, info.maxAmount, COLLECTOR, signature);
+        assertTrue(vault.isReclaimable(goalId, seq));
+        vault.reclaimExpired(goalId, seq);
+    }
+
+    /// The same for a held payment at authorizationExpiry: the vendor's claim and the
+    /// credit meet at one second and never overlap.
+    function testClaimAndCreditMeetAtTheCaptureDeadline() public {
+        uint64 seq = _approved(100_000);
+        IAuthCaptureEscrow.PaymentInfo memory info = _collect(seq);
+
+        vm.warp(info.authorizationExpiry - 1);
+        assertFalse(vault.isReclaimable(goalId, seq));
+        vm.expectRevert(PolicyVault.AuthorizationLive.selector);
+        vault.reclaimExpired(goalId, seq);
+        uint256 snapshot = vm.snapshotState();
+        vm.prank(VENDOR);
+        vault.claim(goalId, seq, KEY);
+        assertEq(USDC.balanceOf(VENDOR), 100_000);
+        vm.revertToState(snapshot);
+
+        vm.warp(info.authorizationExpiry);
+        vm.prank(VENDOR);
+        vm.expectRevert();
+        vault.claim(goalId, seq, KEY);
+        vault.reclaimExpired(goalId, seq);
+        assertEq(USDC.balanceOf(payer), FUNDED);
+    }
+
+    /// The capture deadline may be exactly validBefore and exactly validBefore plus
+    /// the window, and no further.
+    function testTheCaptureWindowBoundsAreInclusive() public {
+        uint64 payBy = uint64(block.timestamp) + HOLD;
+        uint48 max = uint48(payBy) + uint48(vault.MAX_CAPTURE_WINDOW());
+        uint64 seq = vault.requestEscrowSpend(goalId, 1, VENDOR, RESOURCE, payBy, max, bytes32(0));
+        processAllOperations();
+        assertEq(vault.order(goalId, seq).captureDeadline, max);
+        _finalize(seq);
+        uint64 next = vault.requestEscrowSpend(goalId, 1, VENDOR, RESOURCE, payBy, uint48(payBy), bytes32(0));
+        processAllOperations();
+        assertEq(vault.order(goalId, next).captureDeadline, uint48(payBy));
+    }
+
+    /// A request in the goal's last second is accepted, and its window ends with the
+    /// goal; at the expiry itself the goal takes no request.
+    function testTheGoalExpiryBoundary() public {
+        (,,,,, uint64 expiry,,) = vault.goals(goalId);
+        vm.warp(expiry - 1);
+        uint64 seq = vault.requestEscrowSpend(goalId, 1, VENDOR, RESOURCE, expiry + 1 days, uint48(expiry), bytes32(0));
+        processAllOperations();
+        (, uint64 validBefore) = vault.validityWindow(goalId, seq);
+        assertEq(validBefore, expiry, "the window ends with the goal");
+        _finalize(seq);
+
+        vm.warp(expiry);
+        vm.expectRevert(PolicyVault.GoalExpired.selector);
+        vault.requestEscrowSpend(goalId, 1, VENDOR, RESOURCE, expiry + 1 days, uint48(expiry), bytes32(0));
     }
 
     // ------------------------------------------------------------ closing a goal

@@ -86,11 +86,14 @@ function escrowMismatch(signed: SignedAuthorization, offer: AuthCaptureRequireme
 const REVEAL_WAITING_EVERY_MS = 5_000;
 
 /**
- * The least hold a spend is committed against. A paid call took about 14 s on
- * 9 October 2026 with Inco answering quickly, so a shorter hold would expire
- * during the payment.
+ * The least hold a spend is committed against. What has to fit inside the hold is
+ * the time from the request to funding the escrow: on 9 November 2026, over 20 paid
+ * calls on the escrow vault, a median of 19.4 s and a maximum of 23.8 s
+ * (docs/runs/baseline-bench-*.json). 30 s is that maximum with a margin. It is a
+ * heuristic: a slow Inco reveal can still outlast it, and then the approval is
+ * reclaimed, not paid late.
  */
-const DEFAULT_MIN_HOLD_SECONDS = 20;
+const DEFAULT_MIN_HOLD_SECONDS = 30;
 
 /** The longest a failed run waits for its authorization to expire before reclaiming. */
 const DEFAULT_RECLAIM_WAIT_MS = 120_000;

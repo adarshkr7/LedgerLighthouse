@@ -18,9 +18,10 @@ import {
   type Connector,
 } from "wagmi";
 import { createPublicClient, parseEventLogs, type Address, type Hex } from "viem";
-import { rpcTransport } from "@ntux402/shared/viem";
+import { checkEnrollment, freshEnrollmentId, rpcTransport } from "@ntux402/shared/viem";
 import {
   DEMO_GOALS,
+  escrowPolicyVaultAbi,
   policyVaultAbi,
   usdcAbi,
   type DemoGoal,
@@ -43,6 +44,7 @@ import {
   RPC_URLS,
   explorer,
   vendorAddress,
+  pinnedEnrollmentSigner,
   fetchIncoHealth,
   fetchOrchestratorConfig,
   type IncoHealth,
@@ -158,7 +160,8 @@ const PRECONDITION_HINTS: Record<string, string> = {
   wallet:
     "the wallet client is unavailable — it is locked, still reconnecting, or on the wrong network",
   address: "no account is connected",
-  payer: "the payer key has not been minted yet",
+  payer: "the payer has not been enrolled yet",
+  enrollment: "the payer has not been enrolled on this page",
   goalId: "no goal is open",
 };
 
@@ -407,6 +410,10 @@ export default function App() {
   const [inco, setInco] = useState<IncoHealth>();
   const [configError, setConfigError] = useState<string>();
   const [payer, setPayer] = useState<Address>();
+  /** The enrollment this page drew and the signer's statement for it. */
+  const [enrollment, setEnrollment] = useState<{ id: Hex; signature: Hex }>();
+  /** Where openEnrolledGoal landed, so funding can wait for confirmations. */
+  const [openedInBlock, setOpenedInBlock] = useState<bigint>();
   const [goalId, setGoalId] = useState<string>();
   const [resumeId, setResumeId] = useState("");
   const [budgetHandle, setBudgetHandle] = useState<Hex>();
@@ -638,26 +645,54 @@ export default function App() {
     [],
   );
 
-  // --- step 2: mint the payer ---------------------------------------------
+  // --- step 2: enroll the payer -------------------------------------------
   // Before openGoal, because the payer address is a field of the goal record.
-  const mintPayer = () =>
-    guard("Minting payer key…", async () => {
-      if (!config) throw new Error("orchestrator config not loaded");
-      // Through the orchestrator, not straight at `config.signerUrl`.
-      // A ROFL-hosted signer wants a `SERVICE_TOKEN` bearer, and putting that
-      // in the bundle would publish it to every viewer. The orchestrator holds
-      // it already, so the mint goes via there and this page holds no secret.
-      const response = await fetch(`${ORCHESTRATOR_URL}/payer`, { method: "POST" });
-      if (!response.ok) throw new Error(`orchestrator /payer returned ${response.status}`);
-      const body = (await response.json()) as { address: Address };
-      setPayer(body.address);
+  /**
+   * Asks the signer, through the orchestrator, to enroll a payer for this wallet,
+   * and checks the answer before anything else happens.
+   *
+   * The orchestrator relays the statement and is assumed compromised, so it could
+   * name a payer whose key it holds. The statement must be signed by the enrollment
+   * key pinned in this build, which must also be the key the vault trusts (read
+   * here through this page's own RPC, not the orchestrator's), and must name this
+   * wallet, this vault and the id this page just drew. The vault checks the same
+   * signature again at openEnrolledGoal.
+   */
+  const enrollPayer = () =>
+    guard("Enrolling a payer…", async () => {
+      if (!config || !address) throw notReady({ config, address });
+      const pinned = pinnedEnrollmentSigner();
+      const onChain = (await reader.readContract({
+        address: config.vaultAddress,
+        abi: escrowPolicyVaultAbi,
+        functionName: "enrollmentSigner",
+      })) as Address;
+      if (onChain.toLowerCase() !== pinned.toLowerCase()) {
+        throw new Error(`the vault trusts enrollment key ${onChain}, but this console was built for ${pinned}`);
+      }
+      const id = freshEnrollmentId();
+      const response = await fetch(`${ORCHESTRATOR_URL}/enrollments`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ owner: address, enrollmentId: id }),
+      });
+      if (!response.ok) throw new Error(`orchestrator /enrollments returned ${response.status}`);
+      const statement = await checkEnrollment(await response.json(), {
+        owner: address,
+        enrollmentId: id,
+        chainId: CHAIN_ID,
+        vault: config.vaultAddress,
+        enrollmentSigner: pinned,
+      });
+      setEnrollment({ id, signature: statement.signature });
+      setPayer(statement.payer);
     });
 
   // --- step 3: encrypt, then open ------------------------------------------
   const openGoal = () =>
     guard("Encrypting budget and opening the goal…", async () => {
-      if (!config || !wallet || !address || !payer) {
-        throw notReady({ config, wallet, address, payer });
+      if (!config || !wallet || !address || !payer || !enrollment) {
+        throw notReady({ config, wallet, address, payer, enrollment });
       }
 
       // Re-read the chain rather than trusting connection-time state: MetaMask
@@ -703,8 +738,8 @@ export default function App() {
 
       const hash = await wallet.writeContract({
         address: config.vaultAddress,
-        abi: policyVaultAbi,
-        functionName: "openGoal",
+        abi: escrowPolicyVaultAbi,
+        functionName: "openEnrolledGoal",
         args: [
           {
             budgetCiphertext,
@@ -721,6 +756,8 @@ export default function App() {
             // `require`, which proves nothing about Inco.
             allowlist: [vendorAddress()],
           },
+          enrollment.id,
+          enrollment.signature,
         ],
         chain: CHAIN,
         account: address,
@@ -738,14 +775,23 @@ export default function App() {
       setGoalId(args.goalId.toString());
       setBudgetHandle(args.budgetHandle);
       setOpenedHere(true);
+      setOpenedInBlock(receipt.blockNumber);
     });
 
   // --- step 4: fund the payer ----------------------------------------------
   const fundPayer = () =>
     guard("Funding the ephemeral payer…", async () => {
-      if (!config || !wallet || !address || !payer) {
-        throw notReady({ config, wallet, address, payer });
+      if (!config || !wallet || !address || !payer || !goalId) {
+        throw notReady({ config, wallet, address, payer, goalId });
       }
+      await checkBindingBeforeFunding({
+        vault: config.vaultAddress,
+        goalId: BigInt(goalId),
+        payer,
+        owner: address,
+        enrollmentId: enrollment?.id,
+        openedInBlock,
+      });
       const hash = await wallet.writeContract({
         address: config.usdcAddress,
         abi: usdcAbi,
@@ -900,7 +946,7 @@ export default function App() {
         { key: "connect", label: "Connect", state: isConnected && !wrongChain ? "done" : "ready" },
         {
           key: "payer",
-          label: "Mint payer",
+          label: "Enroll payer",
           state: payer ? "done" : isConnected && !wrongChain ? "ready" : "blocked",
         },
         { key: "goal", label: "Open goal", state: goalId ? "done" : payer ? "ready" : "blocked" },
@@ -1327,9 +1373,9 @@ export default function App() {
                 className="d-btn d-btn-block"
                 data-kind={payer ? "outline" : undefined}
                 disabled={!!payer || !!busy}
-                onClick={mintPayer}
+                onClick={enrollPayer}
               >
-                {payer ? "Payer minted" : "Mint ephemeral payer"}
+                {payer ? "Payer enrolled" : "Enroll ephemeral payer"}
               </button>
 
               {/* Chosen here, encrypted in the next step, and immutable
@@ -1398,7 +1444,7 @@ export default function App() {
               </button>
               {!payer ? (
                 <p className="d-hint">
-                  Mint the payer first — its address is a field of the goal record.
+                  Enroll the payer first. Its address is a field of the goal record.
                 </p>
               ) : goalId ? (
                 <p className="d-hint">
@@ -1558,6 +1604,54 @@ function readIncoFee(): Promise<bigint> {
     abi: INCO_FEE_ABI,
     functionName: "getFee",
   });
+}
+
+/** Blocks on top of the setup before funding. Base Sepolia makes one about every 2 s. */
+const FUNDING_CONFIRMATIONS = 3n;
+
+/**
+ * The last check before money leaves the user's wallet, read through this page's
+ * RPC and not the orchestrator's: the vault binds this payer to this goal, the goal
+ * is this wallet's, it was opened under the enrollment this page drew, and the
+ * setup has a few blocks on top of it.
+ *
+ * The confirmations narrow a window, they do not carry the argument. If the setup
+ * were dropped by a reorganization after funding, the payer would be unbound but
+ * still enrolled for this wallet alone, because the signer derives each payer from
+ * its owner, so no one else's goal could bind it and the funds would wait for the
+ * owner to open the goal again.
+ */
+async function checkBindingBeforeFunding(args: {
+  vault: Address;
+  goalId: bigint;
+  payer: Address;
+  owner: Address;
+  enrollmentId: Hex | undefined;
+  openedInBlock: bigint | undefined;
+}): Promise<void> {
+  if (args.openedInBlock !== undefined) {
+    for (;;) {
+      const head = await reader.getBlockNumber();
+      if (head >= args.openedInBlock + FUNDING_CONFIRMATIONS) break;
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+    }
+  }
+  const [bound, goal, enrolledUnder] = await Promise.all([
+    reader.readContract({ address: args.vault, abi: escrowPolicyVaultAbi, functionName: "payerGoal", args: [args.payer] }),
+    reader.readContract({ address: args.vault, abi: escrowPolicyVaultAbi, functionName: "goals", args: [args.goalId] }),
+    reader.readContract({ address: args.vault, abi: escrowPolicyVaultAbi, functionName: "goalEnrollment", args: [args.goalId] }),
+  ]);
+  const owner = (goal as readonly unknown[])[0] as Address;
+  const payer = (goal as readonly unknown[])[1] as Address;
+  if (bound !== args.goalId || payer.toLowerCase() !== args.payer.toLowerCase()) {
+    throw new Error(`the vault does not bind payer ${args.payer} to goal ${args.goalId}; not funding it`);
+  }
+  if (owner.toLowerCase() !== args.owner.toLowerCase()) {
+    throw new Error(`goal ${args.goalId} belongs to ${owner}, not this wallet; not funding it`);
+  }
+  if (args.enrollmentId !== undefined && (enrolledUnder as Hex).toLowerCase() !== args.enrollmentId.toLowerCase()) {
+    throw new Error(`goal ${args.goalId} was opened under another enrollment; not funding it`);
+  }
 }
 
 function waitForReceipt(hash: Hex) {

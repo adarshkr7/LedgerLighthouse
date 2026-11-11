@@ -1,0 +1,86 @@
+{
+  "machine": {
+    "provider": "oasis1qp2ens0hsp7gh23wajxa4hpetkdek3swyyulyrmz",
+    "id": "000000000000074f",
+    "offer": "0000000000000003",
+    "status": 0,
+    "creator": "oasis1qre30005fwqh250e8gyzr9rvqf9v9akf8qzce30m",
+    "admin": "oasis1qre30005fwqh250e8gyzr9rvqf9v9akf8qzce30m",
+    "metadata": {},
+    "resources": {
+      "tee": 2,
+      "memory": 4096,
+      "cpus": 2,
+      "storage": 20000
+    },
+    "deployment": {
+      "app_id": "rofl1qr0fv0qs2u8vmmah0ucmwegcj2cdz7kj4qzjduhp",
+      "manifest_hash": "78a8be9860e7565ade76934d83173a503ef23fcb9e1e96fc39bd77dc10f9e0e5",
+      "metadata": {
+        "net.oasis.deployment.orc.ref": "rofl.sh/cea9392d-897e-42c6-85db-9fc3c035f46c:1787423114@sha256:41ea9345fbd6a7a4d49367539fdc14e2309a405df681f6d3210164a1b757c453"
+      }
+    },
+    "created_at": 1794373847,
+    "updated_at": 1794373847,
+    "paid_from": 1794373847,
+    "paid_until": 1794377447,
+    "payment": {
+      "native": {
+        "denomination": "",
+        "terms": {
+          "1": "5000000000000000000"
+        }
+      }
+    },
+    "payment_address": [
+      248,
+      145,
+      63,
+      17,
+      149,
+      90,
+      200,
+      14,
+      115,
+      177,
+      243,
+      243,
+      210,
+      160,
+      131,
+      120,
+      145,
+      183,
+      255,
+      229
+    ],
+    "refund_data": "",
+    "cmd_next_id": "0000000000000000",
+    "cmd_count": 0
+  },
+  "provider": {
+    "address": "oasis1qp2ens0hsp7gh23wajxa4hpetkdek3swyyulyrmz",
+    "nodes": [
+      "bOlqho9R3JHP64kJk+SfMxZt5fNkYWf6gdhErWlY60E=",
+      "1owPK3eT21k0ajRG7VfHRgp4JPXobCQtzuglz6ZSJis="
+    ],
+    "scheduler_app": "rofl1qrqw99h0f7az3hwt2cl7yeew3wtz0fxunu7luyfg",
+    "payment_address": {
+      "native": "oasis1qp2ens0hsp7gh23wajxa4hpetkdek3swyyulyrmz"
+    },
+    "metadata": {
+      "net.oasis.provider.homepage": "https://oasis.net",
+      "net.oasis.provider.name": "OPF Testnet"
+    },
+    "stake": {
+      "Amount": "100000000000000000000",
+      "Denomination": ""
+    },
+    "offers_next_id": "0000000000000008",
+    "offers_count": 3,
+    "instances_next_id": "0000000000000750",
+    "instances_count": 12,
+    "created_at": 1745405831,
+    "updated_at": 1794373847
+  }
+}

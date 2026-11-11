@@ -52,3 +52,34 @@ export const RECEIVE_WITH_AUTHORIZATION_TYPES = {
     { name: "nonce", type: "bytes32" },
   ],
 } as const;
+
+/**
+ * The enrollment statement: the signer says it derived `payer` for `owner` under
+ * `enrollmentId`. EscrowPolicyVault's `openEnrolledGoal` checks it against its
+ * `enrollmentSigner`, and the console checks it before it funds anything. The
+ * domain carries the chain and the vault, so a statement is good for one vault.
+ */
+export const ENROLLMENT_TYPES = {
+  Enrollment: [
+    { name: "payer", type: "address" },
+    { name: "owner", type: "address" },
+    { name: "enrollmentId", type: "bytes32" },
+  ],
+} as const;
+
+/** Must match the vault's `EIP712("EscrowPolicyVault", "3")`. */
+export function enrollmentDomain(chainId: number, vault: `0x${string}`) {
+  return { name: "EscrowPolicyVault", version: "3", chainId, verifyingContract: vault } as const;
+}
+
+/** What the signer returns from `POST /enrollments`, as JSON. */
+export interface EnrollmentStatement {
+  readonly payer: `0x${string}`;
+  readonly owner: `0x${string}`;
+  readonly enrollmentId: `0x${string}`;
+  readonly chainId: number;
+  readonly vault: `0x${string}`;
+  /** The address that signed, which the vault fixes at deployment. */
+  readonly enrollmentSigner: `0x${string}`;
+  readonly signature: `0x${string}`;
+}

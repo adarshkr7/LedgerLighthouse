@@ -21,19 +21,22 @@
  * against is a compromised enclave, which holds the key and can sign anything.
  */
 
-import { domainSeparator, isAddressEqual, type Address, type Hex } from "viem";
+import { domainSeparator, isAddressEqual, type Address, type Hex, type LocalAccount } from "viem";
 import {
+  ENROLLMENT_TYPES,
   MAX_ESCROW_AMOUNT,
+  enrollmentDomain,
   RECEIVE_WITH_AUTHORIZATION_TYPES,
   networkForChainId,
   paymentSalt,
+  type EnrollmentStatement,
   type PaymentInfo,
 } from "@ntux402/shared";
 import { escrowNonce } from "@ntux402/shared/viem";
 
 import type { KeyStore } from "./keystore.js";
-import { parseSignRequest, parseSweepRequest, type SignRequest } from "./schema.js";
-import type { VaultReader } from "./vault.js";
+import { parseEnrollRequest, parseSignRequest, parseSweepRequest, type SignRequest } from "./schema.js";
+import type { GoalRecord, VaultReader } from "./vault.js";
 
 const ZERO_ADDRESS: Address = "0x0000000000000000000000000000000000000000";
 
@@ -98,12 +101,12 @@ export type SignOutcome<T = SignedEscrowAuthorization> =
 
 /** What the HTTP surface serves. */
 export interface SignerService<T = SignedEscrowAuthorization> {
-  mintPayer(): Promise<{ address: Address }>;
+  enroll(body: unknown): Promise<SignOutcome<EnrollmentStatement>>;
   signRaw(body: unknown): Promise<SignOutcome<T>>;
   sweep(goalIdRaw: unknown): Promise<SignOutcome<T>>;
 }
 
-function refuse(status: number, error: string): SignOutcome {
+function refuse(status: number, error: string): { ok: false; status: number; error: string } {
   return { ok: false, status, error };
 }
 
@@ -147,8 +150,55 @@ export class EscrowAuthorizationSigner implements SignerService {
     };
   }
 
-  async mintPayer(): Promise<{ address: Address }> {
-    return { address: await this.#keys.mint() };
+  /**
+   * Derives the payer for `(owner, enrollmentId)` and signs a statement saying so.
+   *
+   * The caller is untrusted, and needs no trust: the payer is a function of the
+   * owner, so a statement can only ever name the owner the payer was derived for,
+   * and the vault reads the owner from the transaction's sender. Asking for a
+   * statement on someone else's behalf yields a payer only they can bind. Nothing
+   * here reads the chain.
+   */
+  async enroll(body: unknown): Promise<SignOutcome<EnrollmentStatement>> {
+    const parsed = parseEnrollRequest(body);
+    if (!parsed.ok) return refuse(400, parsed.error);
+    const { owner, enrollmentId } = parsed.value;
+
+    const payer = await this.#keys.payer(owner, enrollmentId);
+    const signer = await this.#keys.enrollment();
+    const message = { payer: payer.address, owner, enrollmentId };
+    const signature = await signer.signTypedData({
+      domain: enrollmentDomain(this.#config.chainId, this.#config.vaultAddress),
+      types: ENROLLMENT_TYPES,
+      primaryType: "Enrollment",
+      message,
+    });
+    return {
+      ok: true,
+      value: {
+        ...message,
+        chainId: this.#config.chainId,
+        vault: this.#config.vaultAddress,
+        enrollmentSigner: signer.address,
+        signature,
+      },
+    };
+  }
+
+  /** The enrollment address, for /health and the boot check. */
+  async enrollmentSigner(): Promise<Address> {
+    return (await this.#keys.enrollment()).address;
+  }
+
+  /**
+   * The payer key for a goal, derived from the owner and enrollment id the chain
+   * records. A key that does not match the goal's payer means the goal was not
+   * enrolled by this signer, or the RPC lied: either way, nothing to sign with.
+   */
+  async #payerFor(goalId: bigint, goal: GoalRecord): Promise<LocalAccount | undefined> {
+    const enrollmentId = await this.#vault.goalEnrollment(goalId);
+    const account = await this.#keys.payer(goal.owner, enrollmentId);
+    return isAddressEqual(account.address, goal.payer) ? account : undefined;
   }
 
   async signRaw(body: unknown): Promise<SignOutcome> {
@@ -233,7 +283,10 @@ export class EscrowAuthorizationSigner implements SignerService {
       return refuse(500, `refused: the vault derives different payment terms for (${goalId}, ${seq}).`);
     }
 
-    return this.#signPayment({
+    const account = await this.#payerFor(goalId, goal);
+    if (!account) return refuse(404, `refused: goal ${goalId}'s payer ${goal.payer} was not enrolled by this signer.`);
+
+    return this.#signPayment(account, {
       goalId: goalId.toString(),
       seq: seq.toString(),
       payment,
@@ -280,8 +333,11 @@ export class EscrowAuthorizationSigner implements SignerService {
     // From the clock, unlike a spend, because a sweep has no frozen record. Two sweeps
     // signed at different times are different authorizations, and that is safe here:
     // every one of them can only pay the owner.
+    const account = await this.#payerFor(goalId, goal);
+    if (!account) return refuse(404, `refused: goal ${goalId}'s payer ${goal.payer} was not enrolled by this signer.`);
+
     const deadline = this.#config.now() + SWEEP_WINDOW_SECONDS;
-    return this.#signPayment({
+    return this.#signPayment(account, {
       goalId: goalId.toString(),
       seq: "sweep",
       payment: this.#payment({
@@ -322,16 +378,16 @@ export class EscrowAuthorizationSigner implements SignerService {
   }
 
   /** The only place in this file that produces a signature. */
-  async #signPayment(fields: {
-    goalId: string;
-    seq: string;
-    payment: PaymentInfo;
-    termsHash: Hex;
-  }): Promise<SignOutcome> {
+  async #signPayment(
+    account: LocalAccount,
+    fields: {
+      goalId: string;
+      seq: string;
+      payment: PaymentInfo;
+      termsHash: Hex;
+    },
+  ): Promise<SignOutcome> {
     const { payment } = fields;
-
-    const account = await this.#keys.signerFor(payment.payer);
-    if (!account) return refuse(404, `refused: no key held for payer ${payment.payer}.`);
 
     const domain = {
       name: this.#config.eip712Name,

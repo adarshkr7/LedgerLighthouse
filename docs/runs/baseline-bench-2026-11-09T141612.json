@@ -1,0 +1,1018 @@
+{
+  "runId": "0x1a1c0a5a5aa",
+  "network": "Base Sepolia",
+  "rpc": "https://sepolia.base.org",
+  "vaults": {
+    "confidential": "0xdd450306ca3905612a96Ff92aDbee23B48385014",
+    "plaintext": "0x9c9D87550C556cD51591CbBDbe6B28895761D224"
+  },
+  "goals": {
+    "confidential": "9",
+    "plaintext": "2"
+  },
+  "amountAtomic": "1000",
+  "rounds": 10,
+  "notMatched": "plain and plaintext sign in-process; confidential signs through the signer service over local HTTP",
+  "openGas": {
+    "confidential": "515896",
+    "plaintext": "242386"
+  },
+  "incoFeeWeiPerEncryptedInput": "1000000000000",
+  "summary": {
+    "plain": {
+      "attempts": 10,
+      "paid": 10,
+      "failed": 0,
+      "stalled": 0,
+      "medianMsPaid": 1997,
+      "maxMsPaid": 4003,
+      "medianGasPerPaidCall": 86148,
+      "medianFeeWeiPerPaidCall": 516888000000,
+      "transactionsPerPaidCall": 1
+    },
+    "plaintext": {
+      "attempts": 10,
+      "paid": 10,
+      "failed": 0,
+      "stalled": 0,
+      "medianMsPaid": 6555.5,
+      "maxMsPaid": 10857,
+      "medianGasPerPaidCall": 355015,
+      "medianFeeWeiPerPaidCall": 2130090000000,
+      "transactionsPerPaidCall": 3
+    },
+    "confidential": {
+      "attempts": 10,
+      "paid": 10,
+      "failed": 0,
+      "stalled": 0,
+      "medianMsPaid": 22167,
+      "maxMsPaid": 26622,
+      "medianGasPerPaidCall": 718098,
+      "medianFeeWeiPerPaidCall": 4308588000000,
+      "transactionsPerPaidCall": 4
+    }
+  },
+  "attempts": [
+    {
+      "arm": "plain",
+      "round": 0,
+      "outcome": "paid",
+      "totalMs": 1548,
+      "stages": [
+        {
+          "name": "sign",
+          "ms": 1
+        },
+        {
+          "name": "settle",
+          "ms": 1547,
+          "gas": "86152",
+          "feeWei": "516912000000",
+          "tx": "0x2bfbae99fae471b9b7644e4ff39c107ff87669ea7aa2f5c19d74dd497c37e3d7"
+        }
+      ]
+    },
+    {
+      "arm": "plaintext",
+      "round": 0,
+      "outcome": "paid",
+      "totalMs": 6733,
+      "stages": [
+        {
+          "name": "request+decide",
+          "ms": 1617,
+          "gas": "99177",
+          "feeWei": "595062000000",
+          "tx": "0x59faaa98bca64b870c2806e950b47f907cdf491654ee01109ec3add6f17ed760"
+        },
+        {
+          "name": "sign",
+          "ms": 1
+        },
+        {
+          "name": "authorize (hold)",
+          "ms": 2974,
+          "gas": "181226",
+          "feeWei": "1087356000000",
+          "tx": "0x8b904935f030e661c1b62672c4272f41b7679376685f0065972cb158a5ff7b5f"
+        },
+        {
+          "name": "claim",
+          "ms": 1691,
+          "gas": "74612",
+          "feeWei": "447672000000",
+          "tx": "0xde54f6e3cb9371e2cc650d658218c0fe9b2b732077ee0ca61dcf8583a0072734"
+        }
+      ]
+    },
+    {
+      "arm": "confidential",
+      "round": 0,
+      "outcome": "paid",
+      "totalMs": 25528,
+      "stages": [
+        {
+          "name": "request",
+          "ms": 3150,
+          "gas": "352498",
+          "feeWei": "2114988000000",
+          "tx": "0xb6d0de44a765e6d43b0ff234c71ed4749cc7d6e94d69c9b311ef50d65a98ff11"
+        },
+        {
+          "name": "inco decision",
+          "ms": 6868
+        },
+        {
+          "name": "finalize",
+          "ms": 2574,
+          "gas": "106857",
+          "feeWei": "641142000000",
+          "tx": "0xbc1960a75517cafccd2abbe8053996f0c47316a3359f06ea770162ded45abd66"
+        },
+        {
+          "name": "sign",
+          "ms": 7704
+        },
+        {
+          "name": "authorize (hold)",
+          "ms": 2868,
+          "gas": "170814",
+          "feeWei": "1024884000000",
+          "tx": "0x20288b07a356199d5827e0bb1725b226c542565a618acb0a07220fb928acebda"
+        },
+        {
+          "name": "claim",
+          "ms": 2055,
+          "gas": "87927",
+          "feeWei": "527562000000",
+          "tx": "0x3009d08408d96dc4ab274d33778ff0d3b0dbd55dcb65ee884923f80d4dbfac46"
+        }
+      ]
+    },
+    {
+      "arm": "plaintext",
+      "round": 1,
+      "outcome": "paid",
+      "totalMs": 6801,
+      "stages": [
+        {
+          "name": "request+decide",
+          "ms": 2083,
+          "gas": "99177",
+          "feeWei": "595062000000",
+          "tx": "0xa9f21e259e7726918b20fe8edfc446e3bfb59ae52198bb2934dbeb851fff6ba1"
+        },
+        {
+          "name": "sign",
+          "ms": 1
+        },
+        {
+          "name": "authorize (hold)",
+          "ms": 2123,
+          "gas": "181226",
+          "feeWei": "1087356000000",
+          "tx": "0xf2d0572c9c8d2f6ccad62c4789a9de71110a7b3d76ab0e52fe5c1b9d76364fa4"
+        },
+        {
+          "name": "claim",
+          "ms": 2201,
+          "gas": "74612",
+          "feeWei": "447672000000",
+          "tx": "0xaae5be0f84d06276b71bd3bec43999a3303e47d6a1d6b1d64fe4da2bb49ce541"
+        }
+      ]
+    },
+    {
+      "arm": "confidential",
+      "round": 1,
+      "outcome": "paid",
+      "totalMs": 19153,
+      "stages": [
+        {
+          "name": "request",
+          "ms": 3192,
+          "gas": "352498",
+          "feeWei": "2114988000000",
+          "tx": "0xf925241642f0d2a4a1074065ee41443a59045a48061c93e8af87de4422328f6b"
+        },
+        {
+          "name": "inco decision",
+          "ms": 3843
+        },
+        {
+          "name": "finalize",
+          "ms": 3125,
+          "gas": "106833",
+          "feeWei": "640998000000",
+          "tx": "0xd00aa0ed5e37877e476b53fea896cd879c7b0b3e2107443edcf5a790cc73ec97"
+        },
+        {
+          "name": "sign",
+          "ms": 3564
+        },
+        {
+          "name": "authorize (hold)",
+          "ms": 2958,
+          "gas": "170818",
+          "feeWei": "1024908000000",
+          "tx": "0x4260c2ab0b80329c328b2c8434bbe68a595ff013a7aa612f6d66b4640c6ef5fa"
+        },
+        {
+          "name": "claim",
+          "ms": 2090,
+          "gas": "87927",
+          "feeWei": "527562000000",
+          "tx": "0xb7767cfeaba955e0e64aa09d513b84764c4283e68e518fe393e69b84c131045c"
+        }
+      ]
+    },
+    {
+      "arm": "plain",
+      "round": 1,
+      "outcome": "paid",
+      "totalMs": 2391,
+      "stages": [
+        {
+          "name": "sign",
+          "ms": 1
+        },
+        {
+          "name": "settle",
+          "ms": 2390,
+          "gas": "86152",
+          "feeWei": "516912000000",
+          "tx": "0x8cb498310f721a4d9b51939978c49625632b6583b31ad3a4556e0cbbe4104936"
+        }
+      ]
+    },
+    {
+      "arm": "confidential",
+      "round": 2,
+      "outcome": "paid",
+      "totalMs": 22776,
+      "stages": [
+        {
+          "name": "request",
+          "ms": 3751,
+          "gas": "352498",
+          "feeWei": "2114988000000",
+          "tx": "0xd378dbc0e05f16e02ff84e2479be25fd924349dd517b9645bc22320a1bb9a4ec"
+        },
+        {
+          "name": "inco decision",
+          "ms": 4538
+        },
+        {
+          "name": "finalize",
+          "ms": 4006,
+          "gas": "106857",
+          "feeWei": "641142000000",
+          "tx": "0x83dd2fa2f10219611ebd7139eefaef3d35ec7a7ea265c9fe981679413b64155e"
+        },
+        {
+          "name": "sign",
+          "ms": 4229
+        },
+        {
+          "name": "authorize (hold)",
+          "ms": 2785,
+          "gas": "170838",
+          "feeWei": "1025028000000",
+          "tx": "0x35fc8b7fe77d4f6890c3cf5bf4033f413d8ad3d64acf68c687701a71a4ff334c"
+        },
+        {
+          "name": "claim",
+          "ms": 3085,
+          "gas": "87927",
+          "feeWei": "527562000000",
+          "tx": "0xb3ac0e91b145a6f63dc326b687e82ab65635cf5981b8142f96b6268d3b315480"
+        }
+      ]
+    },
+    {
+      "arm": "plain",
+      "round": 2,
+      "outcome": "paid",
+      "totalMs": 2034,
+      "stages": [
+        {
+          "name": "sign",
+          "ms": 1
+        },
+        {
+          "name": "settle",
+          "ms": 2033,
+          "gas": "86164",
+          "feeWei": "516984000000",
+          "tx": "0x07f708a4007c6e9f7aaabfda1f60a8b1e690097618f1916a662b02c60412a564"
+        }
+      ]
+    },
+    {
+      "arm": "plaintext",
+      "round": 2,
+      "outcome": "paid",
+      "totalMs": 8665,
+      "stages": [
+        {
+          "name": "request+decide",
+          "ms": 2155,
+          "gas": "99177",
+          "feeWei": "595062000000",
+          "tx": "0xd4692ba2b2d934e91040e5e871f5e307ca75eaf8c80eefa296890de95c532eef"
+        },
+        {
+          "name": "sign",
+          "ms": 1
+        },
+        {
+          "name": "authorize (hold)",
+          "ms": 4498,
+          "gas": "181226",
+          "feeWei": "1087356000000",
+          "tx": "0x89a1884e89bde1a85b8d2d3c16df633fb2a33970302c094310e7e9aa5a5586ed"
+        },
+        {
+          "name": "claim",
+          "ms": 1657,
+          "gas": "74612",
+          "feeWei": "447672000000",
+          "tx": "0x03825e5888207c56c928974144ca305042c209ec70f37b8208c1199b9aec968d"
+        }
+      ]
+    },
+    {
+      "arm": "plain",
+      "round": 3,
+      "outcome": "paid",
+      "totalMs": 1892,
+      "stages": [
+        {
+          "name": "sign",
+          "ms": 1
+        },
+        {
+          "name": "settle",
+          "ms": 1892,
+          "gas": "86152",
+          "feeWei": "516912000000",
+          "tx": "0xc21a7d9a99cc2af3ddba11df4a47381f580249e14fad690404370e6fb4a0fc88"
+        }
+      ]
+    },
+    {
+      "arm": "plaintext",
+      "round": 3,
+      "outcome": "paid",
+      "totalMs": 7998,
+      "stages": [
+        {
+          "name": "request+decide",
+          "ms": 2286,
+          "gas": "99177",
+          "feeWei": "595062000000",
+          "tx": "0x39292a46684e1a35ed43ce7804a893a5a59447327d1e03c32f2349a80ed4b44d"
+        },
+        {
+          "name": "sign",
+          "ms": 1
+        },
+        {
+          "name": "authorize (hold)",
+          "ms": 2711,
+          "gas": "181226",
+          "feeWei": "1087356000000",
+          "tx": "0xc3d8a5a2867bcce6b8081cfd3c0a39c6bb8f37bee052ced26c43aea4ea951da5"
+        },
+        {
+          "name": "claim",
+          "ms": 2687,
+          "gas": "74612",
+          "feeWei": "447672000000",
+          "tx": "0x173ec76a2651024300eb31549a7f9b288ffc91e9d93bba50445f70504fde351c"
+        }
+      ]
+    },
+    {
+      "arm": "confidential",
+      "round": 3,
+      "outcome": "paid",
+      "totalMs": 26622,
+      "stages": [
+        {
+          "name": "request",
+          "ms": 2733,
+          "gas": "352498",
+          "feeWei": "2114988000000",
+          "tx": "0x5347b2ec4a01ed36c4eb7c28b581b41ca9ed4b65c081508e5e83bca0126bd669"
+        },
+        {
+          "name": "inco decision",
+          "ms": 9356
+        },
+        {
+          "name": "finalize",
+          "ms": 3132,
+          "gas": "106833",
+          "feeWei": "640998000000",
+          "tx": "0x807c3bdba90c5022a0d63b5299f030a292662e233830315ea8702dc6c0168d8e"
+        },
+        {
+          "name": "sign",
+          "ms": 5688
+        },
+        {
+          "name": "authorize (hold)",
+          "ms": 2852,
+          "gas": "170818",
+          "feeWei": "1024908000000",
+          "tx": "0xaf347f6d2fe2cd176441bb77778342399cfabb5f1080a9881e0a3952882e15fa"
+        },
+        {
+          "name": "claim",
+          "ms": 2487,
+          "gas": "87927",
+          "feeWei": "527562000000",
+          "tx": "0xb4c86fe817f2010e8cea32bb3f2c7e184da40cd424339ddf2f5a15c22c58c420"
+        }
+      ]
+    },
+    {
+      "arm": "plaintext",
+      "round": 4,
+      "outcome": "paid",
+      "totalMs": 10857,
+      "stages": [
+        {
+          "name": "request+decide",
+          "ms": 4061,
+          "gas": "99177",
+          "feeWei": "595062000000",
+          "tx": "0x8c62b85786f4aefc2389fc87a14d81073454eb23e36aea26449f6922b4d07fa0"
+        },
+        {
+          "name": "sign",
+          "ms": 2
+        },
+        {
+          "name": "authorize (hold)",
+          "ms": 2337,
+          "gas": "181226",
+          "feeWei": "1087356000000",
+          "tx": "0xc4ce70d5b629f8894f3b938714dd71e2ebaeea89a8cef3e7671225221ce8d8c9"
+        },
+        {
+          "name": "claim",
+          "ms": 3765,
+          "gas": "74612",
+          "feeWei": "447672000000",
+          "tx": "0x6f6a8d8d7ba61b5b8271da7a393b329777a630b0b49e3c35eac089687b59e266"
+        }
+      ]
+    },
+    {
+      "arm": "confidential",
+      "round": 4,
+      "outcome": "paid",
+      "totalMs": 19005,
+      "stages": [
+        {
+          "name": "request",
+          "ms": 3008,
+          "gas": "352498",
+          "feeWei": "2114988000000",
+          "tx": "0xea56c3d53871bd12d249c5b1653d88832704f76b3ee2a1e3bc100cea4b4e9165"
+        },
+        {
+          "name": "inco decision",
+          "ms": 3797
+        },
+        {
+          "name": "finalize",
+          "ms": 2756,
+          "gas": "106857",
+          "feeWei": "641142000000",
+          "tx": "0xbed2cf812489399fe7fd839491a1d21ee5481e4fe0c5a8c45c98ec6d8083b38d"
+        },
+        {
+          "name": "sign",
+          "ms": 3451
+        },
+        {
+          "name": "authorize (hold)",
+          "ms": 2928,
+          "gas": "170818",
+          "feeWei": "1024908000000",
+          "tx": "0x160edb8cb074281e9cf27fd9a85e09d05fc38395371323fef8630bad244766d9"
+        },
+        {
+          "name": "claim",
+          "ms": 2716,
+          "gas": "87927",
+          "feeWei": "527562000000",
+          "tx": "0xb0906157f085d09f07950a302734b86334f390b9c47eee8c1c87ef35b787494d"
+        }
+      ]
+    },
+    {
+      "arm": "plain",
+      "round": 4,
+      "outcome": "paid",
+      "totalMs": 1645,
+      "stages": [
+        {
+          "name": "sign",
+          "ms": 1
+        },
+        {
+          "name": "settle",
+          "ms": 1644,
+          "gas": "86144",
+          "feeWei": "516864000000",
+          "tx": "0x1d13d4a55c18d1bb77c5ac2a5a3693168b34d6b3e023e5dc4f18a9044f34b8f2"
+        }
+      ]
+    },
+    {
+      "arm": "confidential",
+      "round": 5,
+      "outcome": "paid",
+      "totalMs": 24439,
+      "stages": [
+        {
+          "name": "request",
+          "ms": 4260,
+          "gas": "352498",
+          "feeWei": "2114988000000",
+          "tx": "0x28cdb3c3f05ce6028ebff39fed423e38f9ff1248947a3137051c244a97cc4eee"
+        },
+        {
+          "name": "inco decision",
+          "ms": 5658
+        },
+        {
+          "name": "finalize",
+          "ms": 2916,
+          "gas": "106845",
+          "feeWei": "641070000000",
+          "tx": "0xb3bd01048ccdb22d7b14e7a8b3f8c0eff9061ecc6179351f32bc55ed9b1ba358"
+        },
+        {
+          "name": "sign",
+          "ms": 3909
+        },
+        {
+          "name": "authorize (hold)",
+          "ms": 4545,
+          "gas": "170818",
+          "feeWei": "1024908000000",
+          "tx": "0x7280bfb86fe1657125b27c6863795c2568c24ecfe95ce06223570929ec9dc358"
+        },
+        {
+          "name": "claim",
+          "ms": 2846,
+          "gas": "87927",
+          "feeWei": "527562000000",
+          "tx": "0xb910f26c36ad185aae52238403833420a858bd38e0d6aebde7ee80ce1bf3b1db"
+        }
+      ]
+    },
+    {
+      "arm": "plain",
+      "round": 5,
+      "outcome": "paid",
+      "totalMs": 4003,
+      "stages": [
+        {
+          "name": "sign",
+          "ms": 1
+        },
+        {
+          "name": "settle",
+          "ms": 4002,
+          "gas": "86144",
+          "feeWei": "516864000000",
+          "tx": "0x85771d541cc2532b3d5447c93bff6b35c8f3cdffe183d6b4b7648ce42728d08f"
+        }
+      ]
+    },
+    {
+      "arm": "plaintext",
+      "round": 5,
+      "outcome": "paid",
+      "totalMs": 5752,
+      "stages": [
+        {
+          "name": "request+decide",
+          "ms": 1913,
+          "gas": "99177",
+          "feeWei": "595062000000",
+          "tx": "0x0d2b5f11dc320969753c060c96ee23a60e187a0356bbaf8e5c79e8d3f77c311b"
+        },
+        {
+          "name": "sign",
+          "ms": 1
+        },
+        {
+          "name": "authorize (hold)",
+          "ms": 1723,
+          "gas": "181206",
+          "feeWei": "1087236000000",
+          "tx": "0xfef2dffe549cb3bfc4d3216f27714c463e72784c3792cf6de345c84a2e760468"
+        },
+        {
+          "name": "claim",
+          "ms": 1792,
+          "gas": "74612",
+          "feeWei": "447672000000",
+          "tx": "0xe329cdfcb63337f3a7f002ff9939cc61fcfd77ca29ce51eaed206c78fdeb16a8"
+        }
+      ]
+    },
+    {
+      "arm": "plain",
+      "round": 6,
+      "outcome": "paid",
+      "totalMs": 3135,
+      "stages": [
+        {
+          "name": "sign",
+          "ms": 1
+        },
+        {
+          "name": "settle",
+          "ms": 3135,
+          "gas": "86164",
+          "feeWei": "516984000000",
+          "tx": "0xa42d3769ee7de1b6165786882a6945fc632409e8757e8ae285c3c48bb9afae4f"
+        }
+      ]
+    },
+    {
+      "arm": "plaintext",
+      "round": 6,
+      "outcome": "paid",
+      "totalMs": 6378,
+      "stages": [
+        {
+          "name": "request+decide",
+          "ms": 1709,
+          "gas": "99177",
+          "feeWei": "595062000000",
+          "tx": "0x8cea18cb1adb5778ff1775b77d0ff0d8cc77cb0024d18927e7c40e7d08cf66e1"
+        },
+        {
+          "name": "sign",
+          "ms": 14
+        },
+        {
+          "name": "authorize (hold)",
+          "ms": 1632,
+          "gas": "181226",
+          "feeWei": "1087356000000",
+          "tx": "0x6e0f2cd1aa36f32ddc1f9d2afe79c266b9140b6f8d006be29e4b3bfccd80ba4a"
+        },
+        {
+          "name": "claim",
+          "ms": 2688,
+          "gas": "74612",
+          "feeWei": "447672000000",
+          "tx": "0x29dd32e98ac497cab7addb7b19e36e73c21444a4512425b7c62609e7bc4b324b"
+        }
+      ]
+    },
+    {
+      "arm": "confidential",
+      "round": 6,
+      "outcome": "paid",
+      "totalMs": 22323,
+      "stages": [
+        {
+          "name": "request",
+          "ms": 2817,
+          "gas": "352498",
+          "feeWei": "2114988000000",
+          "tx": "0xfa64f1a60c785bc3ddc44ae3adfa561e4d85080d9282bfa1aa26bfd403c85355"
+        },
+        {
+          "name": "inco decision",
+          "ms": 7990
+        },
+        {
+          "name": "finalize",
+          "ms": 2806,
+          "gas": "106845",
+          "feeWei": "641070000000",
+          "tx": "0x43a6ccb84e9d4ad20362610907d98b6058c2398a3c70d759e5b3d304456ed10c"
+        },
+        {
+          "name": "sign",
+          "ms": 4083
+        },
+        {
+          "name": "authorize (hold)",
+          "ms": 2448,
+          "gas": "170838",
+          "feeWei": "1025028000000",
+          "tx": "0x2e0933ec215fc49a6a6e980985643eb24b91cab9af32a69d604d368f47e25794"
+        },
+        {
+          "name": "claim",
+          "ms": 1850,
+          "gas": "87927",
+          "feeWei": "527562000000",
+          "tx": "0x18119b0b224668921081e2d36e5d787c58ac68e8348c0f4922e0c186195db8e3"
+        }
+      ]
+    },
+    {
+      "arm": "plaintext",
+      "round": 7,
+      "outcome": "paid",
+      "totalMs": 6082,
+      "stages": [
+        {
+          "name": "request+decide",
+          "ms": 1824,
+          "gas": "99177",
+          "feeWei": "595062000000",
+          "tx": "0xac0b666b9f44dba2f68313447eed04697e624421411b48576e6b9e97a6480ab2"
+        },
+        {
+          "name": "sign",
+          "ms": 2
+        },
+        {
+          "name": "authorize (hold)",
+          "ms": 2021,
+          "gas": "181194",
+          "feeWei": "1087164000000",
+          "tx": "0xa854e57e4e9d3c8623ed269122d9ee860df2a67db4f0452ecf955f769acdef74"
+        },
+        {
+          "name": "claim",
+          "ms": 1692,
+          "gas": "74612",
+          "feeWei": "447672000000",
+          "tx": "0x2aafd43be73553e0a0d4bb6a536af4a8bfbcb9668b8ea8f9c725019c6b72a147"
+        }
+      ]
+    },
+    {
+      "arm": "confidential",
+      "round": 7,
+      "outcome": "paid",
+      "totalMs": 22011,
+      "stages": [
+        {
+          "name": "request",
+          "ms": 4046,
+          "gas": "352498",
+          "feeWei": "2115145919104",
+          "tx": "0xee6488a6d9337c764c24f02f1fc1539351d61d94e695e0e0514efc0d301a5c1d"
+        },
+        {
+          "name": "inco decision",
+          "ms": 6254
+        },
+        {
+          "name": "finalize",
+          "ms": 3013,
+          "gas": "106857",
+          "feeWei": "641142000000",
+          "tx": "0x03b68010f34ac64d93ac1822437838382e36effec6b3b2d9829e21958e10abd8"
+        },
+        {
+          "name": "sign",
+          "ms": 3257
+        },
+        {
+          "name": "authorize (hold)",
+          "ms": 2149,
+          "gas": "170838",
+          "feeWei": "1025028000000",
+          "tx": "0x3ed43cf467feb1292e20306608ea6da5ddb3517650c4813a5512922d351baaa0"
+        },
+        {
+          "name": "claim",
+          "ms": 2910,
+          "gas": "87927",
+          "feeWei": "527562000000",
+          "tx": "0x0e350096957b8935222d124da5fc3a89f0bab8de79ea1422500efaf8cbda5495"
+        }
+      ]
+    },
+    {
+      "arm": "plain",
+      "round": 7,
+      "outcome": "paid",
+      "totalMs": 1818,
+      "stages": [
+        {
+          "name": "sign",
+          "ms": 1
+        },
+        {
+          "name": "settle",
+          "ms": 1817,
+          "gas": "86144",
+          "feeWei": "516864000000",
+          "tx": "0x5a0c9ee2e375b87843aec77fcd3a429a95b1fd62913b1b57da8153dd9139263c"
+        }
+      ]
+    },
+    {
+      "arm": "confidential",
+      "round": 8,
+      "outcome": "paid",
+      "totalMs": 20857,
+      "stages": [
+        {
+          "name": "request",
+          "ms": 2983,
+          "gas": "352498",
+          "feeWei": "2114988000000",
+          "tx": "0x611ee7a9f73cbc4bcbce7a61b0ce30f143be13853b67d169b9dba322fbf63512"
+        },
+        {
+          "name": "inco decision",
+          "ms": 5361
+        },
+        {
+          "name": "finalize",
+          "ms": 2966,
+          "gas": "106845",
+          "feeWei": "641070000000",
+          "tx": "0x9cf8f67841f783e363cf24455e77598b25669faccfd311a8d60f1e715e6e061e"
+        },
+        {
+          "name": "sign",
+          "ms": 3583
+        },
+        {
+          "name": "authorize (hold)",
+          "ms": 2429,
+          "gas": "170826",
+          "feeWei": "1024956000000",
+          "tx": "0x21709525ba184e58e7e71fc1c67af223253e9633769a476d8041cb161fa7c7c3"
+        },
+        {
+          "name": "claim",
+          "ms": 3139,
+          "gas": "87927",
+          "feeWei": "527562000000",
+          "tx": "0x904bb77419a95c3dc97a8e50214b41db1498d58441044abdbb7f6374379108bb"
+        }
+      ]
+    },
+    {
+      "arm": "plain",
+      "round": 8,
+      "outcome": "paid",
+      "totalMs": 1999,
+      "stages": [
+        {
+          "name": "sign",
+          "ms": 1
+        },
+        {
+          "name": "settle",
+          "ms": 1997,
+          "gas": "86144",
+          "feeWei": "516864000000",
+          "tx": "0xaa6299435c5fb66755d10ec1ed94e12483e148f33fbf0e912299ef2c198d3598"
+        }
+      ]
+    },
+    {
+      "arm": "plaintext",
+      "round": 8,
+      "outcome": "paid",
+      "totalMs": 6193,
+      "stages": [
+        {
+          "name": "request+decide",
+          "ms": 1977,
+          "gas": "99177",
+          "feeWei": "595062000000",
+          "tx": "0x52c751bfd168af0854641cd02a30693499d5b506789592590d0c1132b9c6c9ac"
+        },
+        {
+          "name": "sign",
+          "ms": 1
+        },
+        {
+          "name": "authorize (hold)",
+          "ms": 1953,
+          "gas": "181170",
+          "feeWei": "1087020000000",
+          "tx": "0x620dcd6dda00d3c8ed6b78335bad5315920925ecac8962f6b9fd75691e24379e"
+        },
+        {
+          "name": "claim",
+          "ms": 1919,
+          "gas": "74612",
+          "feeWei": "447672000000",
+          "tx": "0x9c2d1beaf32eabba092ec4e8a6348966af181d45c521240277da094d3b87be41"
+        }
+      ]
+    },
+    {
+      "arm": "plain",
+      "round": 9,
+      "outcome": "paid",
+      "totalMs": 1995,
+      "stages": [
+        {
+          "name": "sign",
+          "ms": 1
+        },
+        {
+          "name": "settle",
+          "ms": 1994,
+          "gas": "86144",
+          "feeWei": "516864000000",
+          "tx": "0x1f1f751f2d1a7fb2cb6865dff18c57982f7c27bb449b68e3c6a631d2ce3b0e85"
+        }
+      ]
+    },
+    {
+      "arm": "plaintext",
+      "round": 9,
+      "outcome": "paid",
+      "totalMs": 6298,
+      "stages": [
+        {
+          "name": "request+decide",
+          "ms": 2055,
+          "gas": "99177",
+          "feeWei": "595062000000",
+          "tx": "0xd86ac9af7d0f7657188de2e0c00106039828dae735bc7737acaf8f4cbaf6a1a9"
+        },
+        {
+          "name": "sign",
+          "ms": 1
+        },
+        {
+          "name": "authorize (hold)",
+          "ms": 1954,
+          "gas": "181226",
+          "feeWei": "1087356000000",
+          "tx": "0x338f37cf1fb64d2627c37ae98d68b01b539d220e51e5676229cb3fc6770fd9d2"
+        },
+        {
+          "name": "claim",
+          "ms": 1859,
+          "gas": "74612",
+          "feeWei": "447672000000",
+          "tx": "0xd0463b0e62a68e284fac07885a6ce07c5785db29cd096114629a61404173afa4"
+        }
+      ]
+    },
+    {
+      "arm": "confidential",
+      "round": 9,
+      "outcome": "paid",
+      "totalMs": 17641,
+      "stages": [
+        {
+          "name": "request",
+          "ms": 2938,
+          "gas": "352498",
+          "feeWei": "2114988000000",
+          "tx": "0x5e9b5362d655b565c8ff403b00549f729cbb4bf342f5abcd1de97af65e638dd6"
+        },
+        {
+          "name": "inco decision",
+          "ms": 3545
+        },
+        {
+          "name": "finalize",
+          "ms": 3140,
+          "gas": "106857",
+          "feeWei": "641142000000",
+          "tx": "0x3dfce9b590a7e3a84f0f37af7442a9c2193c28688958044e856bc063a33dac35"
+        },
+        {
+          "name": "sign",
+          "ms": 3342
+        },
+        {
+          "name": "authorize (hold)",
+          "ms": 2460,
+          "gas": "170838",
+          "feeWei": "1025028000000",
+          "tx": "0xfe73768839e234aa13166ad9ae69771db5045e7cbaf83b71ad6c5213a6681623"
+        },
+        {
+          "name": "claim",
+          "ms": 1876,
+          "gas": "87927",
+          "feeWei": "527562000000",
+          "tx": "0x41a1b64b012db26059e9afd0878e51c83d17d313b8b9dc75aac2cf4fe853c70c"
+        }
+      ]
+    }
+  ]
+}

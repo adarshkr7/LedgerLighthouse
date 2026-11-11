@@ -36,8 +36,8 @@ deployments:
           min_tcb_evaluation_data_number: 18
           tdx: {}
       enclaves:
-        - id: yZDwASpQFNQsPGY5Dr6JzQKShom9cm3DjV+qGXZLtHsAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==
-        - id: 3nT2O0AG+9diiv80qOK9vcDB+o7ZfrF3ysT4BrqHxVwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==
+        - id: P7Osvn1tRu3l9BIuZYnKNkhNvvnr0xaz5ln9845FyacAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==
+        - id: QDX7GTFGL9Jy5i7p4E4APXtWM28jkx/ROtNLBj8j01cAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==
       endorsements:
         - any: {}
       fees: endorsing_node
@@ -48,13 +48,13 @@ deployments:
       - name: USDC_ADDRESS
         value: pGJwa1ggtd3PjSsymq07r/AEAcdqSC3cTCjsr1sQePNElk6zEUpkbmFtZVgcfT+ByG/0Xn20xfAswUt/fLEg4/JUg/8PCa1xG2Vub25jZU95Ml8Gmb4QColuuYI2sPVldmFsdWVYOkt4heVSY3DLl+aTZRl+Lf8dfhj2NDMAP6GyIDwxVCSn9H2bkup6Oscq+E3GZ01Cp3BeikKNm/caJV0=
       - name: SERVICE_TOKEN
-        value: pGJwa1gg5wgt7DJtpDY2ALIZc6pKvsSHguw8JX4GgmmIdfNu0R1kbmFtZVgdq7zYYpaveQ3psMzsYxHMShewY4870JFs6IEj5ftlbm9uY2VPZytz7zRlNn5561lUICgpZXZhbHVlWFC9fr0pyvKY248T9j1X5ZIl1zvh8AHmMuJtt5usakMH9kumNNy+Buf+hHqRsakfUY5zCG7FC1R46ysW0XrVYUXCsHFkBoz8Gd8k+TCXEG+1JQ==
+        value: pGJwa1ggXybsE0VEV7E92eodsyRzdI+nHV+DI6VecjBsv0p5kRNkbmFtZVgdWIHFVay6YoS4krLTkSuNOregDkIxrhkx2qzun7plbm9uY2VP2/sGuaFxH9LtwAUcOrfGZXZhbHVlWFBVvS7BjNeAXm+Nlq+S6QP94sP5CJBhOgNGT+NQ9ou367S4lEnlwwv/fuk3gJyUkoALbjhKCmXKD5xW4QzK8h/8TGGH0OMQyrF7AUWZybkMyA==
       - name: POLICY_VAULT_ADDRESS
-        value: pGJwa1gg20wcAw/Sb/C3iJ1OQAfBvOs1lWMaspolS8aVUgEy7EJkbmFtZVgkIheYpL1Wv3LtAcy9T9zJeJ9RWwCLmvHuK3F8NG02Ef4wtvXaZW5vbmNlT89Pod/GkM4wNpkMnbqvYGV2YWx1ZVg6OvWyn+OnjyikE9Luc+QfRBoW6QHzUcP8WEf67Il3gRMC7X34U0M1J81Dbl42YFuO4HZerKdjsZEw0Q==
+        value: pGJwa1ggJYfZE8WVTXi1Eq/kJnFhRvISVXp7IuxCP4Zc1TkdXXtkbmFtZVgkt7Qj0m5JM0jZJfKO9jrWLu4u9DSbC/uuTNZHMRtKlGReUNb3ZW5vbmNlT7aL2jRLSJS/wuIYMXxbKmV2YWx1ZVg6TyJMZVRjfYxz7SEdSOsopOlPHHO8/s8wFm4bX4NMADetpyXkaT9kmuGeNHed11WOPl5xAN+hz2+okQ==
     machines:
       default:
         provider: oasis1qp2ens0hsp7gh23wajxa4hpetkdek3swyyulyrmz
         offer: playground_short
-        id: "0000000000000745"
+        id: "0000000000000750"
 tooling:
   version: 0.19.1

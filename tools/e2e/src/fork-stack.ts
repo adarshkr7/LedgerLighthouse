@@ -42,8 +42,9 @@ import {
 } from "@ntux402/mock-api";
 import { SignerClient } from "@ntux402/orchestrator";
 import { AUTH_CAPTURE_ESCROW, ERC3009_TOKEN_COLLECTOR, USDC_BASE_SEPOLIA, escrowPolicyVaultAbi } from "@ntux402/shared";
-import { InMemoryKeyStore, OnChainVaultReader, createSignerServer, openSigner } from "@ntux402/signer";
+import { OnChainVaultReader, createSignerServer, inMemoryKeyStore, openSigner } from "@ntux402/signer";
 
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const;
 export const CHAIN_ID = 84532;
 export const USDC = USDC_BASE_SEPOLIA as Address;
 export const INCO: Address = "0x4b9911b0191B0b6a6eA8F2Ed562e20Cff5AC8624";
@@ -103,6 +104,16 @@ export async function startForkStack(rpc: string): Promise<ForkStack> {
   const pub = createPublicClient({ chain, transport: http(rpc) }) as PublicClient;
   const request = (method: string, params: unknown[]): Promise<unknown> => pub.request({ method, params } as never);
 
+  // A fork pinned to an older block starts with that block's clock, while the vendor's
+  // hold and the payment loop's deadlines come from the wall clock. Move the fork's
+  // clock to now, so the two agree as they do on the live network.
+  const head = await pub.getBlock();
+  const wall = BigInt(Math.floor(Date.now() / 1000));
+  if (head.timestamp < wall - 30n) {
+    await request("evm_setNextBlockTimestamp", [toHex(wall)]);
+    await request("evm_mine", []);
+  }
+
   const funded = async () => {
     const key = generatePrivateKey();
     const account = privateKeyToAccount(key);
@@ -128,12 +139,20 @@ export async function startForkStack(rpc: string): Promise<ForkStack> {
   const shim = await deploy("ForkVerifier.sol/ForkVerifier.json", [originalCode]);
   await request("anvil_setCode", [verifier, await pub.getCode({ address: shim })]);
 
-  const vault = await deploy("EscrowPolicyVault.sol/EscrowPolicyVault.json", [AUTH_CAPTURE_ESCROW, ERC3009_TOKEN_COLLECTOR]);
+  // The enrollment key does not depend on the vault, so it is read before the vault
+  // that pins it exists, from the same seed the signer then uses.
+  const seed = generatePrivateKey();
+  const enrollmentSigner = (await inMemoryKeyStore({ chainId: CHAIN_ID, vault: ZERO_ADDRESS }, seed).enrollment()).address;
+  const vault = await deploy("EscrowPolicyVault.sol/EscrowPolicyVault.json", [
+    AUTH_CAPTURE_ESCROW,
+    ERC3009_TOKEN_COLLECTOR,
+    enrollmentSigner,
+  ]);
   const deployBlock = await pub.getBlockNumber();
   console.log(`  Inco's verifier ${verifier} replaced with ForkVerifier: this run does not test decisions`);
   console.log(`  EscrowPolicyVault ${vault}`);
 
-  const keys = new InMemoryKeyStore();
+  const keys = inMemoryKeyStore({ chainId: CHAIN_ID, vault }, seed);
   const signerServer = createSignerServer({
     signer: await openSigner({
       vault: new OnChainVaultReader({ rpcUrl: rpc, vaultAddress: vault, chainId: CHAIN_ID }),

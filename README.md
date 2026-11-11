@@ -22,10 +22,9 @@ when the payment is made, through x402's auth-capture escrow.
 
 Full design: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
-> **This branch is ahead of what is deployed.** The code here spends through x402's auth-capture
-> escrow and has run only on a local fork, with a stand-in for Inco's decisions. The addresses,
-> transactions and vault named below describe the earlier design on tag `arxiv-v1.1`, whose signer
-> gave plain EIP-3009 transfers. This code refuses to run against that vault.
+> **Paper artifact.** This repository is the artifact of *A Payment Firewall for AI Agents: Bounded Spending
+> Under Agent Compromise, and What Refunds Leak* (arXiv, v3, tag `arxiv-v3`). [`ARTIFACT.md`](ARTIFACT.md) maps
+> every claim in the paper to its test or recorded run, and says how to reproduce each, offline or live.
 
 ---
 
@@ -53,29 +52,40 @@ Base Sepolia, chain id `84532`.
 
 | Contract | Address | Deployment tx |
 |---|---|---|
-| `PolicyVault` | [`0x7F5833730033a1d320b3536CE08FD641330a4966`](https://sepolia.basescan.org/address/0x7F5833730033a1d320b3536CE08FD641330a4966) | [`0x8edbc7c2…fcbfa9`](https://sepolia.basescan.org/tx/0x8edbc7c2d24af8d89eb57f94508ed670380e4c9a1f489b7073cc78cdfffcbfa9) |
+| `EscrowPolicyVault`, enrollment key in the enclave | [`0x466AB18595d2E71A87928c8d4A45F57a5D5ADFd5`](https://sepolia.basescan.org/address/0x466AB18595d2E71A87928c8d4A45F57a5D5ADFd5) | [`0x4135f116…d17065`](https://sepolia.basescan.org/tx/0x4135f116e88c661e29eda14ed6750fa9c53d932edda115af670e4c9328d17065) |
+| `EscrowPolicyVault`, enrollment key from a local seed | [`0xdd450306ca3905612a96Ff92aDbee23B48385014`](https://sepolia.basescan.org/address/0xdd450306ca3905612a96Ff92aDbee23B48385014) | [`0xb5ef280c…7a55ac`](https://sepolia.basescan.org/tx/0xb5ef280c808c3f8e3d6621f7aabf2746795306695cdd9eb3862e98fa9e7a55ac) |
+| `PlaintextEscrowVault` (baseline) | [`0x9c9D87550C556cD51591CbBDbe6B28895761D224`](https://sepolia.basescan.org/address/0x9c9D87550C556cD51591CbBDbe6B28895761D224) | |
 | `TraceAnchor` | [`0x065d5E16160159cAB7D841818aBc92b4E85D5818`](https://sepolia.basescan.org/address/0x065d5E16160159cAB7D841818aBc92b4E85D5818) | [`0x068c2d88…2f9900`](https://sepolia.basescan.org/tx/0x068c2d8883bfe2a294164da805274905aa33c85f2a68a27ab1c06892972f9900) |
 
-The PolicyVault was redeployed twice on 9 October 2026 and again on 19 October. [`0x0C759D06…F15921`](https://sepolia.basescan.org/address/0x0C759D06a1c14F43852D7b078Db2f8C342F15921) was deployed before each payer was bound to one goal (`48805e9`), and the adversary campaign's payer-capture attack succeeded against it. [`0x518B8701…3522c`](https://sepolia.basescan.org/address/0x518B8701484ba99A38f60090cd4a2cc710d3522c) added the binding but kept the per-call cap public. [`0x052E52a2…4feD8`](https://sepolia.basescan.org/address/0x052E52a28AA15e0B556de4FCe3d0BEBb7EB4feD8) encrypted the cap but signed every authorization for an hour. The current vault ends each authorization at the vendor's hold and returns unpaid approvals to the budget. Each log in `docs/runs` names the vault it ran against. The current vault is not yet source-verified on Basescan; TraceAnchor is.
+The two escrow vaults run the same code; only the enrollment address, the vault's own address and the EIP-712
+domain separator built from it differ. Each is the operator of commerce-payments' `AuthCaptureEscrow` v1.1.0.
+Earlier designs, for earlier versions of the paper, ran on PolicyVaults
+[`0x0C759D06…F15921`](https://sepolia.basescan.org/address/0x0C759D06a1c14F43852D7b078Db2f8C342F15921) (before each payer was bound to one goal; the payer-capture attack succeeded against it),
+[`0x518B8701…3522c`](https://sepolia.basescan.org/address/0x518B8701484ba99A38f60090cd4a2cc710d3522c) (public cap),
+[`0x052E52a2…4feD8`](https://sepolia.basescan.org/address/0x052E52a28AA15e0B556de4FCe3d0BEBb7EB4feD8) (authorizations valid for an hour),
+[`0x132DDf2b…53FBC`](https://sepolia.basescan.org/address/0x132DDf2b66A1595f10a3104f272BeB1236c53FBC),
+[`0x7F583373…a4966`](https://sepolia.basescan.org/address/0x7F5833730033a1d320b3536CE08FD641330a4966) (attempt budget; tag `arxiv-v1.1`)
+and EscrowPolicyVault [`0x08AAb0cF…C9C99`](https://sepolia.basescan.org/address/0x08AAb0cF0c3D2E7a8B3b52AD01B6db8Da70C9C99) (tag `arxiv-v2`).
+Each log in `docs/runs` names the vault it ran against.
 
 Settlement asset: USDC at [`0x036CbD53842c5426634e7929541eC2318f3dCF7e`](https://sepolia.basescan.org/address/0x036CbD53842c5426634e7929541eC2318f3dCF7e).
 
-Sapphire testnet: ROFL app `rofl1qr0fv0qs2u8vmmah0ucmwegcj2cdz7kj4qzjduhp` is registered, 100 TEST
-staked, with both enclave measurements whitelisted in its on-chain policy. That registration is
-permanent and checkable with `oasis rofl show`.
-
-A *running* replica is a separate matter: ROFL compute is rented by the hour, and no machine is
-rented at present. So the enclave deployment is reproducible from the manifest rather than currently
-live, and any run made without one falls back to the local key store — which is the assumption the
-enclave exists to retire.
+Sapphire testnet: ROFL app `rofl1qr0fv0qs2u8vmmah0ucmwegcj2cdz7kj4qzjduhp`, 100 TEST staked, with the
+accepted enclave measurements in its on-chain policy (`oasis rofl show`). The signer image is pinned by digest in
+`services/signer/compose.yaml`. ROFL compute is rented by the hour; the machine that ran the 11 November 2026
+evidence is recorded in `docs/runs/enclave-v5-2026-11-11-identity.txt`, and no machine need be running for that
+record to be checked.
 
 ### Transactions produced by the running system
 
+From the 11 November 2026 campaign, signer in the enclave (`docs/runs/escrow-enclave-2026-11-11-adversary.log`):
+
 | What | Transaction |
 |---|---|
-| `finalizeDecision` — APPROVED | [`0xd38c86d5…284d95`](https://sepolia.basescan.org/tx/0xd38c86d5e327c80294f444598a00e1c3cd2ea90659194d82b74a006bbd284d95) |
-| `finalizeDecision` — REJECTED | [`0x407f36fd…3e704c`](https://sepolia.basescan.org/tx/0x407f36fdabaa6f8d5763dc1310ab672d3ed24b3ce2300adad37e14d35b3e704c) |
-| `transferWithAuthorization` — settled | [`0x0bf0a2ff…117b8d`](https://sepolia.basescan.org/tx/0x0bf0a2ffae8b5ffdaba66b5dd4768b6c05d792f2830d35e3635f12d07e117b8d) |
+| `finalizeDecision`, approved | [`0x6963e0b2…dbebb3c`](https://sepolia.basescan.org/tx/0x6963e0b2b81c874b6b7e2c786464184d6d4789cd3fb93136a6f24af1c3dc7bcb) |
+| `finalizeDecision`, rejected (one unit over the encrypted cap) | [`0xe4f0f259…e31d64`](https://sepolia.basescan.org/tx/0xe4f0f259b02842cc4d1975375e4997549c54a7af36d93cd4fd23cece78e31d64) |
+| Escrow hold funded with the enclave's signature, through the vault | [`0x21e21cf1…a00e52d`](https://sepolia.basescan.org/tx/0x21e21cf17474b43684338a2a76e91c2f3d75f785443c2f602ef808eb6a00e52d) |
+| Sweep of a closed goal to its owner, signed in the enclave | [`0x6d5fa1da…de9ef18`](https://sepolia.basescan.org/tx/0x6d5fa1da8dc2eca050120c759eeae4767a34e65cdd210e99fb6b934cede9ef18) |
 
 The rejection is on chain deliberately. An over-cap request lands and bounces visibly rather than
 reverting into silence — a policy that never fires is indistinguishable from one that does not work.
@@ -110,26 +120,28 @@ against the 402 body, because the vault never sees the 402. The bound is the con
 `perCallCap`, the allowlist and `callsRemaining`:
 
 ```text
-loss ceiling = perCallCap × callsRemaining, paid only to an allowlisted payee
+lifetime vendor payments <= min(budget, perCallCap × calls), each to an allowlisted payee
 ```
 
-The cap is encrypted, so neither a vendor nor a compromised orchestrator can read this ceiling.
-Each approved amount only tells them the cap is at least that much.
+The paper proves this by hand over an explicit transition model, for a goal whose enrollment was
+authentic and whose signer is uncompromised, with Inco's evaluation and attestations correct. The
+invariants behind it are tested by stateful fuzzing against the deployed escrow's code, by mutation,
+and by a live campaign that extracts exactly to the ceiling. It is not mechanised.
 
-**This is a design property, not a theorem.** It has not been formally modelled and no proof is
-claimed for it. Establishing a threat model in which the adversary's channel is natural language, and
-stating this bound precisely against it, is open work rather than finished work.
+The limits are encrypted, but each decision is public, so every request answers one question about
+them. A public attempt budget caps the number of questions; on realistic caps, a vendor with five of
+them prices within a few percent of the cap. Encryption here buys little against a probing vendor.
 
 ---
 
 ## Mechanism, in brief
 
 ```text
-AI Orchestrator → attacker-controlled 402 terms → PolicyVault → Inco confidential computation
+AI Orchestrator → attacker-controlled 402 terms → EscrowPolicyVault → Inco confidential computation
 → APPROVE / REJECT → Authorization Signer (enclave key) → x402 facilitator → vault → escrow → API
 ```
 
-Everything left of `PolicyVault` is untrusted. Everything right of `APPROVE / REJECT` acts only on
+Everything left of `EscrowPolicyVault` is untrusted. Everything right of `APPROVE / REJECT` acts only on
 verified on-chain records.
 
 Three properties carry the design:
@@ -153,12 +165,13 @@ Each is derived and justified in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ## Verifying this without trusting us
 
-1. **Read the contracts.** Both addresses above are source-verified on Basescan.
-2. **Check a decision.** The APPROVED and REJECTED `finalizeDecision` transactions are listed above.
-3. **Check a settlement.** The `transferWithAuthorization` transaction is listed above.
-4. **Check custody.** Goal #52's payer `0xbAe2E2CFE7f612287781E9DdFee46F4C0C55b25b` appears in the
-   enclave's log as the address it minted and in the vault as that goal's `payer` — and in no key
-   file on any disk.
+1. **Read the contracts.** The source is in `contracts/src`; `contracts/broadcast` records each deployment, and the
+   deployed code can be compared with a local build (`forge build`, then `cast code`).
+2. **Check a decision.** The approved and rejected `finalizeDecision` transactions are listed above.
+3. **Check a payment.** The escrow hold above moved the payer's tokens only through the vault's `authorize`.
+4. **Check custody.** The vault's `enrollmentSigner()` is `0x5Ddd4f587818B39960987ea4Df34b9D94E29193a`, the key
+   Oasis's key manager derives for this app's admitted enclaves; `docs/runs/enclave-v5-2026-11-11-identity.txt`
+   records the app policy, the replica and the signer's `/health` reporting that key with `"store":"rofl"`.
 5. **Verify a trace.** The standalone verifier re-derives every step hash, recomputes the Merkle
    root, and cross-checks each attestation against `PolicyVault`. It needs only the trace file and a
    public RPC.
@@ -178,10 +191,11 @@ Stated here rather than deferred to a roadmap.
 - **A payment that is never claimed needs someone to reclaim it.** The budget and call come back only
   when `reclaimExpired` is called, once the window or the capture deadline has passed. Anyone may
   call it; nothing calls it automatically. `pnpm --filter @ntux402/e2e run reclaim` finds them.
-- **The console trusts the orchestrator for the payer address.** A compromised orchestrator can name
-  an address it controls, and the money funded there is gone without touching the vault or the
-  enclave. Compare the address with the enclave's own log before funding. Fixing this needs an
-  attestation from the signer that the console verifies.
+- **A compromised signer takes the funded balance.** The payer is an ordinary key held by the signer,
+  so the bound assumes the signer is not compromised. Only a smart-account payer would remove that.
+- **Setup rests on the console.** Enrollment stops the orchestrator substituting a payer, but the
+  console and the user's RPC endpoint are trusted, and the console pins the vault and the enrollment
+  address at build time.
 - **Strictly sequential spends per goal.** `pendingSeq` must be zero, because the public call counter
   is only decremented at finalization and a second in-flight spend would read a stale count.
 - **No enclave measurement of our own application code** is attested, and Inco exposes no
@@ -222,7 +236,7 @@ cp .env.example .env
 | Variable | Role |
 |---|---|
 | `ORCHESTRATOR_RELAY_KEY` | **Gas only.** Submits `requestSpend` / `finalizeDecision`, authorizes nothing |
-| `FACILITATOR_PRIVATE_KEY` | **Gas only.** Submits `transferWithAuthorization`, holds no user funds |
+| `FACILITATOR_PRIVATE_KEY` | **Gas only.** Submits the vault's `authorize` with the payer's signature, holds no user funds |
 | `SIGNER_ROFL_SOCKET` | `/run/rofl-appd.sock`. Set **only** inside a deployed enclave |
 | `SIGNER_REQUIRE_ROFL` | `true` refuses to boot the signer without an enclave, so the file-store fallback cannot be enabled by accident |
 | `SIGNER_SERVICE_TOKEN` | What the orchestrator *presents* to the signer. Distinct from `SERVICE_TOKEN`, which is what a service *demands* of its own callers |
@@ -293,17 +307,21 @@ Two traps worth knowing: `oasis rofl build` will not run on native Windows, and 
 
 | Path | Contents |
 |---|---|
-| `contracts/` | `PolicyVault`, `TraceAnchor`, Foundry tests, deployment broadcasts |
+| `contracts/` | `EscrowPolicyVault`, `PolicyVault`, baselines, `KeyReleaseVerifier`, `TraceAnchor`; Foundry tests and fixtures; deployment broadcasts |
 | `services/orchestrator/` | The untrusted component: agent loop, payment loop, relay |
 | `services/signer/` | Authorization Signer. Runs in the ROFL enclave; holds the payer keys |
 | `services/trace/` | Trace builder, Merkle accumulator, and the standalone verifier |
-| `services/facilitator/` | Self-hosted x402 v1 facilitator. Outside the trust boundary |
+| `services/facilitator/` | Self-hosted x402 facilitator for the auth-capture escrow. Outside the trust boundary |
 | `packages/shared/` | Types, the x402 client, chain helpers, the shared HTTP guard |
 | `apps/web/` | Console — MetaMask goal opening, funding, run visualisation |
 | `mock-api/` | Mock resource server — fabricated data at chosen prices |
 | `tools/e2e/` | Keygen, funding, the end-to-end demo and adversary runners, and the sweep tool |
 | `scripts/` | `dev`, `verify`, ABI sync, and the CI import-boundary check |
-| `docs/` | Architecture, and recorded runs |
+| `docs/runs/` | Every recorded run: logs, raw benchmark records, enclave identity. Index in its README |
+| `docs/ARCHITECTURE.md` | The design, at more length than the paper |
+| `paper/arxiv-v3/` | The paper's source, built PDF, and the script that generates its tables from `docs/runs` and `paper/eval` |
+| `paper/eval/` | Injection study harnesses and answers; the leakage computation |
+| `ARTIFACT.md` | Which record backs which claim, and how to reproduce it |
 
 The standalone verifier referenced above lives in [`services/trace/`](services/trace/): it needs only
 a trace file and a public RPC, and depends on no service in this repository.

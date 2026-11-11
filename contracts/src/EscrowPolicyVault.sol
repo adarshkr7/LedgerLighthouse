@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.29;
 
+import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
+
 import {PolicyVault} from "./PolicyVault.sol";
 
 /// The parts of commerce-payments' AuthCaptureEscrow this vault calls.
@@ -67,12 +70,29 @@ interface IAuthCaptureEscrow {
 ///
 /// `Paid` and `Credited back` are exclusive and final. See `reclaimExpired`.
 ///
+/// ## Enrollment
+///
+/// A goal names its payer, and the user funds that address. The user's console
+/// learns it through the orchestrator, which the threat model assumes is
+/// compromised, so on its own the address proves nothing: a hostile orchestrator
+/// can name a key it holds and take whatever the user sends. So a goal opens only
+/// with an enrollment statement signed by `enrollmentSigner`, a key that only the
+/// attested signer can derive, saying that this payer was derived for this owner
+/// under this enrollment id. The EIP-712 domain carries the chain and this vault.
+/// `msg.sender` is the owner, so a statement issued for one wallet opens nothing
+/// for another, and the payer binding makes each statement usable once.
+///
+/// The signer derives each payer from the owner and the enrollment id, so no
+/// statement for a payer can ever name a different owner. A setup transaction
+/// that is dropped therefore leaves the payer unbound but still bindable only by
+/// its owner, and funding sent to it is never exposed to another goal.
+///
 /// ## What this does not do
 ///
 /// A compromised enclave can still sign anything with the payer's key, including a
 /// plain transfer. The vendor's bond, the dispute window and a vendor-signed hold
 /// are not here. See docs/escrow-design.md.
-contract EscrowPolicyVault is PolicyVault {
+contract EscrowPolicyVault is PolicyVault, EIP712 {
     /// What each escrowed spend adds to the frozen SpendRecord.
     struct Order {
         /// The vendor must claim before this; after it the funds can go back.
@@ -89,9 +109,21 @@ contract EscrowPolicyVault is PolicyVault {
     /// Pinned: a caller-chosen collector is a caller-chosen token pull.
     address public immutable collector;
 
+    /// The key whose signature makes a payer acceptable. Fixed at deployment.
+    address public immutable enrollmentSigner;
+
+    bytes32 public constant ENROLLMENT_TYPEHASH =
+        keccak256("Enrollment(address payer,address owner,bytes32 enrollmentId)");
+
     mapping(uint256 goalId => mapping(uint64 seq => Order)) internal _orders;
 
+    /// The enrollment id each goal was opened under. With the owner, it is what
+    /// the signer derives the payer's key from, so the key can be found again
+    /// from the chain alone.
+    mapping(uint256 goalId => bytes32) public goalEnrollment;
+
     event KeyReleased(uint256 indexed goalId, uint64 indexed seq, bytes32 key);
+    event GoalEnrolled(uint256 indexed goalId, bytes32 enrollmentId);
 
     error UseRequestEscrowSpend();
     error AmountTooLarge();
@@ -102,10 +134,46 @@ contract EscrowPolicyVault is PolicyVault {
     error GoalStillOpen();
     error NotVendor();
     error WrongKey();
+    error UseOpenEnrolledGoal();
+    error InvalidEnrollment();
+    error InvalidEnrollmentSigner();
 
-    constructor(IAuthCaptureEscrow escrow_, address collector_) {
+    constructor(IAuthCaptureEscrow escrow_, address collector_, address enrollmentSigner_)
+        EIP712("EscrowPolicyVault", "3")
+    {
+        require(enrollmentSigner_ != address(0), InvalidEnrollmentSigner());
         escrow = escrow_;
         collector = collector_;
+        enrollmentSigner = enrollmentSigner_;
+    }
+
+    // ------------------------------------------------------------- enrollment
+
+    /// @dev A goal here needs an enrollment statement, so the unchecked path is closed.
+    function openGoal(OpenGoalParams calldata) external payable override returns (uint256) {
+        revert UseOpenEnrolledGoal();
+    }
+
+    /// @notice `openGoal`, after checking that the signer enrolled this payer for
+    /// the sender. Everything else about the goal is exactly as in PolicyVault.
+    function openEnrolledGoal(OpenGoalParams calldata params, bytes32 enrollmentId, bytes calldata signature)
+        external
+        payable
+        returns (uint256 goalId)
+    {
+        (address signer, ECDSA.RecoverError failure,) =
+            ECDSA.tryRecover(enrollmentDigest(params.payer, msg.sender, enrollmentId), signature);
+        require(failure == ECDSA.RecoverError.NoError && signer == enrollmentSigner, InvalidEnrollment());
+
+        goalId = _openGoal(params);
+        goalEnrollment[goalId] = enrollmentId;
+        emit GoalEnrolled(goalId, enrollmentId);
+    }
+
+    /// @notice What `enrollmentSigner` signs for one payer. Exposed so a client can
+    /// check a statement against the deployed vault before it sends anything.
+    function enrollmentDigest(address payer, address owner, bytes32 enrollmentId) public view returns (bytes32) {
+        return _hashTypedDataV4(keccak256(abi.encode(ENROLLMENT_TYPEHASH, payer, owner, enrollmentId)));
     }
 
     // ------------------------------------------------------------ spend cycle

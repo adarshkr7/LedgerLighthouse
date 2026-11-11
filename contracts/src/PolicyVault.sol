@@ -235,7 +235,13 @@ contract PolicyVault {
     ///
     /// There is no plaintext check that the cap is positive, because there is
     /// no plaintext cap. A zero cap only makes every request reject.
-    function openGoal(OpenGoalParams calldata params) external payable returns (uint256 goalId) {
+    function openGoal(OpenGoalParams calldata params) external payable virtual returns (uint256 goalId) {
+        return _openGoal(params);
+    }
+
+    /// @dev The whole of `openGoal`, so a vault that adds a precondition can
+    /// check it first and then open the goal exactly as this one does.
+    function _openGoal(OpenGoalParams calldata params) internal returns (uint256 goalId) {
         require(msg.value == 2 * inco.getFee(), FeeNotPaid());
         require(params.payer != address(0), InvalidPayer());
         // Structural, so it reverts: naming a payer that is already somebody

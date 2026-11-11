@@ -64,6 +64,7 @@ import {
   networkFromEnv,
   vaultAbi,
 } from "./config.js";
+import { enroll } from "./enroll.js";
 import { assertEscrowSigner, assertEscrowVault, decisionSource, mockVendor } from "./escrow.js";
 
 loadDotEnv();
@@ -148,7 +149,7 @@ console.log(`  vendor     ${vendor}  (the only allowlisted payee)`);
 // Before openGoal, because the payer address is a field of the goal record
 // (ARCHITECTURE.md). Doing it afterwards would need a mutable payer field, and a
 // mutable payer field lets whoever can write it redirect every signature.
-rule("1. mint the ephemeral payer key");
+rule("1. enroll the ephemeral payer");
 
 // `SIGNER_SERVICE_TOKEN`, not `SERVICE_TOKEN` — the first is what this script
 // presents, the second is what a service demands of its own callers. Reading
@@ -160,10 +161,11 @@ const signer = new SignerClient(
   undefined,
   optional("SIGNER_SERVICE_TOKEN") ?? optional("SERVICE_TOKEN"),
 );
-const payer = await signer.mintPayer();
+const enrolled = await enroll({ signer, reader: publicClient, vault: vaultAddress, owner: user.address, chainId });
+const payer = enrolled.payer;
 console.log(`  payer      ${payer}`);
-console.log(`  The signer generated this key and returned only the address.`);
-console.log(`  Nothing else in the system can produce a signature for it.`);
+console.log(`  The signer derived this key for this wallet and signed a statement saying so,`);
+console.log(`  checked here against the vault's enrollment key before the goal is opened.`);
 
 // ------------------------------------------------------------- open the goal
 rule("2. open the goal — the user's own transaction");
@@ -194,7 +196,7 @@ t = now();
 const openHash = await userWallet.writeContract({
   address: vaultAddress,
   abi,
-  functionName: "openGoal",
+  functionName: "openEnrolledGoal",
   args: [
     {
       budgetCiphertext,
@@ -207,6 +209,8 @@ const openHash = await userWallet.writeContract({
       expiry: BigInt(Math.floor(Date.now() / 1000) + 7 * 24 * 3600),
       allowlist: [vendor],
     },
+    enrolled.enrollmentId,
+    enrolled.signature,
   ],
   // One Inco fee per encrypted input: the budget and the cap.
   value: 2n * incoFee,

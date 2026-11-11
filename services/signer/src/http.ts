@@ -2,7 +2,7 @@
  * HTTP surface for the Authorization Signer. Two routes, and the shape of the
  * API *is* the security argument:
  *
- *   POST /payer           -> { address }        mint an ephemeral payer key
+ *   POST /enrollments     -> { owner, enrollmentId }  derive a payer, sign a statement
  *   POST /authorizations  -> { goalId, seq }    sign the finalized record
  *   POST /sweeps          -> { goalId }         return the payer balance to the owner
  *
@@ -33,8 +33,9 @@ const MAX_BODY_BYTES = 8 * 1024;
  * the process binds loopback unless told otherwise. See `guard.ts`.
  *
  * Worth restating what these routes do and do not expose, because it is easy to
- * over-read the risk. `POST /payer` generates a key and returns an address — a
- * caller can create unused keys, which grants nothing. `POST /authorizations`
+ * over-read the risk. `POST /enrollments` derives the payer for an owner and
+ * signs a statement saying so; the payer can only ever be bound by that owner,
+ * so a caller who asks for someone else's statement gains nothing. `POST /authorizations`
  * takes only `(goalId, seq)` and signs only what the chain already finalized as
  * approved. The key never crosses this boundary in either direction.
  *
@@ -51,7 +52,7 @@ const MAX_BODY_BYTES = 8 * 1024;
  * file.
  */
 
-/** Key minting is cheap to call and expensive to serve. */
+/** Enrollment is cheap to call and costs two enclave derivations. */
 const MINT_LIMIT = new RateLimiter({ windowMs: 60_000, max: 30 });
 
 /** Signing is chain-read-bound; the limit is generous but not absent. */
@@ -99,12 +100,12 @@ export interface SignerServerOptions {
    * /health. Lets a caller check custody from the signer's own account instead
    * of guessing from its URL. Counts only; never an address or a key.
    */
-  readonly custody?: () => Promise<{ readonly store: "rofl" | "file" | "memory"; readonly keys: number; readonly nextId?: number | undefined }>;
+  readonly custody?: () => Promise<{ readonly store: "rofl" | "file" | "memory"; readonly enrollmentSigner: string }>;
 }
 
 /** Why the signer is not serving, as /health reports it. See `createBootFailureServer`. */
 export interface BootFailure {
-  /** The boot step that failed, e.g. "key index rebuild". */
+  /** The boot step that failed, e.g. "settlement binding". */
   readonly stage: string;
   /** The first line of the error, with URL paths and queries removed. */
   readonly detail: string;
@@ -113,6 +114,8 @@ export interface BootFailure {
   /** When boot first failed, ISO 8601. */
   readonly since: string;
   readonly attempts: number;
+  /** The enrollment address, when boot got far enough to derive it. */
+  readonly enrollmentSigner?: string | undefined;
 }
 
 /**
@@ -187,11 +190,24 @@ export function createSignerServer(options: SignerServerOptions): Server {
         return;
       }
 
-      if (req.method === "POST" && path === "/payer") {
+      if (req.method === "POST" && path === "/enrollments") {
         if (rejected(req, res, { limiter: MINT_LIMIT })) return;
-        const { address } = await signer.mintPayer();
-        log(`POST /payer -> ${address}`);
-        send(res, 201, { address }, cors);
+        let parsed: unknown;
+        try {
+          const raw = await readBody(req);
+          parsed = JSON.parse(raw === "" ? "null" : raw);
+        } catch (e) {
+          send(res, 400, { error: e instanceof Error ? e.message : String(e) }, cors);
+          return;
+        }
+        const outcome = await signer.enroll(parsed);
+        if (!outcome.ok) {
+          log(`POST /enrollments -> ${outcome.status} ${outcome.error}`);
+          send(res, outcome.status, { error: outcome.error }, cors);
+          return;
+        }
+        log(`POST /enrollments -> ${outcome.value.payer} for ${outcome.value.owner}`);
+        send(res, 201, outcome.value, cors);
         return;
       }
 

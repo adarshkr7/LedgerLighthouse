@@ -27,6 +27,7 @@ import { ERC3009_TOKEN_COLLECTOR, escrowPolicyVaultAbi, networkForChainId } from
 
 import { forkAttestation } from "./escrow.js";
 import { CHAIN_ID, USDC, startForkStack } from "./fork-stack.js";
+import { enroll } from "./enroll.js";
 
 const RPC = process.env["ESCROW_ANVIL_RPC"];
 if (!RPC) {
@@ -67,7 +68,8 @@ const loopFor = () =>
 // ----------------------------------------------------------------- a goal
 
 async function openFundedGoal(budget: bigint): Promise<{ goalId: bigint; payer: Address }> {
-  const payer = await signer.mintPayer();
+  const enrolled = await enroll({ signer, reader: pub, vault, owner: user.account.address, chainId: CHAIN_ID });
+  const payer = enrolled.payer;
   const encrypt = (value: bigint) =>
     zap.encrypt(value, { accountAddress: user.account.address, dappAddress: vault, handleType: handleTypes.euint256 });
   const [budgetCiphertext, perCallCapCiphertext] = (await Promise.all([encrypt(budget), encrypt(6_000_000n)])) as [Hex, Hex];
@@ -75,7 +77,7 @@ async function openFundedGoal(budget: bigint): Promise<{ goalId: bigint; payer: 
   const { request, result } = await pub.simulateContract({
     address: vault,
     abi: escrowPolicyVaultAbi,
-    functionName: "openGoal",
+    functionName: "openEnrolledGoal",
     account: user.account,
     value: 2n * (await stack.incoFee()),
     args: [
@@ -90,6 +92,8 @@ async function openFundedGoal(budget: bigint): Promise<{ goalId: bigint; payer: 
         expiry: BigInt(Math.floor(Date.now() / 1000) + 2 * 86_400),
         allowlist: [vendorAddress],
       },
+      enrolled.enrollmentId,
+      enrolled.signature,
     ],
   });
   await pub.waitForTransactionReceipt({ hash: await userWallet.writeContract(request) });

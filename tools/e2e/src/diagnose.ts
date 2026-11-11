@@ -287,7 +287,7 @@ async function runChecks(): Promise<void> {
   const enclave = /\.rofl\.app/.test(signerUrl);
   let signerUp = false;
   let orchestratorUp = false;
-  let custody: { store?: string; keys?: number } | undefined;
+  let custody: { store?: string; enrollmentSigner?: string } | undefined;
 
   await check(
     `signer ${origin(signerUrl)}`,
@@ -304,7 +304,7 @@ async function runChecks(): Promise<void> {
         return { level: "fail", detail: `HTTP ${status}`, fix: "the signer answered but not as a healthy signer; check SIGNER_URL." };
       }
       signerUp = true;
-      custody = body["custody"] as { store?: string; keys?: number } | undefined;
+      custody = body["custody"] as { store?: string; enrollmentSigner?: string } | undefined;
       if (body["vault"] === undefined) {
         return { level: "warn", detail: "healthy, but too old to report its vault", fix: "restart or redeploy the signer on current code." };
       }
@@ -359,7 +359,7 @@ async function runChecks(): Promise<void> {
 
   // From the signer's own report when it gives one, from its URL otherwise.
   const store = custody?.store ?? (enclave ? "rofl" : signerUp ? "file" : undefined);
-  const held = custody?.keys === undefined ? "" : `, ${custody.keys} payer key(s) reachable`;
+  const held = custody?.enrollmentSigner ? `, enrollment key ${custody.enrollmentSigner}` : "";
   if (store === "rofl") {
     record("signer custody", { level: "ok", detail: `payer keys are derived in the ROFL enclave${held}` });
   } else if (store !== undefined) {

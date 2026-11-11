@@ -8,6 +8,11 @@ solc = "0.8.29"
 evm_version = "cancun"
 optimizer = true
 optimizer_runs = 200
+# The accounting invariants append the transitions each run reached here.
+fs_permissions = [
+  { access = "read-write", path = "./invariant-out" },
+  { access = "read-write", path = "./test/fixtures" },
+]
 
 # Every block.timestamp comparison in PolicyVault is a deadline: a goal's expiry,
 # a hold's payBy, or the end of an EIP-3009 authorization. None is a source of
@@ -16,6 +21,15 @@ optimizer_runs = 200
 # needs to accept the authorization, and timestamps never go backwards.
 # Set here rather than as inline comments so PolicyVault.sol stays byte-identical
 # to the deployed source. Comments would change the bytecode's metadata hash.
+# The accounting invariants (test/AccountingInvariants.t.sol). Hostile calls are
+# expected to revert, and the handler asserts each refusal itself, so a revert is
+# not a failure here. show_metrics prints how often each transition ran.
+[invariant]
+runs = 64
+depth = 64
+fail_on_revert = false
+show_metrics = true
+
 [lint]
 exclude_lints = ["block-timestamp"]
 

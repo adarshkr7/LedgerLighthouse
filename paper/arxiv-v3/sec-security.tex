@@ -1,0 +1,158 @@
+\section{Security Analysis}
+\label{sec:security}
+
+Property~\ref{prop:text} and Theorem~\ref{prop:loss} hold under A2, for a goal whose enrollment was authentic and whose signer is
+uncompromised, with Inco satisfying I1 to I4. Property~\ref{prop:hold} is about the recorded deadline. Theorem~\ref{prop:leakproof} is about
+the decision channel and states its own assumptions. The arguments are by hand over the transition model below; we have not mechanised them.
+Section~\ref{sec:eval} reports how each is tested and with what.
+
+\subsection{Transition model}
+\label{sec:model}
+
+Fix a goal opened with budget $B_0$, cap $C$, call count $n_0$, attempt budget $m_0$, allowlist $A$ and funding $F$. Each request $s$ is in
+one state: \textsf{Pending}, \textsf{Rejected}, \textsf{Approved} (finalized, not funded), \textsf{Held} (funded, not captured),
+\textsf{Paid}, or \textsf{Reclaimed}. A held payment the payer took back, or one past its deadline not yet voided, is still \textsf{Held} in
+the vault's accounting until it is reclaimed (Figure~\ref{fig:states}). Write $a_s$ for its amount and define
+\begin{itemize}
+  \item $D = \sum_{s \in \textsf{Paid}} a_s$, the lifetime vendor payments;
+  \item $R = \sum_{s \in \textsf{Approved} \cup \textsf{Held}} a_s$, the reserved, unresolved amounts;
+  \item $Q = a_p \cdot [\,\mathit{ok}_p\,]$, the debit of the pending request $p$, if there is one;
+  \item $L = |\textsf{Approved} \cup \textsf{Held} \cup \textsf{Paid}|$, the live approvals,
+\end{itemize}
+where $\mathit{ok}_p$ is the pending request's encrypted decision, which exists from the request on and is revealed later. Let $B$ be the
+plaintext of the budget handle, $n$ the call count, $m$ the attempts left and $\sigma$ the last sequence number. The claims are
+\begin{itemize}
+  \item[(J1)] $B + D + R + Q = B_0$;
+  \item[(J2)] $n + L = n_0$;
+  \item[(J3)] $m + \sigma = m_0$;
+  \item[(J4)] no request is both \textsf{Paid} and \textsf{Reclaimed}, and each is reclaimed at most once.
+\end{itemize}
+J2 counts \textsf{Paid} approvals and leaves the pending request out, because the call count moves at finalization.
+
+\begin{table*}[t]
+\centering\small
+\begin{tabular}{@{}L{0.17\linewidth}L{0.31\linewidth}L{0.46\linewidth}@{}}
+\toprule
+Transition & Effect & Why J1 to J4 are preserved \\
+\midrule
+request $(a)$ & $\sigma{+}1$, $m{-}1$; $B \mathrel{-}= a\cdot\mathit{ok}$; new \textsf{Pending} & $Q$ rises by exactly what $B$ falls (J1); $m + \sigma$ fixed (J3). Only with no request pending, so $Q$ was 0. If $n = 0$, $\mathit{ok} = 0$ in plaintext. \\
+finalize, approved & \textsf{Pending}$\to$\textsf{Approved}; $n{-}1$ & $Q$ moves into $R$ (J1); $L{+}1$, $n{-}1$ (J2). Needs $n \ge 1$, guaranteed since $\mathit{ok}$ required it at request (I1, I2). \\
+finalize, rejected & \textsf{Pending}$\to$\textsf{Rejected} & $Q = 0$ before and after (J1). \\
+authorize (fund) & \textsf{Approved}$\to$\textsf{Held} & Stays in $R$ and $L$. Refused unless approved, not reclaimed, goal open, terms and amount exact. \\
+claim (capture) & \textsf{Held}$\to$\textsf{Paid} & $a$ moves from $R$ to $D$ (J1); stays in $L$ (J2). Escrow refuses after the capture deadline. \\
+payer's reclaim & funds back to payer & No accounting change: still \textsf{Held} in the vault until credited. \\
+reclaimExpired & \textsf{Approved}/\textsf{Held}$\to$\textsf{Reclaimed}; $B{+}a$, $n{+}1$ & $a$ moves from $R$ to $B$ (J1); $L{-}1$, $n{+}1$ (J2); $m$ unchanged (J3). Only in Table~\ref{tab:reclaim}'s cases, never from \textsf{Paid}; a flag stops a second credit (J4). \\
+close, sweep & goal closed; payer's balance to owner & No accounting change; \code{authorize} and \code{requestEscrowSpend} then refuse. \\
+\bottomrule
+\end{tabular}
+\caption{Every transition of a goal and why it preserves the invariants. A reclaim of an older approval while a newer request is
+pending changes $R$ and $B$ only, and leaves $Q$ as it was.}
+\label{tab:transitions}
+\end{table*}
+
+\begin{proposition}[Invariants]\label{prop:inv}
+Under I1 to I4, J1 to J4 hold in every reachable state of a goal on the canonical chain.
+\end{proposition}
+
+\noindent\emph{Proof.} Initially $B = B_0$, $n = n_0$, $m = m_0$, $\sigma = 0$ and all sums are zero. Table~\ref{tab:transitions} lists
+every function that changes a goal's state and shows each preserves J1 to J4; anything else reverts or leaves the goal unchanged.
+Two points need the assumptions. J1 equates a plaintext with handle arithmetic, which needs I1 and I2: the budget handle each request reads
+is the one the previous transaction wrote. And the \textsf{Approved}/\textsf{Rejected} split equals $\mathit{ok}$ only if the finalized value
+is the attested one, which is I3 together with the vault verifying against the handle it stored. \hfill$\square$
+
+\begin{property}[No authority from text]\label{prop:text}
+No signature issued by the signer moves money to anyone other than the goal's owner unless the vault's record on the canonical chain holds
+$(g, s)$ as finalized, approved and not reclaimed when the payment is funded, and the signed terms equal the terms recorded at request time.
+\end{property}
+
+\noindent The signer consumes no terms from its caller, and by Section~\ref{sec:binding} a signature moves tokens only inside the vault's
+\code{authorize}, which re-derives and compares the whole payment, or \code{charge}, which pays only the owner of a closed goal.
+
+\begin{theorem}[Lifetime loss bound]\label{prop:loss}
+Under A2, for a goal whose enrollment was authentic and whose signer is uncompromised, with Inco satisfying I1 to I4, the lifetime vendor
+payments satisfy $D \le \min(B_0, C\cdot n_0)$, every payment goes to a member of $A$, and each is at most $C$. Separately, vendor payments and
+sweeps together never exceed the payer's funding $F$ plus any tokens others sent it: held funds that return to the payer are counted once, when
+they are paid or swept. The bound holds whatever the signer's RPC reports and whatever blocks are dropped after the enrollment is stable.
+Gas, the relay key's spending and lost availability are outside it.
+\end{theorem}
+
+\noindent\emph{Proof.} By J1, $D \le B_0$, since $B$, $R$ and $Q$ are non-negative. Every paid request was approved, and approval needs
+$a \le C$ by I1 and I3, so each payment is at most $C$. Paid requests are live approvals, so $|\textsf{Paid}| \le L \le n_0$ by J2, and
+$D \le C\cdot n_0$. Payees are checked against $A$ structurally at request, and capture pays the recorded payee. By Property~\ref{prop:text}
+only records on the canonical chain count, which is why neither the RPC nor a dropped block can add to $D$. For the second bound, every
+token that leaves the payer goes to the escrow or to the owner; the escrow pays out only by capture or returns to the payer, so the payer's
+balance plus held funds plus $D$ plus sweeps equals $F$ plus inflows at all times. Authentic enrollment is needed because otherwise the payer
+the user funds might not be the one the goal names; an uncompromised signer because the payer is a key. \hfill$\square$
+
+\begin{property}[Recorded funding deadline]\label{prop:hold}
+A signature for a request cannot fund the escrow at or after its recorded \textit{validBefore}, and the vendor cannot capture at or after the
+recorded capture deadline. Whatever the orchestrator reports, no payment is funded an hour or more after its request, or captured two hours or
+more after it.
+\end{property}
+
+\noindent The window is frozen in the record and is the one signed; the token and the escrow enforce it. This is a property of the recorded
+deadline only. It protects a buyer against a late-collecting vendor if the orchestrator reports the hold honestly and with a margin for transit and
+clocks; under A2 it weakens to the hour, without weakening Theorem~\ref{prop:loss}. Authenticated commercial holds need the vendor's signature on
+an absolute deadline, as in Section~\ref{sec:delivery}.
+
+\begin{property}[Reclaim cannot double-pay]\label{prop:reclaim}
+For every $(g, s)$, the amount is never both captured and credited back, and is credited at most once.
+\end{property}
+
+\noindent This is J4. A credit needs nothing captured. If nothing was funded, it needs $t \ge \mathit{validBefore}$, after which funding is
+impossible. If funds are held, it needs the capture deadline to have passed, after which capture is impossible, and the funds are voided in the
+same transaction.
+
+\subsection{The decision channel}
+\label{sec:leakthm}
+
+\begin{definition}[Decision-channel leakage]\label{def:leak}
+The secret is $\mathsf{s} = (B_0, C)$ and $P$ is the public setup: everything public before the first request, including the funded amount,
+expiry and allowlist. The pair $(\mathsf{s}, P)$ has any joint distribution, and every goal has attempt budget at most $m$. Before request $i$ an
+adaptive adversary chooses which earlier approvals $\rho_i$ to reclaim and an amount $a_i$, as functions of $P$, its coins $r$ and everything
+public so far, and observes $d_i = [\,n_i \ge 1\,] \wedge [\,a_i \le B_i\,] \wedge [\,a_i \le C\,]$. Its view after $k \le m$ requests is
+$V = (\rho_1, a_1, d_1, \ldots, \rho_k, a_k, d_k)$. The leakage is $\mathcal{L} = H_\infty(\mathsf{s} \mid P) - H_\infty(\mathsf{s} \mid P, V)$, with
+$H_\infty(X \mid Y) = -\log_2 \sum_y \max_x \Pr[x, y]$ the average conditional min-entropy~\cite{smith2009}.
+\end{definition}
+
+\begin{theorem}[Decision-channel bound]\label{prop:leakproof}
+Assume that the adversary's coins are independent of $\mathsf{s}$ given $P$, and that no decision is revealed for a request that does not end on
+the canonical chain. Then for every prior and every adversary strategy, $\mathcal{L} \le m$ bits.
+\end{theorem}
+
+\noindent\emph{Proof.} For each fixed $(p, r)$ each $a_i$, $\rho_i$ and the decision to stop are functions of $d_1, \ldots, d_{i-1}$, so the view is
+determined by the decision bits. These form the leaves of a binary tree of depth at most $m$, so the view takes at most $2^m$ values $v$. Hence
+$\sum_v \max_{\mathsf{s}} \Pr[\mathsf{s}, v \mid p, r] \le 2^m \max_{\mathsf{s}} \Pr[\mathsf{s} \mid p]$. Multiplying by $\Pr[p, r]$ and summing gives
+$H_\infty(\mathsf{s} \mid P, V, r) \ge H_\infty(\mathsf{s} \mid P) - m$, the bound for deterministic channels of Smith~\cite{smith2009}. The second
+assumption is what makes the depth $m$: an attempt is counted on the canonical chain, so a decision revealed for a request on a branch that is later
+dropped would be an answer the count never charged. \hfill$\square$
+
+\paragraph{From the channel to the deployed transcript.} The theorem bounds what the decisions reveal. Relating it to everything the deployed
+system publishes needs further assumptions, which we state and do not prove. (i) Ciphertexts, handles, Inco's operation events and attestations
+reveal nothing about $\mathsf{s}$ beyond the decisions; this is I5 together with handles being computed from operation inputs and not from
+plaintexts, which is how Lightning derives them, and needs a computational argument we have not made. (ii) There are no timing or gas channels.
+In one measurement on version~1's design both outcomes used 326{,}528 gas, and over 50 calls decision latency showed overlapping distributions,
+which does not rule a channel out. (iii) No revealed decision is on a dropped branch; we have not measured how soon Inco reveals relative to
+finality on Base. (iv) The user, client and console reveal nothing derived from the limits; Section~\ref{sec:otherleak} gives two ways an earlier
+console did. (v) Each goal has its own secret; a user who reuses limits across goals gives an adversary up to the sum of their attempt budgets.
+
+\paragraph{The bound is an average and a ceiling.} With a cap uniform on $0, \ldots, 1023$, a request for one unit that is rejected identifies
+$C = 0$ from a single decision. And the bound can be close to tight: binary search narrows the cap's range by a factor of two per answer. Our
+regression test, with a 10 USDC range, leaves an interval of 0.117 to 0.156 USDC after $m = 8$ and recovers the cap at $m = 30$.
+Section~\ref{sec:leakeval} asks what the bound leaves in practice.
+
+\subsection{What the bound does not cover}
+\label{sec:otherleak}
+
+\paragraph{Spending.} The vault never sees the 402 body, so a compromised orchestrator may request more than the seller asked, up to the cap, to an
+allowlisted payee. A vendor that is paid and delivers nothing is paid. An allowlisted vendor that signs an inflated price is paid that price within
+the limits. Removing the first needs a vendor-signed quote the vault verifies; the others are Section~\ref{sec:delivery}'s subject.
+
+\paragraph{Leakage outside the decisions.} The payer's token balance is public, so funding it with the budget plus a margin, as an earlier console
+did, publishes the budget before any request. The console now funds a fixed 5.00 USDC, above the largest budget it accepts, at the cost of a looser
+fallback bound. An earlier console also priced its overcharge test vendor from the budget and passed that through the orchestrator. Every value a
+deployment sends must be checked; the console's own defaults are constants in public code and so are not secrets.
+
+\paragraph{Liveness.} A decision Inco never reveals blocks the goal, since only finalization clears a pending request; no money is at risk and the
+owner can close the goal and sweep. On Base Sepolia, reveals need both of two covalidators, and the orchestrator refuses to commit a debit unless Inco
+can reveal a known handle. A lying RPC can stall a run or waste a signature.

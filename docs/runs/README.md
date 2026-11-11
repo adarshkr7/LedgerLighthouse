@@ -5,6 +5,47 @@ Kept because a demo that depends on a venue's wifi is a demo with a single point
 of failure — and because a transaction hash is checkable by someone who does not
 trust us, which a live walkthrough is not.
 
+## 11 November 2026: the current design with the signer in the enclave (paper v3)
+
+EscrowPolicyVault
+[`0x466A…DFd5`](https://sepolia.basescan.org/address/0x466AB18595d2E71A87928c8d4A45F57a5D5ADFd5)
+([deploy](https://sepolia.basescan.org/tx/0x4135f116e88c661e29eda14ed6750fa9c53d932edda115af670e4c9328d17065)), the
+same code as `0xdd45` below with a different enrollment key: `0x5Ddd…193a`, derived by Oasis's key manager for this
+ROFL app's admitted enclaves. The signer ran in Intel TDX on machine `0000000000000750` (`playground_short`), image
+`sha256:f8d12e03…b267c`. `SIGNER_URL` pointed at the enclave's proxy for every run; a local signer started by
+`pnpm dev` refused to boot against this vault, as it should, and served nothing.
+
+| Record | What it shows |
+| --- | --- |
+| `enclave-v5-2026-11-11-identity.txt` | The pinned image, the app's on-chain policy and measurements, the registered replica, the machine, and `/health` (`"store":"rofl"`, the enrollment key), before and after the wipe |
+| `enclave-v5-2026-11-11-first-machine.json` | An earlier one-hour rental of the same bundle (machine `074f`) that expired before any run |
+| `escrow-enclave-2026-11-11-tee-check.log` | Inco round trip on this vault: approval, rejection, flipped plaintexts refused |
+| `escrow-enclave-2026-11-11-adversary.log` | 32 of 32 results held, none inconclusive: 29 strategies, C1 on two goals, two controls. Every signer answer and signature came from the enclave. C1 extracted exactly 0.25 and 0.20 USDC |
+| `escrow-enclave-2026-11-11-bench.log`, `bench-2026-11-11T090222-0x466a.json` | 50 calls: 29 approved calls paid, 20 rejected by policy, and one failure. Approved call 26 had its decision revealed in 5.7 s, but the relay's finalization was mined 201 s after the request, past the 60 s hold, so the enclave refused to sign. Median 20.1 s per paid call; signing 1.9 s |
+| `enclave-v5-2026-11-11-after-wipe-sweep.log` | The wipe test. The machine was restarted with `--wipe-storage` (17:01 IST); after it, the enclave re-derived goal 8's payer key from the chain and signed the return of its 0.07 USDC: [close](https://sepolia.basescan.org/tx/0xdf3c8ca3927efb494f4503a295afffd722bf07f9bcd97b307770aac09512bbfb), [sweep](https://sepolia.basescan.org/tx/0x9a9ce9b62352383ff7daa3828b333ef0cbc06c5b2115e84f1fea220c754d395a) |
+
+## 9 November 2026: authenticated enrollment (paper v3)
+
+EscrowPolicyVault
+[`0xdd45…5014`](https://sepolia.basescan.org/address/0xdd450306ca3905612a96Ff92aDbee23B48385014), the escrow
+design plus enrollment: a goal opens only with the signer's EIP-712 statement that the payer was derived for the
+opening wallet. Its enrollment key `0x6EbeBED3…94DE` comes from a local seed file, and the signer ran on a local
+machine, so none of these runs says anything about the enclave. Plaintext baseline
+[`0x9c9D…D224`](https://sepolia.basescan.org/address/0x9c9D87550C556cD51591CbBDbe6B28895761D224). Every table in the
+paper is generated from these files by `paper/arxiv-v3/tables/make_tables.py`.
+
+| Record | What it shows |
+| --- | --- |
+| `escrow-v3-2026-11-09-tee-check.log` | Inco round trip on this vault: an approval and a rejection, each with the flipped plaintext refused on chain |
+| `escrow-v3-2026-11-09-adversary.log` | 32 of 32 results held, none inconclusive: 29 strategies (C1 to C29, with C1 on two goals and C26 to C29 against setup) and two controls. C1 extracted exactly 0.25 and 0.20 USDC, the predicted ceilings |
+| `escrow-v3-2026-11-09-invariants.log`, `-invariants-reached.log` | `AccountingInvariants`: 1,024 runs of 256 calls against the recorded escrow, collector and USDC state, no violation; what the handler reached |
+| `escrow-v3-2026-11-09-invariant-mutants.json` | 14 mutants of the vault, 13 killed; the survivor is equivalent (the paper says why) |
+| `baseline-bench-2026-11-09T140550.{json,log}`, `baseline-bench-2026-11-09T141612.{json,log}` | Matched baselines, 10 interleaved rounds each: plain x402, plaintext vault, confidential vault. Every attempt, its stages, gas and fee |
+| `escrow-v3-2026-11-09-bench-crashed.log` | Failed: the benchmark process crashed (Windows `0xC0000409`) after 19 paid calls and held its records in memory, so they were lost. Since then the benchmark writes each record as it is made |
+| `escrow-v3-2026-11-09-bench-run2.log`, `bench-v3-2026-11-09-run2.json` | 30 approved and 20 rejected calls, every outcome as expected |
+| `escrow-v3-2026-11-09-bench-run3.log`, `bench-2026-11-09T144203-0xdd45.json` | The same on a separate goal |
+| `enclave-v5-2026-11-09-signer-image-build.log` | Build and push of the signer image whose digest `services/signer/compose.yaml` pins |
+
 ## 6 and 9 November 2026: the vault-gated escrow
 
 EscrowPolicyVault

@@ -27,6 +27,8 @@ contract DeployEscrowPolicyVaultTest is Test {
     /// Anvil's first key, public. Nothing here reaches a network that could spend it.
     uint256 private constant TEST_KEY = 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80;
 
+    address private constant ENROLLMENT = address(0xE1);
+
     DeployEscrowPolicyVault private script;
     address private escrow;
     address private collector;
@@ -45,20 +47,20 @@ contract DeployEscrowPolicyVaultTest is Test {
     function test_RefusesAChainIncoIsNotOn() public {
         vm.chainId(1);
         vm.expectRevert(abi.encodeWithSelector(DeployEscrowPolicyVault.WrongChain.selector, 1));
-        script.run();
+        script.run(ENROLLMENT);
     }
 
     function test_RefusesWithoutInco() public {
         vm.chainId(BASE_SEPOLIA);
         vm.expectRevert(abi.encodeWithSelector(DeployEscrowPolicyVault.IncoNotDeployed.selector, address(inco)));
-        script.run();
+        script.run(ENROLLMENT);
     }
 
     function test_RefusesWithoutTheEscrow() public {
         vm.chainId(BASE);
         vm.etch(address(inco), hex"00");
         vm.expectRevert(abi.encodeWithSelector(DeployEscrowPolicyVault.EscrowNotDeployed.selector, escrow));
-        script.run();
+        script.run(ENROLLMENT);
     }
 
     function test_RefusesWithoutTheCollector() public {
@@ -66,7 +68,7 @@ contract DeployEscrowPolicyVaultTest is Test {
         vm.etch(address(inco), hex"00");
         vm.etch(escrow, hex"00");
         vm.expectRevert(abi.encodeWithSelector(DeployEscrowPolicyVault.CollectorNotDeployed.selector, collector));
-        script.run();
+        script.run(ENROLLMENT);
     }
 
     /// The collector takes calls only from its own escrow, so this pair could never collect.
@@ -79,7 +81,16 @@ contract DeployEscrowPolicyVaultTest is Test {
         vm.expectRevert(
             abi.encodeWithSelector(DeployEscrowPolicyVault.CollectorServesAnotherEscrow.selector, collector, other)
         );
-        script.run();
+        script.run(ENROLLMENT);
+    }
+
+    function test_RefusesWithoutAnEnrollmentSigner() public {
+        vm.chainId(BASE_SEPOLIA);
+        vm.etch(address(inco), hex"00");
+        vm.etch(escrow, hex"00");
+        _stubCollector(escrow);
+        vm.expectRevert(DeployEscrowPolicyVault.NoEnrollmentSigner.selector);
+        script.run(address(0));
     }
 
     /// Against the real contracts: what it deploys is wired to the pinned pair.
@@ -90,11 +101,12 @@ contract DeployEscrowPolicyVaultTest is Test {
         vm.makePersistent(address(script));
         vm.createSelectFork(rpc);
 
-        EscrowPolicyVault vault = script.run();
+        EscrowPolicyVault vault = script.run(ENROLLMENT);
 
         assertEq(address(vault.escrow()), 0xf96815976523E00e65Be8f34cA5e64b4f41EB19c);
         assertEq(vault.collector(), 0x8612dfdc421f80336cd14E8EF9cb1E765dB5ab88);
         assertGt(address(vault).code.length, 0);
+        assertEq(vault.enrollmentSigner(), ENROLLMENT);
         assertEq(vault.goalCount(), 0);
     }
 }

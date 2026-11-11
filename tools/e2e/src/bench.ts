@@ -33,7 +33,7 @@
  * that outcome and excluded from the statistics, never silently dropped.
  */
 
-import { writeFileSync, mkdirSync } from "node:fs";
+import { appendFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { createPublicClient, createWalletClient, parseEventLogs, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
@@ -60,6 +60,7 @@ import {
   networkFromEnv,
   vaultAbi,
 } from "./config.js";
+import { enroll } from "./enroll.js";
 import { assertEscrowSigner, assertEscrowVault, decisionSource, mockVendor } from "./escrow.js";
 
 loadDotEnv();
@@ -116,7 +117,14 @@ console.log(`bench: ${APPROVED} approved + ${REJECTED} rejected calls`);
 console.log(`  vault ${vaultAddress}\n  signer ${signerUrl} (key store: ${custody})`);
 
 const signer = new SignerClient(signerUrl, undefined, optional("SIGNER_SERVICE_TOKEN") ?? optional("SERVICE_TOKEN"));
-const payer = await signer.mintPayer();
+const enrolled = await enroll({
+  signer,
+  reader: publicClient,
+  vault: vaultAddress,
+  owner: user.address,
+  chainId: network.chainId,
+});
+const payer = enrolled.payer;
 const zap = await connectLightning(network, rpcUrl);
 const encrypt = async (v: bigint) =>
   (await zap.encrypt(v, { accountAddress: user.address, dappAddress: vaultAddress, handleType: handleTypes.euint256 })) as Hex;
@@ -125,7 +133,7 @@ const incoFee = (await publicClient.readContract({ address: INCO_SINGLETON, abi:
 const openHash = await userWallet.writeContract({
   address: vaultAddress,
   abi,
-  functionName: "openGoal",
+  functionName: "openEnrolledGoal",
   args: [
     {
       budgetCiphertext: await encrypt(BUDGET),
@@ -143,6 +151,8 @@ const openHash = await userWallet.writeContract({
       expiry: BigInt(Math.floor(Date.now() / 1000) + 24 * 3600),
       allowlist: [vendor],
     },
+    enrolled.enrollmentId,
+    enrolled.signature,
   ],
   value: 2n * incoFee,
 });
@@ -278,6 +288,13 @@ async function oneCall(phase: CallRecord["phase"], index: number): Promise<CallR
 
 const records: CallRecord[] = [];
 const started = new Date();
+// One file per run, named by time and vault, so runs never overwrite each other. Each
+// record is also appended as it happens, so a crash keeps every call made before it.
+const outArg = process.argv.indexOf("--out");
+const dir = outArg === -1 ? join(process.cwd(), "..", "..", "docs", "runs") : process.argv[outArg + 1]!;
+mkdirSync(dir, { recursive: true });
+const stem = `bench-${started.toISOString().slice(0, 19).replace(/:/g, "")}-${vaultAddress.slice(0, 6).toLowerCase()}`;
+const partial = join(dir, `${stem}.partial.jsonl`);
 for (const [phase, count] of [["approved", APPROVED], ["rejected", REJECTED]] as const) {
   for (let i = 1; i <= count; i++) {
     let record: CallRecord;
@@ -287,6 +304,7 @@ for (const [phase, count] of [["approved", APPROVED], ["rejected", REJECTED]] as
       record = { phase, index: i, outcome: `error: ${e instanceof Error ? e.message.split("\n")[0] : String(e)}`, expected: false, t: {} };
     }
     records.push(record);
+    appendFileSync(partial, JSON.stringify(record) + "\n");
     console.log(
       `  ${phase} ${String(i).padStart(3)}  ${record.outcome.padEnd(16)} ${String(record.t["done"] ?? "-").padStart(6)} ms` +
         (record.revealLatencyMs !== undefined ? `  reveal ${record.revealLatencyMs} ms (${record.revealAttempts})` : "") +
@@ -345,10 +363,7 @@ const out = {
   summary,
   records,
 };
-const outArg = process.argv.indexOf("--out");
-const dir = outArg === -1 ? join(process.cwd(), "..", "..", "docs", "runs") : process.argv[outArg + 1]!;
-mkdirSync(dir, { recursive: true });
-const file = join(dir, `bench-${started.toISOString().slice(0, 10)}.json`);
+const file = join(dir, `${stem}.json`);
 writeFileSync(file, JSON.stringify(out, null, 2));
 
 console.log(`\nsummary (milliseconds and gas; expected outcomes only)`);

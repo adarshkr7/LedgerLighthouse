@@ -38,6 +38,7 @@ import { networkForChainId } from "@ntux402/shared";
 
 import { forkAttestation, paymentState } from "./escrow.js";
 import { CHAIN_ID, USDC, startForkStack } from "./fork-stack.js";
+import { enroll } from "./enroll.js";
 
 const RPC = process.env["ESCROW_ANVIL_RPC"];
 if (!RPC) {
@@ -108,14 +109,15 @@ const before = await balance(user.account.address);
 const vendorBefore = await balance(vendorAddress);
 const zap = await connectLightning(networkForChainId(CHAIN_ID)!, RPC);
 const relay = new VaultRelay({ rpcUrl: RPC, vaultAddress: vault, relayKey: stack.relay.key, chainId: CHAIN_ID });
-const payer: Address = await signer.mintPayer();
+const enrolled = await enroll({ signer, reader: pub, vault, owner: user.account.address, chainId: CHAIN_ID });
+const payer: Address = enrolled.payer;
 const encrypt = (value: bigint) =>
   zap.encrypt(value, { accountAddress: user.account.address, dappAddress: vault, handleType: handleTypes.euint256 });
 const [budgetCiphertext, perCallCapCiphertext] = (await Promise.all([encrypt(100_000n), encrypt(100_000n)])) as [Hex, Hex];
 const { request: open, result: goalId } = await pub.simulateContract({
   address: vault,
   abi: stack.vaultAbi,
-  functionName: "openGoal",
+  functionName: "openEnrolledGoal",
   account: user.account,
   value: 2n * (await stack.incoFee()),
   args: [
@@ -130,6 +132,8 @@ const { request: open, result: goalId } = await pub.simulateContract({
       expiry: BigInt(Math.floor(Date.now() / 1000) + 2 * 86_400),
       allowlist: [vendorAddress],
     },
+    enrolled.enrollmentId,
+    enrolled.signature,
   ],
 });
 await pub.waitForTransactionReceipt({ hash: await userWallet.writeContract(open) });

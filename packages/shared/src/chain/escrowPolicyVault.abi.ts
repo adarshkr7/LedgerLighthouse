@@ -15,6 +15,11 @@ export const escrowPolicyVaultAbi = [
         "name": "collector_",
         "type": "address",
         "internalType": "address"
+      },
+      {
+        "name": "enrollmentSigner_",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "stateMutability": "nonpayable"
@@ -28,6 +33,19 @@ export const escrowPolicyVaultAbi = [
         "name": "",
         "type": "uint64",
         "internalType": "uint64"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "ENROLLMENT_TYPEHASH",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
       }
     ],
     "stateMutability": "view"
@@ -397,6 +415,91 @@ export const escrowPolicyVaultAbi = [
   },
   {
     "type": "function",
+    "name": "eip712Domain",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "fields",
+        "type": "bytes1",
+        "internalType": "bytes1"
+      },
+      {
+        "name": "name",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "version",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "chainId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "verifyingContract",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "salt",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "extensions",
+        "type": "uint256[]",
+        "internalType": "uint256[]"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "enrollmentDigest",
+    "inputs": [
+      {
+        "name": "payer",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "owner",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "enrollmentId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "enrollmentSigner",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "escrow",
     "inputs": [],
     "outputs": [
@@ -531,6 +634,25 @@ export const escrowPolicyVaultAbi = [
         "name": "",
         "type": "uint256",
         "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "goalEnrollment",
+    "inputs": [
+      {
+        "name": "goalId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
       }
     ],
     "stateMutability": "view"
@@ -687,10 +809,86 @@ export const escrowPolicyVaultAbi = [
   },
   {
     "type": "function",
-    "name": "openGoal",
+    "name": "openEnrolledGoal",
     "inputs": [
       {
         "name": "params",
+        "type": "tuple",
+        "internalType": "struct PolicyVault.OpenGoalParams",
+        "components": [
+          {
+            "name": "budgetCiphertext",
+            "type": "bytes",
+            "internalType": "bytes"
+          },
+          {
+            "name": "perCallCapCiphertext",
+            "type": "bytes",
+            "internalType": "bytes"
+          },
+          {
+            "name": "callsRemaining",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "maxAttempts",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "payer",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "relay",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "asset",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "expiry",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "allowlist",
+            "type": "address[]",
+            "internalType": "address[]"
+          }
+        ]
+      },
+      {
+        "name": "enrollmentId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "signature",
+        "type": "bytes",
+        "internalType": "bytes"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "goalId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "payable"
+  },
+  {
+    "type": "function",
+    "name": "openGoal",
+    "inputs": [
+      {
+        "name": "",
         "type": "tuple",
         "internalType": "struct PolicyVault.OpenGoalParams",
         "components": [
@@ -744,7 +942,7 @@ export const escrowPolicyVaultAbi = [
     ],
     "outputs": [
       {
-        "name": "goalId",
+        "name": "",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -1048,6 +1246,12 @@ export const escrowPolicyVaultAbi = [
   },
   {
     "type": "event",
+    "name": "EIP712DomainChanged",
+    "inputs": [],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "GoalClosed",
     "inputs": [
       {
@@ -1055,6 +1259,25 @@ export const escrowPolicyVaultAbi = [
         "type": "uint256",
         "indexed": true,
         "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "GoalEnrolled",
+    "inputs": [
+      {
+        "name": "goalId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "enrollmentId",
+        "type": "bytes32",
+        "indexed": false,
+        "internalType": "bytes32"
       }
     ],
     "anonymous": false
@@ -1344,6 +1567,16 @@ export const escrowPolicyVaultAbi = [
   },
   {
     "type": "error",
+    "name": "InvalidEnrollment",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidEnrollmentSigner",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "InvalidExpiry",
     "inputs": []
   },
@@ -1355,6 +1588,11 @@ export const escrowPolicyVaultAbi = [
   {
     "type": "error",
     "name": "InvalidRelay",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidShortString",
     "inputs": []
   },
   {
@@ -1414,12 +1652,28 @@ export const escrowPolicyVaultAbi = [
   },
   {
     "type": "error",
+    "name": "StringTooLong",
+    "inputs": [
+      {
+        "name": "str",
+        "type": "string",
+        "internalType": "string"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "UnknownGoal",
     "inputs": []
   },
   {
     "type": "error",
     "name": "UnknownSpend",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "UseOpenEnrolledGoal",
     "inputs": []
   },
   {

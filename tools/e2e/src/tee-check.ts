@@ -37,11 +37,10 @@ import {
   type Address,
   type Hex,
 } from "viem";
-import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { handleTypes } from "@inco/lightning-js";
 
 import { rpcTransport, sendingAccount, viemChain } from "@ntux402/shared/viem";
-import { connectLightning, pollForDecision } from "@ntux402/orchestrator";
+import { SignerClient, connectLightning, pollForDecision } from "@ntux402/orchestrator";
 
 import {
   INCO_FEE_ABI,
@@ -55,8 +54,10 @@ import {
   requiredAddress,
   requiredHexKey,
   networkFromEnv,
+  optional,
 } from "./config.js";
 import { CAPTURE_WINDOW_SECONDS, NO_KEY_HASH, assertEscrowVault, decisionSource } from "./escrow.js";
+import { enroll } from "./enroll.js";
 
 loadDotEnv();
 
@@ -83,14 +84,24 @@ const vaultAddress = requiredAddress("POLICY_VAULT_ADDRESS");
 
 const user = sendingAccount(requiredHexKey("DEPLOYER_PRIVATE_KEY"));
 const relay = sendingAccount(requiredHexKey("ORCHESTRATOR_RELAY_KEY"));
-// The vault binds a payer to one goal for good, so reusing an address would
-// make this script pass once per vault and then revert `PayerAlreadyBound`.
-const throwawayPayer = privateKeyToAccount(generatePrivateKey()).address;
+const signerUrl = optional("SIGNER_URL") ?? `http://127.0.0.1:${process.env["SIGNER_PORT"] ?? 8402}`;
 
 const publicClient = createPublicClient({ chain: viemChain(network), transport: rpcTransport(rpcUrl) });
 const userWallet = createWalletClient({ account: user, chain: viemChain(network), transport: rpcTransport(rpcUrl) });
 const relayWallet = createWalletClient({ account: relay, chain: viemChain(network), transport: rpcTransport(rpcUrl) });
 const abi = vaultAbi();
+
+// A goal opens only with the signer's enrollment statement. The payer is never
+// funded and never signs: nothing here settles. A fresh enrollment id each run,
+// because the vault binds a payer to one goal for good.
+const enrolled = await enroll({
+  signer: new SignerClient(signerUrl, undefined, optional("SIGNER_SERVICE_TOKEN") ?? optional("SERVICE_TOKEN")),
+  reader: publicClient,
+  vault: vaultAddress,
+  owner: user.address,
+  chainId: network.chainId,
+});
+const throwawayPayer = enrolled.payer;
 
 const rule = (label = "") =>
   console.log(`\n${label ? `--- ${label} ` : ""}${"-".repeat(Math.max(0, 62 - label.length))}\n`);
@@ -185,21 +196,21 @@ t = now();
 const openHash = await userWallet.writeContract({
   address: vaultAddress,
   abi,
-  functionName: "openGoal",
+  functionName: "openEnrolledGoal",
   args: [
     {
       budgetCiphertext,
       perCallCapCiphertext,
       callsRemaining: 5,
       maxAttempts: 10,
-      // Never funded and never signs: nothing here settles. It only has to be
-      // an address no goal has bound yet, so a fresh one each run.
       payer: throwawayPayer,
       relay: relay.address,
       asset: usdcAddress,
       expiry: BigInt(Math.floor(Date.now() / 1000) + 3600),
       allowlist: [relay.address],
     },
+    enrolled.enrollmentId,
+    enrolled.signature,
   ],
   // One Inco fee per encrypted input: the budget and the cap.
   value: 2n * incoFee,

@@ -70,6 +70,10 @@ export interface VaultReader {
   escrowPayment(goalId: bigint, seq: bigint): Promise<PaymentInfo>;
   /** True once this spend's amount has gone back to the budget. */
   isReclaimed(goalId: bigint, seq: bigint): Promise<boolean>;
+  /** The enrollment id the goal was opened under. With the owner, it names the payer key. */
+  goalEnrollment(goalId: bigint): Promise<Hex>;
+  /** The vault's `enrollmentSigner()`, or undefined if it has none. */
+  enrollmentSigner(): Promise<Address | undefined>;
 }
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
@@ -153,9 +157,9 @@ export class OnChainVaultReader implements VaultReader {
   }
 
   /**
-   * The goal this payer is bound to, or 0n. Used to rebuild the ROFL key index
-   * after its disk is lost; see `RoflKeyStore.recover`. A vault deployed before
-   * the payer binding has no such function, and this throws on one.
+   * The goal this payer is bound to, or 0n. For diagnostics: the signer no longer
+   * needs it, since keys are derived from the goal's owner and enrollment id. A
+   * vault deployed before the payer binding has no such function, and this throws.
    */
   async payerGoal(payer: Address): Promise<bigint> {
     return (await this.#client.readContract({
@@ -212,6 +216,31 @@ export class OnChainVaultReader implements VaultReader {
       functionName: "isReclaimed",
       args: [goalId, seq],
     })) as boolean;
+  }
+
+  async goalEnrollment(goalId: bigint): Promise<Hex> {
+    return (await this.#client.readContract({
+      address: this.#vault,
+      abi: escrowPolicyVaultAbi,
+      functionName: "goalEnrollment",
+      args: [goalId],
+    })) as Hex;
+  }
+
+  async enrollmentSigner(): Promise<Address | undefined> {
+    try {
+      return (await this.#client.readContract({
+        address: this.#vault,
+        abi: escrowPolicyVaultAbi,
+        functionName: "enrollmentSigner",
+      })) as Address;
+    } catch (e) {
+      const noSuchFunction =
+        e instanceof BaseError &&
+        e.walk((c) => c instanceof ContractFunctionRevertedError || c instanceof ContractFunctionZeroDataError);
+      if (noSuchFunction) return undefined;
+      throw e;
+    }
   }
 
   async tokenBalance(token: Address, holder: Address): Promise<bigint> {

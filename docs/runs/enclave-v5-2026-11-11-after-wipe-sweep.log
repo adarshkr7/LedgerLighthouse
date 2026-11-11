@@ -1,0 +1,20 @@
+$ tsx src/sweep.ts "--" "--goal" "8" "--execute"
+
+sweep — EXECUTE
+
+  network   Base Sepolia
+  vault     0x466AB18595d2E71A87928c8d4A45F57a5D5ADFd5
+  operator  0x28384D2aBD29cc57E495784ed6f2711b7Ce376B8  (closes its own goals, pays gas)
+  signer    https://p8402.m1872.opf-testnet-rofl-25.rofl.app
+
+  1 goal(s) read, 1 with USDC in the payer
+
+  goal    8  open         0.07 USDC  owner 0x28384D2a…  close, then sweep
+
+  recoverable now      0.07 USDC in 1 goal(s), if the signer holds their keys
+
+  goal 8: closed      https://sepolia.basescan.org/tx/0xdf3c8ca3927efb494f4503a295afffd722bf07f9bcd97b307770aac09512bbfb
+  goal 8: swept 0.07 USDC to 0x28384D2a…  https://sepolia.basescan.org/tx/0x9a9ce9b62352383ff7daa3828b333ef0cbc06c5b2115e84f1fea220c754d395a
+
+  recovered  0.07 USDC
+

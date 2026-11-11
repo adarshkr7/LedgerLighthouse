@@ -24,8 +24,10 @@ import {
 import { privateKeyToAccount } from "viem/accounts";
 import {
   AUTH_CAPTURE_ESCROW,
+  ENROLLMENT_TYPES,
   ERC3009_TOKEN_COLLECTOR,
   NETWORKS,
+  enrollmentDomain,
   RECEIVE_WITH_AUTHORIZATION_TYPES,
   TRANSFER_WITH_AUTHORIZATION_TYPES,
   paymentSalt,
@@ -35,7 +37,7 @@ import { escrowNonce, paymentInfoHash } from "@ntux402/shared/viem";
 
 import { EscrowAuthorizationSigner, type EscrowSignerConfig } from "./escrow-service.js";
 import { createSignerServer } from "./http.js";
-import { InMemoryKeyStore, type KeyStore } from "./keystore.js";
+import { enrollmentIdFrom, inMemoryKeyStore, type DerivedKeyStore, type KeyStore } from "./keystore.js";
 import { openSigner } from "./open-signer.js";
 import { OnChainVaultReader, type GoalRecord, type SpendRecord, type VaultReader } from "./vault.js";
 
@@ -52,6 +54,8 @@ const WINDOW = 4102444800;
 const DEADLINE = 4102445100;
 const AMOUNT = 100_000n;
 const DOMAIN = { name: "USDC", version: "2", chainId: CHAIN_ID, verifyingContract: USDC } as const;
+const NS = { chainId: CHAIN_ID, vault: VAULT } as const;
+const ENROLLMENT_ID = enrollmentIdFrom("the console's fresh id");
 
 /**
  * A chain that says whatever the test tells it to. Its answers are what a malicious
@@ -71,6 +75,15 @@ class FakeChain implements VaultReader {
     escrow: AUTH_CAPTURE_ESCROW,
     collector: ERC3009_TOKEN_COLLECTOR,
   };
+  enrollment: Hex = ENROLLMENT_ID;
+  pinnedEnrollment: Address | undefined;
+
+  async goalEnrollment() {
+    return this.enrollment;
+  }
+  async enrollmentSigner() {
+    return this.pinnedEnrollment;
+  }
 
   async chainId() {
     return this.chain;
@@ -135,7 +148,7 @@ function makeSigner(chain: FakeChain, keys: KeyStore, overrides: Partial<EscrowS
 
 describe("EscrowAuthorizationSigner", () => {
   let chain: FakeChain;
-  let keys: InMemoryKeyStore;
+  let keys: DerivedKeyStore;
   let payer: Address;
 
   const setGoal = (over: Partial<GoalRecord> = {}) =>
@@ -167,8 +180,8 @@ describe("EscrowAuthorizationSigner", () => {
 
   beforeEach(async () => {
     chain = new FakeChain();
-    keys = new InMemoryKeyStore();
-    payer = await keys.mint();
+    keys = inMemoryKeyStore(NS);
+    payer = (await keys.payer(OWNER, ENROLLMENT_ID)).address;
     setGoal();
     setSpend();
   });
@@ -232,7 +245,10 @@ describe("EscrowAuthorizationSigner", () => {
     it("carries no route to a plain transfer", () => {
       const source = readFileSync(fileURLToPath(new URL("./escrow-service.ts", import.meta.url)), "utf8");
       expect(source).not.toMatch(/TRANSFER_WITH_AUTHORIZATION_TYPES|primaryType: "TransferWithAuthorization"/);
-      expect(source.match(/signTypedData/g)).toHaveLength(1);
+      // Two signatures exist: the payment, and the enrollment statement, whose type
+      // no token accepts.
+      expect(source.match(/signTypedData/g)).toHaveLength(2);
+      expect(source.match(/types: [A-Z_]+/g)).toEqual(["types: ENROLLMENT_TYPES", "types: RECEIVE_WITH_AUTHORIZATION_TYPES"]);
     });
 
     it("does not produce a signature usable as a plain transfer", async () => {
@@ -273,11 +289,28 @@ describe("EscrowAuthorizationSigner", () => {
       expect(JSON.stringify(outcome)).not.toContain("signature");
     });
 
-    it("binds a false owner in a sweep to the vault, which checks the real one", async () => {
+    /*
+     * The payer key is derived from the owner, so a false owner names a key that is
+     * not this payer's, and the signer has nothing to sign with.
+     */
+    it("refuses a sweep when told a false owner for a payer it enrolled", async () => {
       setGoal({ open: false, owner: THIEF });
+      chain.balance = 1_000_000n;
+      expect(await makeSigner(chain, keys).sweep({ goalId: "1" })).toMatchObject({ ok: false, status: 404 });
+    });
+
+    /*
+     * A consistent lie: the thief's own enrolled payer, under the thief as owner. The
+     * signature is a sweep from the thief's payer to the thief, bound to the vault,
+     * which checks the real goal. It touches nothing of the user's.
+     */
+    it("binds a consistent lie about owner and payer to the vault, which checks the real ones", async () => {
+      const thiefs = (await keys.payer(THIEF, ENROLLMENT_ID)).address;
+      setGoal({ open: false, owner: THIEF, payer: thiefs });
       chain.balance = 1_000_000n;
       const outcome = await makeSigner(chain, keys).sweep({ goalId: "1" });
       if (!outcome.ok) throw new Error(outcome.error);
+      expect(outcome.value.authorization.from).toBe(thiefs);
       expect(outcome.value.authorization.to).toBe(ERC3009_TOKEN_COLLECTOR);
       expect(outcome.value.payment.operator).toBe(VAULT);
     });
@@ -304,9 +337,21 @@ describe("EscrowAuthorizationSigner", () => {
     });
 
     it("refuses a payer it holds no key for", async () => {
-      const other = await new InMemoryKeyStore().mint();
+      const other = (await inMemoryKeyStore(NS).payer(OWNER, ENROLLMENT_ID)).address;
       setGoal({ payer: other });
       setSpend({ payer: other });
+      expect(await sign()).toMatchObject({ ok: false, status: 404 });
+    });
+
+    /*
+     * The key is derived from the owner and enrollment id on chain. A goal claiming
+     * this signer's payer under another owner or id is not one it enrolled.
+     */
+    it("refuses when the chain names another owner or enrollment id for the payer", async () => {
+      setGoal({ owner: THIEF });
+      expect(await sign()).toMatchObject({ ok: false, status: 404 });
+      setGoal();
+      chain.enrollment = enrollmentIdFrom("another id");
       expect(await sign()).toMatchObject({ ok: false, status: 404 });
     });
 
@@ -401,7 +446,7 @@ describe("EscrowAuthorizationSigner", () => {
     });
 
     it("refuses a payer it holds no key for", async () => {
-      setGoal({ open: false, payer: await new InMemoryKeyStore().mint() });
+      setGoal({ open: false, payer: (await inMemoryKeyStore(NS).payer(OWNER, ENROLLMENT_ID)).address });
       chain.balance = 1n;
       expect(await sweep()).toMatchObject({ ok: false, status: 404 });
     });
@@ -423,10 +468,80 @@ describe("EscrowAuthorizationSigner", () => {
     });
   });
 
-  it("mints a payer and returns only its address", async () => {
-    const minted = await makeSigner(chain, keys).mintPayer();
-    expect(Object.keys(minted)).toEqual(["address"]);
-    expect(await keys.signerFor(minted.address)).toBeDefined();
+  describe("enrollment", () => {
+    const enroll = (body: unknown) => makeSigner(chain, keys).enroll(body);
+
+    it("signs a statement the vault's domain recovers to the enrollment key", async () => {
+      const outcome = await enroll({ owner: OWNER, enrollmentId: ENROLLMENT_ID });
+      if (!outcome.ok) throw new Error(outcome.error);
+      const statement = outcome.value;
+      expect(statement.payer).toBe(payer);
+      expect(statement.owner).toBe(OWNER);
+      expect(statement.vault).toBe(VAULT);
+      expect(statement.chainId).toBe(CHAIN_ID);
+      const signer = await recoverTypedDataAddress({
+        domain: enrollmentDomain(CHAIN_ID, VAULT),
+        types: ENROLLMENT_TYPES,
+        primaryType: "Enrollment",
+        message: { payer: statement.payer, owner: statement.owner, enrollmentId: statement.enrollmentId },
+        signature: statement.signature,
+      });
+      expect(signer).toBe((await keys.enrollment()).address);
+      expect(statement.enrollmentSigner).toBe(signer);
+    });
+
+    it("gives the same payer for the same owner and id, and another for anything else", async () => {
+      const again = await enroll({ owner: OWNER, enrollmentId: ENROLLMENT_ID });
+      const otherOwner = await enroll({ owner: THIEF, enrollmentId: ENROLLMENT_ID });
+      const otherId = await enroll({ owner: OWNER, enrollmentId: enrollmentIdFrom("another id") });
+      if (!again.ok || !otherOwner.ok || !otherId.ok) throw new Error("refused");
+      expect(again.value.payer).toBe(payer);
+      expect(otherOwner.value.payer).not.toBe(payer);
+      expect(otherId.value.payer).not.toBe(payer);
+    });
+
+    /*
+     * The property the statement rests on: a restart, a second signer process or a
+     * hostile caller asking again cannot make one payer appear under two owners.
+     */
+    it("never enrolls one payer to two owners, across a restart", async () => {
+      const seed = `0x${"42".repeat(32)}` as Hex;
+      const before = inMemoryKeyStore(NS, seed);
+      const after = inMemoryKeyStore(NS, seed);
+      const a = await before.payer(OWNER, ENROLLMENT_ID);
+      const b = await after.payer(OWNER, ENROLLMENT_ID);
+      const c = await after.payer(THIEF, ENROLLMENT_ID);
+      expect(b.address).toBe(a.address);
+      expect(c.address).not.toBe(a.address);
+    });
+
+    it("refuses extra fields, a zero owner and a malformed id", async () => {
+      expect(await enroll({ owner: OWNER, enrollmentId: ENROLLMENT_ID, payer: THIEF })).toMatchObject({
+        ok: false,
+        status: 400,
+      });
+      expect(await enroll({ owner: ZERO, enrollmentId: ENROLLMENT_ID })).toMatchObject({ ok: false, status: 400 });
+      expect(await enroll({ owner: OWNER, enrollmentId: "0x1234" })).toMatchObject({ ok: false, status: 400 });
+      expect(await enroll(null)).toMatchObject({ ok: false, status: 400 });
+    });
+
+    it("serves POST /enrollments", async () => {
+      const server = createSignerServer({ signer: makeSigner(chain, keys) });
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+      try {
+        const { port } = server.address() as AddressInfo;
+        const response = await fetch(`http://127.0.0.1:${port}/enrollments`, {
+          method: "POST",
+          body: JSON.stringify({ owner: OWNER, enrollmentId: ENROLLMENT_ID }),
+        });
+        expect(response.status).toBe(201);
+        expect(((await response.json()) as { payer: string }).payer).toBe(payer);
+        const old = await fetch(`http://127.0.0.1:${port}/payer`, { method: "POST" });
+        expect(old.status).toBe(404);
+      } finally {
+        await new Promise((resolve) => server.close(resolve));
+      }
+    });
   });
 
   it("serves through the same HTTP surface", async () => {
@@ -506,9 +621,9 @@ describe("the shared vector", () => {
       approved: true,
     });
     const keys: KeyStore = {
-      mint: async () => account.address,
-      signerFor: async () => account as LocalAccount,
-      addresses: async () => [account.address],
+      kind: "memory",
+      payer: async () => account as LocalAccount,
+      enrollment: async () => account as LocalAccount,
     };
     const outcome = await makeSigner(chain, keys).sign({ goalId: 1n, seq: 1n });
     if (!outcome.ok) throw new Error(outcome.error);
@@ -519,13 +634,11 @@ describe("the shared vector", () => {
 });
 
 describe("opening the signer at boot", () => {
-  const base = async (chain: FakeChain) => ({
-    vault: chain,
-    keys: new InMemoryKeyStore(),
-    chainId: CHAIN_ID,
-    usdcAddress: USDC,
-    vaultAddress: VAULT,
-  });
+  const keys = inMemoryKeyStore(NS);
+  const base = async (chain: FakeChain) => {
+    chain.pinnedEnrollment ??= (await keys.enrollment()).address;
+    return { vault: chain, keys, chainId: CHAIN_ID, usdcAddress: USDC, vaultAddress: VAULT };
+  };
 
   it("refuses a vault with no escrow", async () => {
     const chain = new FakeChain();
@@ -539,6 +652,16 @@ describe("opening the signer at boot", () => {
     await expect(openSigner(await base(chain))).rejects.toThrow(/signs only for/);
     chain.binding = { escrow: AUTH_CAPTURE_ESCROW, collector: THIEF };
     await expect(openSigner(await base(chain))).rejects.toThrow(/signs only for/);
+  });
+
+  it("refuses a vault with no enrollment signer, or another one", async () => {
+    const none = new FakeChain();
+    const opened = await base(none);
+    none.pinnedEnrollment = undefined;
+    await expect(openSigner(opened)).rejects.toThrow(/predates authenticated setup/);
+    const other = new FakeChain();
+    other.pinnedEnrollment = THIEF;
+    await expect(openSigner(await base(other))).rejects.toThrow(/accepts enrollments from/);
   });
 
   it("opens on a vault using the pinned escrow and collector", async () => {

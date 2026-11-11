@@ -91,7 +91,19 @@ for (const step of steps) {
   }
 
   process.stdout.write("\r");
-  if (ok) {
+  // A forge suite that needs a network skips without one. Say so on the pass line,
+  // because an offline pass does not reproduce anything tested against live state.
+  const skipped =
+    step.name === "forge test"
+      ? // The last count is forge's total over every suite.
+        Number((output.match(/(\d+) skipped/g) ?? ["0 skipped"]).at(-1).split(" ")[0])
+      : 0;
+  if (ok && skipped > 0) {
+    console.log(
+      `  ${GREEN}pass${OFF}  ${step.name}     ${BOLD}(${skipped} skipped: the fork tests need ESCROW_FORK_RPC, ` +
+        `so this pass does not reproduce them)${OFF}`,
+    );
+  } else if (ok) {
     console.log(`  ${GREEN}pass${OFF}  ${step.name}     `);
   } else {
     console.log(`  ${RED}FAIL${OFF}  ${step.name}     `);

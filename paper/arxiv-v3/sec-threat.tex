@@ -1,0 +1,44 @@
+\section{Threat Model and Assumptions}
+\label{sec:threat}
+
+We consider three adversaries.
+\textbf{A1}, a persuasive vendor, controls everything a resource server returns, including prices, payees
+and descriptions, and aims to make the agent pay more, more often, or to someone else.
+\textbf{A2} has arbitrary code execution in the agent's process, the \emph{orchestrator}: it holds the relay
+key, relays everything between the signer and the user's console, and may submit any request to the policy
+contract and any query to the signer, in any order. A2 subsumes A1, and our claims about the agent are made
+against A2. \textbf{A3}, a dishonest vendor, collects a payment after its hold has ended, or collects in
+time and delivers nothing or something worthless. The implemented system addresses late funding;
+non-delivery is the subject of Section~\ref{sec:delivery}.
+
+\paragraph{What the adversaries cannot do.} Break Keccak-256 or ECDSA over secp256k1; obtain the user's
+wallet key; rewrite the canonical chain. The signer's RPC endpoint may lie, and blocks may be dropped from
+the chain it reads; for payment authorization after a stable, authenticated setup this costs liveness and
+cannot widen the loss bound (Section~\ref{sec:escrow}). The leakage theorem makes a stronger assumption
+about dropped blocks, stated in it (Section~\ref{sec:leakthm}).
+
+\paragraph{Trusted components.} The loss bound assumes an uncompromised signer: the payer is an ordinary
+key, so a compromised signer can sign a plain transfer and take the funded balance. It also trusts the
+ROFL application's administrator, who can change which enclave measurements receive the application's
+keys. The user's console and the user's own RPC endpoint are trusted; the console is built with the vault
+address and the signer's enrollment address fixed.
+
+\paragraph{Inco.} We separate what we assume of Inco from what we test, since a verified signature
+establishes only that a threshold of covalidators endorsed a plaintext. We assume:
+\begin{enumerate}[(I1)]
+  \item \emph{Correct evaluation:} each handle an operation returns evaluates to that operation applied to
+        the plaintexts of its inputs.
+  \item \emph{Ordered evaluation and binding:} the operation graph is evaluated in the order of the
+        canonical chain's transactions and events, so that the budget handle a request reads is the one
+        the previous transaction wrote, and the decision handle the vault stores for $(g, s)$ is the one
+        that request computed.
+  \item \emph{Unforgeable attestation:} a threshold signature verifies for $(h, v)$ only if handle $h$
+        evaluates to $v$.
+  \item \emph{Access control:} only the vault can use the budget and cap handles as operands.
+  \item \emph{Confidentiality:} no plaintext of a budget or cap handle reaches anyone; only the decisions the
+        vault reveals are decrypted.
+\end{enumerate}
+The loss bound needs I1 to I4; the leakage theorem needs I5 as well. What this paper tests is the
+contract logic \emph{given} these properties, using Inco's test double, and the live behaviour of the deployed
+service in our runs; neither establishes the properties themselves. If I1 or I3 fails, the public call count,
+the allowlist and the funded balance still bound the loss.

@@ -1,0 +1,37 @@
+\section{Background}
+\label{sec:background}
+
+\paragraph{x402 and EIP-3009.} In x402's \code{exact} scheme a server's 402 body lists the payments it
+accepts: network, asset, payee, maximum amount, resource, a free-text description and
+\code{maxTimeoutSeconds}, the ``maximum time allowed for payment completion''. It is a deadline for one
+exchange, not a reservation. An optional Offer and Receipt extension~\cite{x402offer} lets the server sign
+its terms, including an optional \textit{validUntil}. The client signs an EIP-3009~\cite{eip3009}
+authorization, an EIP-712~\cite{eip712} typed message $(\mathit{from}, \mathit{to}, \mathit{value},
+\mathit{validAfter}, \mathit{validBefore}, \mathit{nonce})$. A token executes each $(\mathit{from},
+\mathit{nonce})$ at most once and refuses it at or after \textit{validBefore}. In
+\code{transferWithAuthorization} anyone may submit the message; in \code{receiveWithAuthorization} only its
+\textit{to} address may. The \code{exact} scheme also defines an ERC-7710~\cite{erc7710} delegation method
+under which a smart account pays; we return to it in Section~\ref{sec:related}.
+
+\paragraph{Auth-capture.} x402's \code{auth-capture} scheme~\cite{x402authcapture} runs on the
+commerce-payments \code{AuthCaptureEscrow}~\cite{commercepayments}. A payment is a \code{PaymentInfo}
+struct: operator, payer, receiver, token, maximum amount, three deadlines, fee bounds, fee receiver and a
+salt. The payer signs a \code{receiveWithAuthorization} to a token collector. The escrow accepts
+\code{authorize} (fund and hold), \code{charge} (fund and pay at once), \code{capture} and \code{void} only
+from the struct's operator; the payer alone may \code{reclaim} a hold once its capture deadline has passed.
+Section~\ref{sec:binding} gives the exact encoding and what each contract checks.
+
+\paragraph{Inco Lightning.} Inco Lightning~\cite{inco} lets contracts on Base hold encrypted values,
+represented on chain by 32-byte \emph{handles}. Users encrypt inputs on the client, and a contract converts
+a ciphertext into a handle bound to the submitting address. Operations such as comparison, conjunction,
+selection and subtraction return new handles at once and emit events; Inco's covalidators, running in
+trusted hardware off chain, evaluate them afterwards. A contract cannot branch on an encrypted value. It
+may mark a handle for public decryption, after which a threshold of covalidators signs the plaintext and
+the contract verifies that signature on chain. Confidentiality and correct evaluation both rest on Inco's
+covalidators and their hardware; Lightning is not homomorphic encryption.
+
+\paragraph{Oasis ROFL and Intel TDX.} Intel TDX runs a virtual machine whose memory is protected from the
+host and can be remotely attested. Oasis ROFL~\cite{rofl} runs containers in such machines under a policy
+registered on the Sapphire chain, which lists the enclave measurements the application accepts, and
+derives keys deterministically from the application's identity and a key identifier, releasing them only
+to instances that policy admits.

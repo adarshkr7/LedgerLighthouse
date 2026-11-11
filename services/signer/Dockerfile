@@ -82,11 +82,9 @@ COPY services/signer services/signer
 # last — the same reason CI runs `pnpm build` before it typechecks.
 RUN pnpm --filter @ntux402/shared run build
 
-# Where the non-secret address -> key_id index lives. Backed by the persistent
-# disk declared in rofl.yaml, so payer keys survive a restart. It holds no key
-# material — that is the point of RoflKeyStore.
+# Keys come from rofl-appd over this socket. The signer keeps no state of its own:
+# each payer key is derived from the goal's owner and enrollment id on chain.
 ENV SIGNER_ROFL_SOCKET=/run/rofl-appd.sock \
-    SIGNER_ROFL_INDEX_PATH=/data/payers.json \
     SIGNER_PORT=8402
 
 EXPOSE 8402

@@ -78,6 +78,19 @@ function pinnedVault(): `0x${string}` {
   return vault as `0x${string}`;
 }
 
+/**
+ * The enrollment key this console trusts. Build-time, and checked against the
+ * vault's own `enrollmentSigner()` before any goal is opened: a statement from any
+ * other key could name a payer the orchestrator holds.
+ */
+export function pinnedEnrollmentSigner(): `0x${string}` {
+  const signer = env["VITE_ENROLLMENT_SIGNER"] as string | undefined;
+  if (signer === undefined || !/^0x[0-9a-fA-F]{40}$/.test(signer)) {
+    throw new Error("VITE_ENROLLMENT_SIGNER is not set to an address. Set it to the signer's enrollment address and rebuild.");
+  }
+  return signer as `0x${string}`;
+}
+
 export interface OrchestratorConfig {
   readonly vaultAddress: `0x${string}`;
   readonly usdcAddress: `0x${string}`;

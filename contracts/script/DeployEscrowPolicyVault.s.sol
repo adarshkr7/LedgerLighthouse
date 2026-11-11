@@ -16,16 +16,20 @@ interface ITokenCollector {
 /// Without --broadcast this only simulates, which sends nothing and is the way to read
 /// the gas and see the checks pass first.
 ///
-///   forge script script/DeployEscrowPolicyVault.s.sol:DeployEscrowPolicyVault \
+///   forge script script/DeployEscrowPolicyVault.s.sol:DeployEscrowPolicyVault --sig "run()" \
 ///     --rpc-url "$BASE_SEPOLIA_RPC_URL"
-///   forge script script/DeployEscrowPolicyVault.s.sol:DeployEscrowPolicyVault \
+///   forge script script/DeployEscrowPolicyVault.s.sol:DeployEscrowPolicyVault --sig "run()" \
 ///     --rpc-url "$BASE_SEPOLIA_RPC_URL" --broadcast
 ///
 /// To verify the source afterwards:
 ///
 ///   forge verify-contract <vault> src/EscrowPolicyVault.sol:EscrowPolicyVault --chain 84532 \
-///     --constructor-args $(cast abi-encode "constructor(address,address)" <escrow> <collector>) \
+///     --constructor-args $(cast abi-encode "constructor(address,address,address)" <escrow> <collector> <enrollment>) \
 ///     --etherscan-api-key "$BASESCAN_API_KEY" --watch
+///
+/// ENROLLMENT_SIGNER is the signer's enrollment address, as its GET /health reports it.
+/// For an enclave signer it is derived inside the enclave, so read it from the running
+/// enclave whose measurements you have checked, never from a laptop's copy of the code.
 ///
 /// It prints what to do afterwards. The vault keeps both addresses for good, so a wrong
 /// one here means a new vault and new goals, which is why they are checked before the
@@ -45,8 +49,15 @@ contract DeployEscrowPolicyVault is Script {
     error CollectorNotDeployed(address expected);
     error CollectorServesAnotherEscrow(address collector, address escrow);
     error DeployedWithOtherAddresses(address escrow, address collector);
+    error NoEnrollmentSigner();
 
     function run() external returns (EscrowPolicyVault vault) {
+        return run(vm.envOr("ENROLLMENT_SIGNER", address(0)));
+    }
+
+    /// The same, with the enrollment address passed in. Tests call this one, since
+    /// an environment variable is shared by every test running in parallel.
+    function run(address enrollment) public returns (EscrowPolicyVault vault) {
         // Assert the chain rather than infer it. The Inco singleton address is baked
         // into Lib.sol and deployed there on these two chains only, so deploying anywhere
         // else yields a vault whose encrypted operations point at nothing.
@@ -61,14 +72,17 @@ contract DeployEscrowPolicyVault is Script {
         address served = ITokenCollector(COLLECTOR).authCaptureEscrow();
         require(served == ESCROW, CollectorServesAnotherEscrow(COLLECTOR, served));
 
+        require(enrollment != address(0), NoEnrollmentSigner());
+
         uint256 deployerKey = vm.envUint("DEPLOYER_PRIVATE_KEY");
 
         vm.startBroadcast(deployerKey);
-        vault = new EscrowPolicyVault(IAuthCaptureEscrow(ESCROW), COLLECTOR);
+        vault = new EscrowPolicyVault(IAuthCaptureEscrow(ESCROW), COLLECTOR, enrollment);
         vm.stopBroadcast();
 
         require(
-            address(vault.escrow()) == ESCROW && vault.collector() == COLLECTOR,
+            address(vault.escrow()) == ESCROW && vault.collector() == COLLECTOR
+                && vault.enrollmentSigner() == enrollment,
             DeployedWithOtherAddresses(address(vault.escrow()), vault.collector())
         );
 
@@ -77,15 +91,15 @@ contract DeployEscrowPolicyVault is Script {
         console.log("Inco fee (wei)      :", inco.getFee());
         console.log("Escrow              :", ESCROW);
         console.log("Collector           :", COLLECTOR);
+        console.log("Enrollment signer   :", enrollment);
         console.log("EscrowPolicyVault   :", address(vault));
         console.log("AUTHORIZATION_WINDOW:", vault.AUTHORIZATION_WINDOW());
         console.log("MAX_CAPTURE_WINDOW  :", vault.MAX_CAPTURE_WINDOW());
         console.log("");
-        console.log("Set both of these to the vault's address, then restart the services:");
-        console.log("  POLICY_VAULT_ADDRESS");
-        console.log("  FACILITATOR_ESCROW_OPERATORS");
-        console.log("Then rebuild the enclave signer. The pinned v4 image still signs plain transfers:");
-        console.log("  build it, pin the digest in services/signer/compose.yaml, update rofl.yaml's measurements,");
-        console.log("  set POLICY_VAULT_ADDRESS in its ROFL secrets, redeploy, and check /health says escrow.");
+        console.log("Set these to the vault's address, then restart the services and rebuild the console:");
+        console.log("  POLICY_VAULT_ADDRESS, FACILITATOR_ESCROW_OPERATORS, VITE_POLICY_VAULT_ADDRESS");
+        console.log("Set VITE_ENROLLMENT_SIGNER to the enrollment address above.");
+        console.log("For the enclave: set POLICY_VAULT_ADDRESS in its ROFL secrets, restart it, and check");
+        console.log("  that /health reports escrow settlement and this enrollment address.");
     }
 }

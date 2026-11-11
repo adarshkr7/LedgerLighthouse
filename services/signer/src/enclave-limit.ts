@@ -24,9 +24,10 @@
  *
  * `rofl-appd`, over the UNIX socket in `keystore.ts`. Two paths reach it:
  *
- *   - `mint()`   — one `keys/generate` plus a rewrite of the persistent index.
- *   - `signerFor()` — one `keys/generate` **per signature**, because
- *     `RoflKeyStore` deliberately re-derives rather than caching key material.
+ *   - `enrollment()` — one `keys/generate` per enrollment statement ("mint",
+ *     the name it had when the route minted a fresh payer).
+ *   - `payer()` — one `keys/generate` per signature and per enrollment, because
+ *     the store re-derives rather than caching key material.
  *
  * That daemon is a single shared resource inside the TEE, serving every request
  * this process makes regardless of which route, which IP or which proxy hop
@@ -56,7 +57,7 @@
  */
 
 import { RateLimiter } from "@ntux402/shared/node";
-import type { Address, LocalAccount } from "viem";
+import type { Address, Hex, LocalAccount } from "viem";
 
 import type { KeyStore } from "./keystore.js";
 
@@ -90,7 +91,7 @@ export class EnclaveRateLimitError extends Error {
 }
 
 export interface EnclaveLimits {
-  /** `POST /payer` — a fresh key and an index write. */
+  /** `POST /enrollments`: one enrollment statement. */
   readonly mintPerMinute: number;
   /** Every signature — one re-derivation of an existing key. */
   readonly derivePerMinute: number;
@@ -182,30 +183,22 @@ export class RateLimitedKeyStore implements KeyStore {
     throw new EnclaveRateLimitError(operation, limiter.retryAfterSeconds(GLOBAL), max);
   }
 
-  async mint(): Promise<Address> {
+  get kind() {
+    return this.#inner.kind;
+  }
+
+  async enrollment(): Promise<LocalAccount> {
     this.#check(this.#mint, "mint", this.#limits.mintPerMinute);
-    return this.#inner.mint();
+    return this.#inner.enrollment();
   }
 
   /**
-   * Charged before the lookup, not after a hit.
-   *
-   * `RoflKeyStore.signerFor` returns `undefined` without touching the socket
-   * when it holds no key for the address, so charging only on a hit would be
-   * the tighter accounting of enclave calls. It is not what we want: the
-   * budget being defended is the daemon's throughput for *legitimate* signing,
-   * and a caller that can probe unknown addresses for free is a caller that can
-   * measure the store. Reaching this line at all already costs an approved,
-   * finalized spend record on chain (`escrow-service.ts`), so misses are rare and the
-   * conservative charge is close to free.
+   * Charged on every derivation, whatever the caller. Reaching this from
+   * `sign()` already costs an approved, finalized spend record on chain, and
+   * from `enroll()` an enrollment charge, so the budget mostly meters real work.
    */
-  async signerFor(address: Address): Promise<LocalAccount | undefined> {
+  async payer(owner: Address, enrollmentId: Hex): Promise<LocalAccount> {
     this.#check(this.#derive, "derive", this.#limits.derivePerMinute);
-    return this.#inner.signerFor(address);
-  }
-
-  /** Reads the in-process index only — no enclave call, so nothing to limit. */
-  async addresses(): Promise<readonly Address[]> {
-    return this.#inner.addresses();
+    return this.#inner.payer(owner, enrollmentId);
   }
 }
