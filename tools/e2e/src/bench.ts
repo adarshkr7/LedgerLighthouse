@@ -4,12 +4,13 @@
  *
  *   pnpm --filter @ntux402/e2e run bench                  30 approved, 20 rejected
  *   pnpm --filter @ntux402/e2e run bench -- --approved 50 --rejected 30
+ *   pnpm --filter @ntux402/e2e run bench -- --out /some/dir
  *
  * ## What it runs
  *
  * One goal, then two phases on it, through exactly the path the demo uses:
  * `PaymentLoop`, the vault relay, Inco's attested reveal, the signer, the
- * facilitator and the mock seller.
+ * facilitator and the mock seller, through the auth-capture escrow.
  *
  *   - approved: `market-data` at 0.01 USDC, under the cap and the budget, so
  *     each call commits, is approved, signed, settled and served.
@@ -24,22 +25,22 @@
  * ## What it records
  *
  * Per call: wall time from first request to each stage, the reveal's own
- * latency and poll count, and the gas of `requestSpend` and `finalizeDecision`
- * read from their receipts. Everything goes to `docs/runs/bench-<date>.json`,
+ * latency and poll count, and the gas of `requestEscrowSpend`, `finalizeDecision`,
+ * the vendor's hold and its claim, read from their receipts. Everything goes to
+ * `docs/runs/bench-<date>.json` unless `--out` names another directory,
  * and a summary (median, mean, 10th and 90th percentile, min, max) is printed.
  * A call that ends in anything other than its expected outcome is recorded with
  * that outcome and excluded from the statistics, never silently dropped.
  */
 
-import { writeFileSync, mkdirSync } from "node:fs";
+import { appendFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { createPublicClient, createWalletClient, parseEventLogs, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { handleTypes } from "@inco/lightning-js";
 import { rpcTransport, sendingAccount, viemChain } from "@ntux402/shared/viem";
-import { DEMO_PAYEES, formatUsdc, usdcAbi } from "@ntux402/shared";
+import { formatUsdc, usdcAbi } from "@ntux402/shared";
 import {
-  IncoDecisionReader,
   PaymentLoop,
   ScriptedAgent,
   SignerClient,
@@ -54,11 +55,13 @@ import {
   INCO_SINGLETON,
   loadDotEnv,
   optional,
-  policyVaultAbi,
   requiredAddress,
   requiredHexKey,
   networkFromEnv,
+  vaultAbi,
 } from "./config.js";
+import { enroll } from "./enroll.js";
+import { assertEscrowSigner, assertEscrowVault, decisionSource, mockVendor } from "./escrow.js";
 
 loadDotEnv();
 
@@ -95,7 +98,11 @@ const relayKey = requiredHexKey("ORCHESTRATOR_RELAY_KEY");
 const relayAddress = privateKeyToAccount(relayKey).address;
 const publicClient = createPublicClient({ chain: viemChain(network), transport: rpcTransport(rpcUrl) });
 const userWallet = createWalletClient({ account: user, chain: viemChain(network), transport: rpcTransport(rpcUrl) });
-const abi = policyVaultAbi();
+const abi = vaultAbi();
+
+await assertEscrowVault(publicClient, vaultAddress);
+await assertEscrowSigner(signerUrl, vaultAddress);
+const vendor = await mockVendor(mockApiUrl, vaultAddress);
 
 const signerHealth = await fetch(`${signerUrl}/health`).then((r) => r.json()).catch(() => undefined) as
   | { vault?: string; custody?: { store?: string } }
@@ -110,7 +117,14 @@ console.log(`bench: ${APPROVED} approved + ${REJECTED} rejected calls`);
 console.log(`  vault ${vaultAddress}\n  signer ${signerUrl} (key store: ${custody})`);
 
 const signer = new SignerClient(signerUrl, undefined, optional("SIGNER_SERVICE_TOKEN") ?? optional("SERVICE_TOKEN"));
-const payer = await signer.mintPayer();
+const enrolled = await enroll({
+  signer,
+  reader: publicClient,
+  vault: vaultAddress,
+  owner: user.address,
+  chainId: network.chainId,
+});
+const payer = enrolled.payer;
 const zap = await connectLightning(network, rpcUrl);
 const encrypt = async (v: bigint) =>
   (await zap.encrypt(v, { accountAddress: user.address, dappAddress: vaultAddress, handleType: handleTypes.euint256 })) as Hex;
@@ -119,7 +133,7 @@ const incoFee = (await publicClient.readContract({ address: INCO_SINGLETON, abi:
 const openHash = await userWallet.writeContract({
   address: vaultAddress,
   abi,
-  functionName: "openGoal",
+  functionName: "openEnrolledGoal",
   args: [
     {
       budgetCiphertext: await encrypt(BUDGET),
@@ -135,8 +149,10 @@ const openHash = await userWallet.writeContract({
       relay: relayAddress,
       asset: usdcAddress,
       expiry: BigInt(Math.floor(Date.now() / 1000) + 24 * 3600),
-      allowlist: [...DEMO_PAYEES],
+      allowlist: [vendor],
     },
+    enrolled.enrollmentId,
+    enrolled.signature,
   ],
   value: 2n * incoFee,
 });
@@ -174,11 +190,15 @@ interface CallRecord {
   readonly commitTx?: string | undefined;
   readonly finalizeTx?: string | undefined;
   readonly settleTx?: string | undefined;
+  readonly claimTx?: string | undefined;
+  readonly holdGas?: string | undefined;
+  readonly claimGas?: string | undefined;
 }
 
 let events: { at: number; event: PaymentEvent }[] = [];
 const relay = new VaultRelay({ rpcUrl, vaultAddress, relayKey, chainId: network.chainId });
-const decisions = new IncoDecisionReader(zap);
+const decisions = await decisionSource(zap, publicClient, vaultAddress);
+decisions.limits(goalId, BUDGET, CAP);
 // A fresh loop, and so a fresh x402 client, per call: the client caches a paid
 // response, which is right for an agent and would turn every repeat into a free
 // cache hit here.
@@ -190,7 +210,7 @@ const newLoop = () =>
     signer,
     agent: new ScriptedAgent(),
     asset: usdcAddress,
-    network: network.x402Network,
+    escrow: { vault: vaultAddress, network: `eip155:${network.chainId}` },
     onEvent: (event) => events.push({ at: performance.now(), event }),
   });
 
@@ -217,7 +237,8 @@ async function oneCall(phase: CallRecord["phase"], index: number): Promise<CallR
   let commitTx: Hex | undefined;
   let finalizeTx: Hex | undefined;
   let requestSpendGas: string | undefined;
-  let settleTx: string | undefined;
+  let settleTx: Hex | undefined;
+  let claimTx: Hex | undefined;
   for (const { at, event } of events) {
     switch (event.type) {
       case "payment-required": mark("402", at); break;
@@ -238,6 +259,7 @@ async function oneCall(phase: CallRecord["phase"], index: number): Promise<CallR
       case "settled":
         mark("settled", at);
         settleTx = event.settlement.transaction;
+        claimTx = event.settlement.claimTransaction;
         break;
       default: break;
     }
@@ -257,7 +279,8 @@ async function oneCall(phase: CallRecord["phase"], index: number): Promise<CallR
     ...(requestSpendGas ? { requestSpendGas } : {}),
     ...(finalizeTx ? { finalizeGas: await receiptGas(finalizeTx), finalizeTx } : {}),
     ...(commitTx ? { commitTx } : {}),
-    ...(settleTx ? { settleTx } : {}),
+    ...(settleTx ? { settleTx, holdGas: await receiptGas(settleTx) } : {}),
+    ...(claimTx ? { claimTx, claimGas: await receiptGas(claimTx) } : {}),
   };
 }
 
@@ -265,6 +288,13 @@ async function oneCall(phase: CallRecord["phase"], index: number): Promise<CallR
 
 const records: CallRecord[] = [];
 const started = new Date();
+// One file per run, named by time and vault, so runs never overwrite each other. Each
+// record is also appended as it happens, so a crash keeps every call made before it.
+const outArg = process.argv.indexOf("--out");
+const dir = outArg === -1 ? join(process.cwd(), "..", "..", "docs", "runs") : process.argv[outArg + 1]!;
+mkdirSync(dir, { recursive: true });
+const stem = `bench-${started.toISOString().slice(0, 19).replace(/:/g, "")}-${vaultAddress.slice(0, 6).toLowerCase()}`;
+const partial = join(dir, `${stem}.partial.jsonl`);
 for (const [phase, count] of [["approved", APPROVED], ["rejected", REJECTED]] as const) {
   for (let i = 1; i <= count; i++) {
     let record: CallRecord;
@@ -274,6 +304,7 @@ for (const [phase, count] of [["approved", APPROVED], ["rejected", REJECTED]] as
       record = { phase, index: i, outcome: `error: ${e instanceof Error ? e.message.split("\n")[0] : String(e)}`, expected: false, t: {} };
     }
     records.push(record);
+    appendFileSync(partial, JSON.stringify(record) + "\n");
     console.log(
       `  ${phase} ${String(i).padStart(3)}  ${record.outcome.padEnd(16)} ${String(record.t["done"] ?? "-").padStart(6)} ms` +
         (record.revealLatencyMs !== undefined ? `  reveal ${record.revealLatencyMs} ms (${record.revealAttempts})` : "") +
@@ -287,7 +318,14 @@ for (const [phase, count] of [["approved", APPROVED], ["rejected", REJECTED]] as
 function stats(values: number[]) {
   const v = [...values].sort((a, b) => a - b);
   if (v.length === 0) return undefined;
-  const q = (p: number) => v[Math.min(v.length - 1, Math.max(0, Math.round(p * (v.length - 1))))]!;
+  // Interpolates between neighbours, so the median of an even count is the mean
+  // of its two middle values and not the upper one.
+  const q = (p: number) => {
+    const at = p * (v.length - 1);
+    const below = Math.floor(at);
+    const above = Math.ceil(at);
+    return Math.round(v[below]! + (v[above]! - v[below]!) * (at - below));
+  };
   const mean = v.reduce((a, b) => a + b, 0) / v.length;
   return { n: v.length, median: q(0.5), mean: Math.round(mean), p10: q(0.1), p90: q(0.9), min: v[0]!, max: v[v.length - 1]! };
 }
@@ -308,6 +346,8 @@ for (const phase of ["approved", "rejected"] as const) {
     settleMs: stats(pick((r) => (r.t["settled"] !== undefined && r.t["signed"] !== undefined ? r.t["settled"] - r.t["signed"] : undefined))),
     requestSpendGas: stats(pick((r) => (r.requestSpendGas ? Number(r.requestSpendGas) : undefined))),
     finalizeGas: stats(pick((r) => (r.finalizeGas ? Number(r.finalizeGas) : undefined))),
+    holdGas: stats(pick((r) => (r.holdGas ? Number(r.holdGas) : undefined))),
+    claimGas: stats(pick((r) => (r.claimGas ? Number(r.claimGas) : undefined))),
   };
 }
 
@@ -318,17 +358,22 @@ const out = {
   goalId: goalId.toString(),
   signer: { url: signerUrl, keyStore: custody },
   agent: "scripted",
-  policy: { budget: BUDGET.toString(), cap: CAP.toString(), calls: APPROVED, funding: FUNDING.toString() },
+  policy: { budget: BUDGET.toString(), cap: CAP.toString(), calls: APPROVED + 1, funding: FUNDING.toString() },
   openGoalGas: openReceipt.gasUsed.toString(),
   summary,
   records,
 };
-const dir = join(process.cwd(), "..", "..", "docs", "runs");
-mkdirSync(dir, { recursive: true });
-const file = join(dir, `bench-${started.toISOString().slice(0, 10)}.json`);
+const file = join(dir, `${stem}.json`);
 writeFileSync(file, JSON.stringify(out, null, 2));
 
 console.log(`\nsummary (milliseconds and gas; expected outcomes only)`);
 console.log(JSON.stringify(summary, null, 2));
 console.log(`\nwritten ${file}`);
 console.log(`goal ${goalId} is still open with leftover USDC; run the sweep to return it.`);
+
+// Statistics over the calls that behaved say nothing about the ones that did not.
+const unexpected = records.filter((r) => !r.expected);
+if (unexpected.length > 0) {
+  console.log(`\n${unexpected.length} call(s) of ${records.length} did not end as expected.`);
+  process.exitCode = 1;
+}

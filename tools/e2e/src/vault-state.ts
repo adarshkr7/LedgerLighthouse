@@ -1,5 +1,5 @@
 /**
- * Prints the live state of the deployed PolicyVault: every goal, every spend,
+ * Prints the live state of the deployed EscrowPolicyVault: every goal, every spend,
  * and the decision on each.
  *
  *   pnpm --filter @ntux402/e2e run state
@@ -13,9 +13,10 @@
 import { rpcTransport, viemChain } from "@ntux402/shared/viem";
 import { OnChainVaultReader } from "@ntux402/signer";
 import { formatUsdc } from "@ntux402/shared";
-import { createPublicClient, type Address } from "viem";
+import { createPublicClient } from "viem";
 
-import { loadDotEnv, policyVaultAbi, requiredAddress, networkFromEnv } from "./config.js";
+import { loadDotEnv, requiredAddress, networkFromEnv, vaultAbi } from "./config.js";
+import { assertEscrowVault, paymentState } from "./escrow.js";
 
 loadDotEnv();
 
@@ -24,9 +25,10 @@ const vaultAddress = requiredAddress("POLICY_VAULT_ADDRESS");
 
 const reader = new OnChainVaultReader({ rpcUrl, vaultAddress, chainId: network.chainId });
 const client = createPublicClient({ chain: viemChain(network), transport: rpcTransport(rpcUrl) });
-const abi = policyVaultAbi();
+const abi = vaultAbi();
+await assertEscrowVault(client, vaultAddress);
 
-console.log(`\nPolicyVault ${vaultAddress}`);
+console.log(`\nEscrowPolicyVault ${vaultAddress}`);
 console.log(`chain ${await reader.chainId()}\n`);
 
 const goalCount = (await client.readContract({
@@ -37,7 +39,6 @@ const goalCount = (await client.readContract({
 
 if (goalCount === 0n) {
   console.log("No goals opened yet.\n");
-  process.exit(0);
 }
 
 for (let goalId = 1n; goalId <= goalCount; goalId++) {
@@ -74,10 +75,11 @@ for (let goalId = 1n; goalId <= goalCount; goalId++) {
     const spend = await reader.spend(goalId, seq);
     if (!spend) continue;
     const state = !spend.finalized ? "PENDING" : spend.approved ? "APPROVED" : "REJECTED";
-    const used = await reader.authorizationUsed(goal.asset as Address, goal.payer, spend.nonce);
+    const money = await paymentState(client, vaultAddress, goalId, seq);
+    const where = money.captured > 0n ? "PAID" : money.held > 0n ? "HELD" : money.collected ? "returned" : "not collected";
     console.log(
       `    seq ${seq}  ${state.padEnd(8)} ${formatUsdc(spend.amount).padStart(8)} USDC -> ${spend.payTo}` +
-        `  auth ${used ? "SETTLED" : "unused"}`,
+        `  ${where}`,
     );
   }
   console.log();

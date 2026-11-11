@@ -1,0 +1,117 @@
+# Enclave identity for the 11 November 2026 runs, read with the oasis CLI on that day.
+# Image pinned in services/signer/compose.yaml; built per docs/runs/enclave-v5-2026-11-09-signer-image-build.log.
+
+$ grep image: compose.yaml
+    image: docker.io/schwarzite/totem-signer@sha256:f8d12e03a682b62d2b9740d0bab49d35d92b2a1274633005686e320b8bbb267c
+
+$ oasis rofl show
+App ID:        rofl1qr0fv0qs2u8vmmah0ucmwegcj2cdz7kj4qzjduhp
+Admin:         ll_rofl (0x44221a2991ea3c35216Dcf1c844edcdf3922C87c)
+Staked amount: 100.0 TEST
+Metadata:
+  net.oasis.rofl.name: totem-authorization-signer
+  net.oasis.rofl.license: MIT
+  net.oasis.rofl.version: 0.1.0
+  net.oasis.rofl.repository: https://github.com/adarshkr7/LedgerLighthouse
+Secrets:
+  POLICY_VAULT_ADDRESS: [169 bytes]
+  USDC_ADDRESS: [161 bytes]
+  SERVICE_TOKEN: [184 bytes]
+  BASE_SEPOLIA_RPC_URL: [166 bytes]
+Policy:
+  {
+    "quotes": {
+      "pcs": {
+        "tcb_validity_period": 30,
+        "min_tcb_evaluation_data_number": 18,
+        "tdx": {}
+      }
+    },
+    "enclaves": [
+      "P7Osvn1tRu3l9BIuZYnKNkhNvvnr0xaz5ln9845FyacAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+      "QDX7GTFGL9Jy5i7p4E4APXtWM28jkx/ROtNLBj8j01cAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+    ],
+    "endorsements": [
+      {
+        "any": {}
+      }
+    ],
+    "fees": 2,
+    "max_expiration": 3
+  }
+
+=== Replicas ===
+- RAK:        3sBp6KX6sN9QO0BW+DGOSvxljhkUvHQFpaW7Vy7fYI0=
+  Node ID:    1owPK3eT21k0ajRG7VfHRgp4JPXobCQtzuglz6ZSJis=
+  Expiration: 58016
+  Metadata:
+    net.oasis.tls.pk: MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEj/iL0xhMm/35vYF1YYi3Ow7y7mvpWKu9tigYKlUiJNISE7S5SE23KOb6vEwa3DIRRACFoIHepXud5Xy8ocwiaQ==
+    net.oasis.policy.provider: omlzaWduYXR1cmVYQMRpH6229MimLrSFahj/zdSae2jM+QBWBWFavfSrlf8Vq1jT+F5njTTVO2hoe1bQHTny5nbr/v3vfBXfdpurHAZxbGFiZWxfYXR0ZXN0YXRpb25YiKJjcmFrWCDewGnopfqw31A7QFb4MY5K/GWOGRS8dAWlpbtXLt9gjWZsYWJlbHOhcm5ldC5vYXNpcy5wcm92aWRlcnhEb21ocGJuTjBZVzVqWlVnQUFBQUFBQUFIVUdod2NtOTJhV1JsY2xVQVZabkI5NEI4aTZvdTdJM2EzRGxkbTV0R0RpRT0=
+
+$ oasis rofl machine show
+Name:       default
+Provider:   rofl:provider:sapphire (oasis1qp2ens0hsp7gh23wajxa4hpetkdek3swyyulyrmz)
+ID:         0000000000000750
+Offer:      0000000000000003
+Status:     accepted
+Creator:    ll_rofl (0x44221a2991ea3c35216Dcf1c844edcdf3922C87c)
+Admin:      ll_rofl (0x44221a2991ea3c35216Dcf1c844edcdf3922C87c)
+Node ID:    1owPK3eT21k0ajRG7VfHRgp4JPXobCQtzuglz6ZSJis=
+Created at: 2026-11-11 14:20:18 +0530 IST
+Updated at: 2026-11-11 14:20:52 +0530 IST
+Paid until: 2026-11-12 00:20:18 +0530 IST
+Proxy:
+  Domain: m1872.opf-testnet-rofl-25.rofl.app
+  Ports from compose file:
+    8402 (signer): https://p8402.m1872.opf-testnet-rofl-25.rofl.app
+Metadata:
+  net.oasis.scheduler.rak: M7UIJigF+B2RifdhBfTlY9FqKW773doOXGzL41hctTE=
+Resources:
+  TEE:     Intel TDX
+  Memory:  4096 MiB
+  vCPUs:   2
+  Storage: 20000 MiB
+Deployment:
+  App ID: rofl1qr0fv0qs2u8vmmah0ucmwegcj2cdz7kj4qzjduhp
+  Metadata:
+    net.oasis.deployment.orc.ref: rofl.sh/cea9392d-897e-42c6-85db-9fc3c035f46c:1787423114@sha256:41ea9345fbd6a7a4d49367539fdc14e2309a405df681f6d3210164a1b757c453
+Commands:
+  <no queued commands>
+
+$ curl /health
+{"ok":true,"service":"authorization-signer","chainId":84532,"vault":"0x466AB18595d2E71A87928c8d4A45F57a5D5ADFd5","settlement":"escrow","custody":{"store":"rofl","enrollmentSigner":"0x5Ddd4f587818B39960987ea4Df34b9D94E29193a"}}
+
+# After the storage wipe (oasis rofl machine restart --wipe-storage, machine updated 2026-11-11 17:01:16 IST)
+$ oasis rofl machine show
+Name:       default
+Provider:   rofl:provider:sapphire (oasis1qp2ens0hsp7gh23wajxa4hpetkdek3swyyulyrmz)
+ID:         0000000000000750
+Offer:      0000000000000003
+Status:     accepted
+Creator:    ll_rofl (0x44221a2991ea3c35216Dcf1c844edcdf3922C87c)
+Admin:      ll_rofl (0x44221a2991ea3c35216Dcf1c844edcdf3922C87c)
+Node ID:    1owPK3eT21k0ajRG7VfHRgp4JPXobCQtzuglz6ZSJis=
+Created at: 2026-11-11 14:20:18 +0530 IST
+Updated at: 2026-11-11 17:01:16 +0530 IST
+Paid until: 2026-11-12 00:20:18 +0530 IST
+Proxy:
+  Domain: m1872.opf-testnet-rofl-25.rofl.app
+  Ports from compose file:
+    8402 (signer): https://p8402.m1872.opf-testnet-rofl-25.rofl.app
+Metadata:
+  net.oasis.scheduler.rak: M7UIJigF+B2RifdhBfTlY9FqKW773doOXGzL41hctTE=
+Resources:
+  TEE:     Intel TDX
+  Memory:  4096 MiB
+  vCPUs:   2
+  Storage: 20000 MiB
+Deployment:
+  App ID: rofl1qr0fv0qs2u8vmmah0ucmwegcj2cdz7kj4qzjduhp
+  Metadata:
+    net.oasis.deployment.orc.ref: rofl.sh/cea9392d-897e-42c6-85db-9fc3c035f46c:1787423114@sha256:41ea9345fbd6a7a4d49367539fdc14e2309a405df681f6d3210164a1b757c453
+Commands:
+  <no queued commands>
+
+$ curl /health
+{"ok":true,"service":"authorization-signer","chainId":84532,"vault":"0x466AB18595d2E71A87928c8d4A45F57a5D5ADFd5","settlement":"escrow","custody":{"store":"rofl","enrollmentSigner":"0x5Ddd4f587818B39960987ea4Df34b9D94E29193a"}}
+# Sweep through the wiped enclave: docs/runs/enclave-v5-2026-11-11-after-wipe-sweep.log

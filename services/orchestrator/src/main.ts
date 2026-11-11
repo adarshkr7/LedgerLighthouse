@@ -77,7 +77,7 @@ const loop = new PaymentLoop({
   ),
   agent,
   asset: usdcAddress,
-  network: network.x402Network,
+  escrow: { vault: requiredAddress("POLICY_VAULT_ADDRESS"), network: `eip155:${network.chainId}` },
   onEvent: (event) => console.log(renderEvent(event)),
 });
 

@@ -1,0 +1,71 @@
+\section{Introduction}
+
+Language-model agents increasingly act on the web on a user's behalf: they search, call APIs and
+assemble results. Paying for those calls has required accounts, cards and invoices that an
+autonomous agent cannot hold. The x402 protocol~\cite{x402} removes that barrier. A server answers a
+request with HTTP status 402 and a machine-readable price, the client returns a signed stablecoin
+authorization~\cite{eip3009}, and settlement on a blockchain takes seconds.
+
+An agent that buys this way must do two things. It must read what the seller sends (price, payee and
+a free-text description) to decide whether a purchase serves its goal, and it must then produce a
+payment. In the common design both happen in one process, and that process holds the signing
+key. This is where \emph{indirect prompt injection}~\cite{greshake2023} does the most damage: text a
+seller places in its own description can steer the agent, and a steered agent with a payment key
+moves money that cannot be recovered. A 2026 code review, summarised by the Cloud Security
+Alliance~\cite{csa2026}, reported that default x402 clients applied no spending limit until fixes in
+August 2026, and the per-payment cap those fixes added can be switched off by a flag.
+
+Separating the model's reasoning from spending authority is not new. CaMeL~\cite{camel} checks
+capability policies outside the model that reads untrusted data, and PACE~\cite{pace} has a verifier
+sign each transaction a smart account will execute. We take that separation as given and ask a
+narrower question: when the agent's process is fully compromised, what spending authority does it keep
+over the life of a goal, and what does it learn about the user's limits? Answering it for x402 turned
+up three problems that a design for this setting has to solve, and they organise this paper.
+
+The first is that a signature outlives the approval behind it. An EIP-3009 transfer signed for an
+approved request can be collected whatever later happens to the approval, so the signer must be right
+about the chain: a lying RPC endpoint, or an approval on a block that is later dropped, becomes money.
+We remove that dependence by signing only payments that x402's auth-capture escrow can collect, with
+the policy contract as the escrow's operator, so the contract's own checks run on the canonical chain
+when money moves (Section~\ref{sec:escrow}). The second is setup. The user funds an address that
+reaches the console through the agent's process, so a compromised agent can name an address it holds.
+The payer is now derived for the user's wallet inside the signer, and a goal opens only with the
+signer's statement saying so (Section~\ref{sec:enrollment}). The third is leakage. Refunding an approval
+that was never paid is necessary for accounting and makes the policy free to question: a request that
+consumes nothing still has its decision published. A private policy then needs a separate budget of
+questions, and even with one, the private limit protects less than its encryption suggests
+(Section~\ref{sec:leakeval}).
+
+\paragraph{Contributions.}
+\begin{enumerate}
+  \item \emph{Escrow-gated authorization with authenticated setup, and a lifetime spending bound.}
+        Under an adversary with arbitrary code execution in the agent, on a goal whose setup and
+        signer are honest, vendor payments over the goal's life total at most
+        $\min(\text{budget}, \text{cap} \times \text{calls})$, to allowlisted payees only, whatever the
+        signer's RPC reports. We state the bound over an explicit transition model, prove the
+        invariants it rests on for every transition, and test them by stateful fuzzing against the
+        deployed escrow's code, by mutation, and by a live adversary campaign
+        (Sections~\ref{sec:design}--\ref{sec:security} and~\ref{sec:eval}).
+  \item \emph{Refund-induced leakage.} Reclaim, which restores spending capacity to unpaid
+        approvals, let an adversary binary-search the encrypted cap of our own deployed contract without
+        permanently consuming budget or calls (gas, fees and time still cost). A public attempt budget bounds the decision channel to $m$ bits of average min-entropy
+        leakage, under assumptions we state in the theorem. On realistic cap distributions the bound
+        leaves little: a vendor with five probes prices within about 4\% of the cap
+        (Sections~\ref{sec:attempts}, \ref{sec:leakthm} and~\ref{sec:leakeval}).
+  \item \emph{A matched comparison.} Plain x402, the same escrow path with plaintext on-chain limits,
+        and the confidential design, measured interleaved on the same network, relay and vendor; an
+        enclave-held policy with on-chain rollback protection, built and measured on a fork; and an
+        injection study that gives every arm the same agent interface
+        (Section~\ref{sec:eval}).
+\end{enumerate}
+
+\noindent We also specify a key-release protocol for digital goods that a vendor is paid for only by
+publishing the decryption key, with a dispute predicate the contract decides itself; the predicate is
+built and measured, and the rest of the protocol is not (Section~\ref{sec:delivery}). The live
+campaign, a benchmark and a storage-wipe test ran with the signer in an Intel TDX enclave on Oasis ROFL;
+the matched baselines used a signer on a local machine (Section~\ref{sec:eval}).
+
+\paragraph{Terms.} We keep four events apart throughout. \emph{Authorization} is the vault's approval of
+a request and the signer's signature over it. \emph{Funding} moves the payer's tokens into the escrow.
+\emph{Capture} pays the vendor from the escrow. \emph{Delivery} is the vendor handing over what was
+bought, which nothing in the implemented system ties to capture.

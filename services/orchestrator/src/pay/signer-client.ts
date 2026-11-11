@@ -47,6 +47,21 @@ export interface SignedAuthorization {
   };
   readonly signature: `0x${string}`;
   readonly termsHash: `0x${string}`;
+  /** Present when the signer settles through the escrow. See `EscrowPaymentTerms`. */
+  readonly payment?: EscrowPaymentTerms;
+}
+
+/** The payment an escrow signature is over, as the signer derived it from the chain. */
+export interface EscrowPaymentTerms {
+  readonly operator: `0x${string}`;
+  readonly payer: `0x${string}`;
+  readonly receiver: `0x${string}`;
+  readonly token: `0x${string}`;
+  readonly maxAmount: string;
+  readonly preApprovalExpiry: number;
+  readonly authorizationExpiry: number;
+  readonly refundExpiry: number;
+  readonly salt: string;
 }
 
 export type AuthorizeOutcome =
@@ -129,23 +144,22 @@ export class SignerClient {
   }
 
   /**
-   * Mints the per-goal ephemeral payer key. Returns an address; the key never
-   * leaves the signer. **Must happen before `openGoal`**, because the payer
-   * address is a field of the goal record (ARCHITECTURE.md).
+   * Asks the signer to enroll a payer for `owner` under `enrollmentId`, and returns
+   * its signed statement as received. **Must happen before `openEnrolledGoal`**,
+   * because the payer is a field of the goal record and the statement is its
+   * argument. Nothing here checks the statement: this process is the one the
+   * statement protects the user from, so the console and the vault check it.
    */
-  async mintPayer(): Promise<`0x${string}`> {
-    const response = await this.#fetch(`${this.#url}/payer`, {
+  async enroll(owner: string, enrollmentId: string): Promise<unknown> {
+    const response = await this.#fetch(`${this.#url}/enrollments`, {
       method: "POST",
-      headers: this.#headers(),
+      headers: this.#headers({ "content-type": "application/json" }),
+      body: JSON.stringify({ owner, enrollmentId }),
     });
     if (!response.ok) {
-      throw new Error(`signer POST /payer failed: ${response.status} ${await response.text()}`);
+      throw new Error(`signer POST /enrollments failed: ${response.status} ${await response.text()}`);
     }
-    const body = (await response.json()) as { address?: string };
-    if (typeof body.address !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(body.address)) {
-      throw new Error(`signer returned no usable address: ${JSON.stringify(body)}`);
-    }
-    return body.address as `0x${string}`;
+    return response.json();
   }
 
   async authorize(goalId: bigint, seq: bigint): Promise<AuthorizeOutcome> {

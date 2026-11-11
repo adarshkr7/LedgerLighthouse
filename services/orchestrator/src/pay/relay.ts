@@ -1,12 +1,13 @@
 /**
- * The orchestrator's on-chain hands: `requestSpend`, `finalizeDecision` and
- * `reclaimExpired`.
+ * The orchestrator's on-chain hands: `requestSpend`, `finalizeDecision`,
+ * `reclaimExpired` and, on an escrow vault, `sweep`.
  *
  * These are the *only* writes the orchestrator makes, and the relay key that
  * pays for them is a gas key — it holds no funds and authorizes no payment
  * (ARCHITECTURE.md). Everything the orchestrator is trusted to do is here, and it
- * amounts to "submit three transactions and pay for them". The third can only
- * ever give money back to the budget, and the vault decides whether it may.
+ * amounts to "submit these transactions and pay for them". `reclaimExpired` can only
+ * ever give money back to the budget, `sweep` can only pay the goal's owner, and the
+ * vault decides whether either may happen.
  *
  * What is deliberately absent is as important as what is present. There is no
  * method here that reads a budget handle, and there is none that produces a
@@ -25,8 +26,33 @@ import {
   type PublicClient,
   type WalletClient,
 } from "viem";
-import { policyVaultAbi } from "@ntux402/shared";
+import { escrowPolicyVaultAbi, policyVaultAbi } from "@ntux402/shared";
 import { rpcTransport, sendingAccount, viemChainForId } from "@ntux402/shared/viem";
+
+import type { EscrowPaymentTerms } from "./signer-client.js";
+
+const ZERO_ADDRESS: Address = "0x0000000000000000000000000000000000000000";
+
+/**
+ * The struct the vault and the escrow take. The signer signs no fee on any payment and
+ * the vault refuses any other terms, so the fee fields are constants, not inputs.
+ */
+export function paymentInfoFromTerms(payment: EscrowPaymentTerms) {
+  return {
+    operator: payment.operator,
+    payer: payment.payer,
+    receiver: payment.receiver,
+    token: payment.token,
+    maxAmount: BigInt(payment.maxAmount),
+    preApprovalExpiry: payment.preApprovalExpiry,
+    authorizationExpiry: payment.authorizationExpiry,
+    refundExpiry: payment.refundExpiry,
+    minFeeBps: 0,
+    maxFeeBps: 0,
+    feeReceiver: ZERO_ADDRESS,
+    salt: BigInt(payment.salt),
+  };
+}
 
 export interface SpendRequested {
   readonly seq: bigint;
@@ -164,10 +190,41 @@ export class VaultRelay {
     resource: string,
     payBy: bigint,
   ): Promise<SpendRequested> {
+    return this.#withStaleRetry(goalId, () => this.#requestSpendOnce(goalId, amount, payTo, resource, payBy));
+  }
+
+  /**
+   * The same request on an EscrowPolicyVault, which also records when the vendor must
+   * claim by, and the hash of the key that releases the goods, or zero for none.
+   */
+  async requestEscrowSpend(
+    goalId: bigint,
+    amount: bigint,
+    payTo: Address,
+    resource: string,
+    payBy: bigint,
+    captureDeadline: number,
+    keyHash: Hex,
+  ): Promise<SpendRequested> {
+    return this.#withStaleRetry(goalId, () =>
+      this.#commit(goalId, "requestEscrowSpend", () =>
+        this.#wallet.writeContract({
+          address: this.#vault,
+          abi: escrowPolicyVaultAbi,
+          functionName: "requestEscrowSpend",
+          args: [goalId, amount, payTo, resource, payBy, captureDeadline, keyHash],
+          chain: this.#chain,
+          account: this.#wallet.account!,
+        }),
+      ),
+    );
+  }
+
+  async #withStaleRetry(goalId: bigint, once: () => Promise<SpendRequested>): Promise<SpendRequested> {
     const attempts = 5;
     for (let attempt = 1; ; attempt++) {
       try {
-        return await this.#requestSpendOnce(goalId, amount, payTo, resource, payBy);
+        return await once();
       } catch (error) {
         const text = error instanceof Error ? error.message : String(error);
         if (attempt >= attempts || !text.includes("SpendPending")) throw error;
@@ -186,20 +243,26 @@ export class VaultRelay {
     resource: string,
     payBy: bigint,
   ): Promise<SpendRequested> {
+    return this.#commit(goalId, "requestSpend", () =>
+      this.#wallet.writeContract({
+        address: this.#vault,
+        abi: policyVaultAbi,
+        functionName: "requestSpend",
+        args: [goalId, amount, payTo, resource, payBy],
+        chain: this.#chain,
+        account: this.#wallet.account!,
+      }),
+    );
+  }
+
+  async #commit(goalId: bigint, name: string, send: () => Promise<Hex>): Promise<SpendRequested> {
     await this.assertChain();
 
-    const hash = await this.#wallet.writeContract({
-      address: this.#vault,
-      abi: policyVaultAbi,
-      functionName: "requestSpend",
-      args: [goalId, amount, payTo, resource, payBy],
-      chain: this.#chain,
-      account: this.#wallet.account!,
-    });
+    const hash = await send();
 
     const receipt = await this.#public.waitForTransactionReceipt({ hash });
     if (receipt.status !== "success") {
-      throw new Error(`requestSpend reverted (${hash})`);
+      throw new Error(`${name} reverted (${hash})`);
     }
 
     const logs = parseEventLogs({
@@ -216,7 +279,7 @@ export class VaultRelay {
           validBefore: bigint;
         }
       | undefined;
-    if (!args) throw new Error(`requestSpend emitted no SpendRequested event (${hash})`);
+    if (!args) throw new Error(`${name} emitted no SpendRequested event (${hash})`);
 
     // The next write on this spend is a finalize, and a node that has not seen
     // this block yet refuses it with `UnknownSpend`. The adversary campaign hit
@@ -315,6 +378,47 @@ export class VaultRelay {
       throw new Error(`reclaimExpired reverted (${hash})`);
     }
     return { kind: "reclaimed", txHash: hash, gasUsed: receipt.gasUsed };
+  }
+
+  /**
+   * Submits a signed return of the payer's balance through the vault's `charge`.
+   *
+   * Anyone may send this, and it can only pay the goal's owner: the vault checks the
+   * receiver against its own record. The collector is read from the vault, so nothing
+   * from the signer's response is trusted beyond the signature it covers.
+   *
+   * `GoalStillOpen` is retried because the node that estimates gas can be behind the
+   * receipt of the `closeGoal` that came just before this.
+   */
+  async sweep(payment: EscrowPaymentTerms, signature: Hex): Promise<{ txHash: Hex; gasUsed: bigint }> {
+    await this.assertChain();
+    const collector = (await this.#public.readContract({
+      address: this.#vault,
+      abi: escrowPolicyVaultAbi,
+      functionName: "collector",
+    })) as Address;
+
+    const info = paymentInfoFromTerms(payment);
+    const attempts = 6;
+    for (let attempt = 1; ; attempt++) {
+      try {
+        const hash = await this.#wallet.writeContract({
+          address: this.#vault,
+          abi: escrowPolicyVaultAbi,
+          functionName: "charge",
+          args: [info, info.maxAmount, collector, signature, 0n, ZERO_ADDRESS],
+          chain: this.#chain,
+          account: this.#wallet.account!,
+        });
+        const receipt = await this.#public.waitForTransactionReceipt({ hash });
+        if (receipt.status !== "success") throw new Error(`charge reverted (${hash})`);
+        return { txHash: hash, gasUsed: receipt.gasUsed };
+      } catch (error) {
+        const text = error instanceof Error ? error.message : String(error);
+        if (attempt >= attempts || !text.includes("GoalStillOpen")) throw error;
+        await new Promise((resolve) => setTimeout(resolve, 2_000));
+      }
+    }
   }
 
   /**

@@ -18,12 +18,10 @@ import {
   type Connector,
 } from "wagmi";
 import { createPublicClient, parseEventLogs, type Address, type Hex } from "viem";
-import { rpcTransport } from "@ntux402/shared/viem";
-import { Lightning } from "@inco/lightning-js/lite";
-import { handleTypes } from "@inco/lightning-js";
+import { checkEnrollment, freshEnrollmentId, rpcTransport } from "@ntux402/shared/viem";
 import {
   DEMO_GOALS,
-  DEMO_PAYEES,
+  escrowPolicyVaultAbi,
   policyVaultAbi,
   usdcAbi,
   type DemoGoal,
@@ -45,6 +43,8 @@ import {
   RPC_URL,
   RPC_URLS,
   explorer,
+  vendorAddress,
+  pinnedEnrollmentSigner,
   fetchIncoHealth,
   fetchOrchestratorConfig,
   type IncoHealth,
@@ -69,8 +69,13 @@ const MIN_BUDGET = 300_000n; // 0.30 USDC
 const MAX_BUDGET = 4_000_000n; // 4.00 USDC — below the 5.00 injection ask
 const DEFAULT_BUDGET = MIN_BUDGET;
 
-/** Funded above the budget on purpose, so Inco binds before the balance does. */
-const FUNDING_HEADROOM = 100_000n; // 0.10 USDC
+/**
+ * The same for every goal, because the payer's balance is public: funding the
+ * budget plus a margin would publish the budget the moment the payer is funded.
+ * Above MAX_BUDGET and the largest overcharge, so Inco binds before the balance
+ * does. The unspent part comes back when the goal is closed.
+ */
+const PAYER_FUNDING = 5_000_000n; // 5.00 USDC
 
 /**
  * Encrypted like the budget, and deliberately above every price in the
@@ -87,24 +92,27 @@ const CALLS_REMAINING = 5;
  */
 const MAX_ATTEMPTS = 10;
 
-/** How far over the chosen budget the overcharge vendor asks. */
-const OVERCHARGE_MARGIN = 50_000n; // 0.05 USDC
+/**
+ * What the overcharge vendor asks. Fixed, and above MAX_BUDGET so it is over
+ * every budget a viewer can choose. It used to be the budget plus a margin, which
+ * told the orchestrator and the vendor the budget before a single decision.
+ */
+const OVERCHARGE_PRICE = MAX_BUDGET + 50_000n; // 4.05 USDC
 
 /**
  * What a vendor asks for this run.
  *
- * Fixed for three of the four. The overcharge vendor is the exception: its
- * entire purpose is to sit *just* above the confidential budget while staying
- * far below the per-call cap, and the budget is now chosen by the viewer — so a
- * hardcoded 0.35 would simply be affordable at any budget above it, and the
- * case it exists to demonstrate would silently stop demonstrating anything.
+ * The catalog price, except for the overcharge vendor: the viewer chooses the
+ * budget, so the catalog's 0.35 would be affordable at any budget above it and
+ * the case would stop demonstrating anything. This value leaves the browser, so
+ * it must not depend on the budget.
  *
  * Returns undefined when the catalog price already stands, so the request
  * carries no override and the vendor's own number is used.
  */
-function priceFor(goal: DemoGoal, budget: bigint): string | undefined {
+function priceFor(goal: DemoGoal): string | undefined {
   if (goal.tactic !== "overcharge") return undefined;
-  return (budget + OVERCHARGE_MARGIN).toString();
+  return OVERCHARGE_PRICE.toString();
 }
 
 /** Decimal USDC to atomic units. Undefined for anything unparseable. */
@@ -152,7 +160,8 @@ const PRECONDITION_HINTS: Record<string, string> = {
   wallet:
     "the wallet client is unavailable — it is locked, still reconnecting, or on the wrong network",
   address: "no account is connected",
-  payer: "the payer key has not been minted yet",
+  payer: "the payer has not been enrolled yet",
+  enrollment: "the payer has not been enrolled on this page",
   goalId: "no goal is open",
 };
 
@@ -401,6 +410,10 @@ export default function App() {
   const [inco, setInco] = useState<IncoHealth>();
   const [configError, setConfigError] = useState<string>();
   const [payer, setPayer] = useState<Address>();
+  /** The enrollment this page drew and the signer's statement for it. */
+  const [enrollment, setEnrollment] = useState<{ id: Hex; signature: Hex }>();
+  /** Where openEnrolledGoal landed, so funding can wait for confirmations. */
+  const [openedInBlock, setOpenedInBlock] = useState<bigint>();
   const [goalId, setGoalId] = useState<string>();
   const [resumeId, setResumeId] = useState("");
   const [budgetHandle, setBudgetHandle] = useState<Hex>();
@@ -616,8 +629,7 @@ export default function App() {
   }, [config, goalId, approvedCalls, closed, funded]);
 
   const wrongChain = isConnected && chainId !== undefined && chainId !== CHAIN_ID;
-  const funding = budget + FUNDING_HEADROOM;
-  const underfunded = usdcBalance !== undefined && usdcBalance < funding;
+  const underfunded = usdcBalance !== undefined && usdcBalance < PAYER_FUNDING;
   const guard = useCallback(
     async (label: string, fn: () => Promise<void>) => {
       setError(undefined);
@@ -633,32 +645,68 @@ export default function App() {
     [],
   );
 
-  // --- step 2: mint the payer ---------------------------------------------
+  // --- step 2: enroll the payer -------------------------------------------
   // Before openGoal, because the payer address is a field of the goal record.
-  const mintPayer = () =>
-    guard("Minting payer key…", async () => {
-      if (!config) throw new Error("orchestrator config not loaded");
-      // Through the orchestrator, not straight at `config.signerUrl`.
-      // A ROFL-hosted signer wants a `SERVICE_TOKEN` bearer, and putting that
-      // in the bundle would publish it to every viewer. The orchestrator holds
-      // it already, so the mint goes via there and this page holds no secret.
-      const response = await fetch(`${ORCHESTRATOR_URL}/payer`, { method: "POST" });
-      if (!response.ok) throw new Error(`orchestrator /payer returned ${response.status}`);
-      const body = (await response.json()) as { address: Address };
-      setPayer(body.address);
+  /**
+   * Asks the signer, through the orchestrator, to enroll a payer for this wallet,
+   * and checks the answer before anything else happens.
+   *
+   * The orchestrator relays the statement and is assumed compromised, so it could
+   * name a payer whose key it holds. The statement must be signed by the enrollment
+   * key pinned in this build, which must also be the key the vault trusts (read
+   * here through this page's own RPC, not the orchestrator's), and must name this
+   * wallet, this vault and the id this page just drew. The vault checks the same
+   * signature again at openEnrolledGoal.
+   */
+  const enrollPayer = () =>
+    guard("Enrolling a payer…", async () => {
+      if (!config || !address) throw notReady({ config, address });
+      const pinned = pinnedEnrollmentSigner();
+      const onChain = (await reader.readContract({
+        address: config.vaultAddress,
+        abi: escrowPolicyVaultAbi,
+        functionName: "enrollmentSigner",
+      })) as Address;
+      if (onChain.toLowerCase() !== pinned.toLowerCase()) {
+        throw new Error(`the vault trusts enrollment key ${onChain}, but this console was built for ${pinned}`);
+      }
+      const id = freshEnrollmentId();
+      const response = await fetch(`${ORCHESTRATOR_URL}/enrollments`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ owner: address, enrollmentId: id }),
+      });
+      if (!response.ok) throw new Error(`orchestrator /enrollments returned ${response.status}`);
+      const statement = await checkEnrollment(await response.json(), {
+        owner: address,
+        enrollmentId: id,
+        chainId: CHAIN_ID,
+        vault: config.vaultAddress,
+        enrollmentSigner: pinned,
+      });
+      setEnrollment({ id, signature: statement.signature });
+      setPayer(statement.payer);
     });
 
   // --- step 3: encrypt, then open ------------------------------------------
   const openGoal = () =>
     guard("Encrypting budget and opening the goal…", async () => {
-      if (!config || !wallet || !address || !payer) {
-        throw notReady({ config, wallet, address, payer });
+      if (!config || !wallet || !address || !payer || !enrollment) {
+        throw notReady({ config, wallet, address, payer, enrollment });
       }
 
       // Re-read the chain rather than trusting connection-time state: MetaMask
       // caches a stale chainId after a manual network change (ARCHITECTURE.md).
       const live = await wallet.getChainId();
       if (live !== CHAIN_ID) throw new Error(`Wallet is on chain ${live}, expected ${CHAIN_ID}`);
+
+      // Loaded here because encryption is the only thing that needs the SDK,
+      // and it and its dependencies are a large share of the page's JavaScript.
+      // Inside `guard`, so a failed download shows up like any other step error.
+      const [{ Lightning }, { handleTypes }] = await Promise.all([
+        import("@inco/lightning-js/lite"),
+        import("@inco/lightning-js"),
+      ]);
 
       // Same endpoints the services use. Called bare, the SDK falls back to
       // the chain default — the endpoint observed returning -32011 on eth_call
@@ -690,8 +738,8 @@ export default function App() {
 
       const hash = await wallet.writeContract({
         address: config.vaultAddress,
-        abi: policyVaultAbi,
-        functionName: "openGoal",
+        abi: escrowPolicyVaultAbi,
+        functionName: "openEnrolledGoal",
         args: [
           {
             budgetCiphertext,
@@ -702,12 +750,14 @@ export default function App() {
             relay: config.relayAddress,
             asset: config.usdcAddress,
             expiry: BigInt(Math.floor(Date.now() / 1000) + 7 * 24 * 3600),
-            // Every vendor in the catalog is allowlisted on purpose: the
-            // hostile ones must fail the *confidential* check, not a public
-            // precondition. An unallowlisted payee would revert in `require`,
-            // which proves nothing about Inco.
-            allowlist: [...DEMO_PAYEES],
+            // The vendor sells the whole catalog from one address, allowlisted on
+            // purpose: the hostile offers must fail the *confidential* check, not
+            // a public precondition. An unallowlisted payee would revert in
+            // `require`, which proves nothing about Inco.
+            allowlist: [vendorAddress()],
           },
+          enrollment.id,
+          enrollment.signature,
         ],
         chain: CHAIN,
         account: address,
@@ -725,19 +775,28 @@ export default function App() {
       setGoalId(args.goalId.toString());
       setBudgetHandle(args.budgetHandle);
       setOpenedHere(true);
+      setOpenedInBlock(receipt.blockNumber);
     });
 
   // --- step 4: fund the payer ----------------------------------------------
   const fundPayer = () =>
     guard("Funding the ephemeral payer…", async () => {
-      if (!config || !wallet || !address || !payer) {
-        throw notReady({ config, wallet, address, payer });
+      if (!config || !wallet || !address || !payer || !goalId) {
+        throw notReady({ config, wallet, address, payer, goalId });
       }
+      await checkBindingBeforeFunding({
+        vault: config.vaultAddress,
+        goalId: BigInt(goalId),
+        payer,
+        owner: address,
+        enrollmentId: enrollment?.id,
+        openedInBlock,
+      });
       const hash = await wallet.writeContract({
         address: config.usdcAddress,
         abi: usdcAbi,
         functionName: "transfer",
-        args: [payer, funding],
+        args: [payer, PAYER_FUNDING],
         chain: CHAIN,
         account: address,
       });
@@ -833,7 +892,7 @@ export default function App() {
       for await (const event of streamRun(
         goalId,
         which.key,
-        priceFor(which, budget),
+        priceFor(which),
       )) {
         if (event.channel === "payment") {
           collected.push(event.data);
@@ -867,14 +926,12 @@ export default function App() {
 
   /**
    * What the selected resource will actually be billed, not what the catalog
-   * lists. `priceFor` overrides the overcharge tactic to `budget + 0.05` —
-   * deliberately always just past whatever budget is chosen — so a display
-   * still showing the catalog's static price would tell a viewer the request
-   * is affordable right up until the encrypted budget disagrees. That gap is
-   * exactly what confused a viewer who set 0.40 and expected a listed 0.35 to
-   * clear; the real request was 0.45.
+   * lists. `priceFor` overrides the overcharge tactic to a fixed price above
+   * every budget, so a display still showing the catalog's static price would
+   * tell a viewer the request is affordable right up until the encrypted budget
+   * disagrees.
    */
-  const requestedPrice = BigInt(priceFor(resource, budget) ?? resource.priceAtomic);
+  const requestedPrice = BigInt(priceFor(resource) ?? resource.priceAtomic);
 
   /**
    * The five acts, and where the viewer is in them.
@@ -889,7 +946,7 @@ export default function App() {
         { key: "connect", label: "Connect", state: isConnected && !wrongChain ? "done" : "ready" },
         {
           key: "payer",
-          label: "Mint payer",
+          label: "Enroll payer",
           state: payer ? "done" : isConnected && !wrongChain ? "ready" : "blocked",
         },
         { key: "goal", label: "Open goal", state: goalId ? "done" : payer ? "ready" : "blocked" },
@@ -907,7 +964,7 @@ export default function App() {
    * back to the transfer this page confirmed, and to zero when there was none.
    */
   const ringFunded =
-    payerBalance !== undefined ? payerBalance + spent : funded ? funding : 0n;
+    payerBalance !== undefined ? payerBalance + spent : funded ? PAYER_FUNDING : 0n;
 
   /*
    * Clears the run view only.
@@ -1073,7 +1130,7 @@ export default function App() {
                       disabled={!!busy}
                       onClick={fundPayer}
                     >
-                      Fund {formatUsdc(funding)} USDC
+                      Fund {formatUsdc(PAYER_FUNDING)} USDC
                     </button>
                   )
                 ) : null}
@@ -1316,9 +1373,9 @@ export default function App() {
                 className="d-btn d-btn-block"
                 data-kind={payer ? "outline" : undefined}
                 disabled={!!payer || !!busy}
-                onClick={mintPayer}
+                onClick={enrollPayer}
               >
-                {payer ? "Payer minted" : "Mint ephemeral payer"}
+                {payer ? "Payer enrolled" : "Enroll ephemeral payer"}
               </button>
 
               {/* Chosen here, encrypted in the next step, and immutable
@@ -1355,8 +1412,9 @@ export default function App() {
                 </div>
                 <p className="d-caption">
                   Minimum {formatUsdc(MIN_BUDGET)}, maximum {formatUsdc(MAX_BUDGET)}. You will fund
-                  the payer with {formatUsdc(funding)} — a little above the budget, so the
-                  confidential check binds before the balance does.
+                  the payer with {formatUsdc(PAYER_FUNDING)} whatever you choose, so its public
+                  balance says nothing about the budget. What is not spent comes back when you
+                  close the goal.
                 </p>
               </div>
 
@@ -1386,7 +1444,7 @@ export default function App() {
               </button>
               {!payer ? (
                 <p className="d-hint">
-                  Mint the payer first — its address is a field of the goal record.
+                  Enroll the payer first. Its address is a field of the goal record.
                 </p>
               ) : goalId ? (
                 <p className="d-hint">
@@ -1482,7 +1540,7 @@ export default function App() {
             )}
           </Field>
           <Field label="Last funded">
-            {funded ? `${formatUsdc(funding)} USDC` : <span className="d-muted">—</span>}
+            {funded ? `${formatUsdc(PAYER_FUNDING)} USDC` : <span className="d-muted">—</span>}
           </Field>
         </div>
         <p className="d-caption">
@@ -1546,6 +1604,54 @@ function readIncoFee(): Promise<bigint> {
     abi: INCO_FEE_ABI,
     functionName: "getFee",
   });
+}
+
+/** Blocks on top of the setup before funding. Base Sepolia makes one about every 2 s. */
+const FUNDING_CONFIRMATIONS = 3n;
+
+/**
+ * The last check before money leaves the user's wallet, read through this page's
+ * RPC and not the orchestrator's: the vault binds this payer to this goal, the goal
+ * is this wallet's, it was opened under the enrollment this page drew, and the
+ * setup has a few blocks on top of it.
+ *
+ * The confirmations narrow a window, they do not carry the argument. If the setup
+ * were dropped by a reorganization after funding, the payer would be unbound but
+ * still enrolled for this wallet alone, because the signer derives each payer from
+ * its owner, so no one else's goal could bind it and the funds would wait for the
+ * owner to open the goal again.
+ */
+async function checkBindingBeforeFunding(args: {
+  vault: Address;
+  goalId: bigint;
+  payer: Address;
+  owner: Address;
+  enrollmentId: Hex | undefined;
+  openedInBlock: bigint | undefined;
+}): Promise<void> {
+  if (args.openedInBlock !== undefined) {
+    for (;;) {
+      const head = await reader.getBlockNumber();
+      if (head >= args.openedInBlock + FUNDING_CONFIRMATIONS) break;
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+    }
+  }
+  const [bound, goal, enrolledUnder] = await Promise.all([
+    reader.readContract({ address: args.vault, abi: escrowPolicyVaultAbi, functionName: "payerGoal", args: [args.payer] }),
+    reader.readContract({ address: args.vault, abi: escrowPolicyVaultAbi, functionName: "goals", args: [args.goalId] }),
+    reader.readContract({ address: args.vault, abi: escrowPolicyVaultAbi, functionName: "goalEnrollment", args: [args.goalId] }),
+  ]);
+  const owner = (goal as readonly unknown[])[0] as Address;
+  const payer = (goal as readonly unknown[])[1] as Address;
+  if (bound !== args.goalId || payer.toLowerCase() !== args.payer.toLowerCase()) {
+    throw new Error(`the vault does not bind payer ${args.payer} to goal ${args.goalId}; not funding it`);
+  }
+  if (owner.toLowerCase() !== args.owner.toLowerCase()) {
+    throw new Error(`goal ${args.goalId} belongs to ${owner}, not this wallet; not funding it`);
+  }
+  if (args.enrollmentId !== undefined && (enrolledUnder as Hex).toLowerCase() !== args.enrollmentId.toLowerCase()) {
+    throw new Error(`goal ${args.goalId} was opened under another enrollment; not funding it`);
+  }
 }
 
 function waitForReceipt(hash: Hex) {

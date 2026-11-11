@@ -1,12 +1,22 @@
-// x402-priced mock endpoint, honest and malicious modes. Speaks x402 v1 only.
+// x402-priced mock endpoint, honest and malicious modes. Sells through the auth-capture escrow.
 export * from "./config.js";
 export * from "./handler.js";
 export * from "./server.js";
 export * from "./gateway.js";
+export * from "./escrow.js";
+export * from "./escrow-gateway.js";
 
-import { loadDotEnv, networkFromEnv, optional } from "@ntux402/shared/node";
+import {
+  loadDotEnv,
+  networkFromEnv,
+  required,
+  requiredAddress,
+  requiredHexKey,
+} from "@ntux402/shared/node";
 
 import { DEFAULT_CONFIG } from "./config.js";
+import type { EscrowVendorOptions } from "./escrow.js";
+import { ChainEscrowGateway } from "./escrow-gateway.js";
 import { HttpFacilitatorGateway } from "./gateway.js";
 import { startMockApi } from "./server.js";
 
@@ -15,37 +25,46 @@ if (process.argv[1] && import.meta.url.endsWith(process.argv[1].replace(/\\/g, "
   loadDotEnv();
   const port = Number(process.env["MOCK_API_PORT"] ?? 4021);
 
-  // Wired to a facilitator, payments settle for real on the configured network.
-  // Without one the server still validates the payload but moves no money, and
-  // says so in every response.
-  const facilitatorUrl = optional("X402_FACILITATOR_URL");
-  const { network, usdcAddress } = networkFromEnv();
+  const { network, usdcAddress, rpcUrl } = networkFromEnv();
 
   /*
-   * The demo payees are placeholder addresses (0x1111…1111 and kin) that nobody
-   * holds a key for. On a testnet that is harmless. On mainnet every settled
-   * purchase would send real USDC somewhere it can never be spent from, so
-   * live settlement there is refused rather than allowed with a warning.
+   * The demo payees are placeholder addresses nobody holds a key for, and the vendor
+   * key below is a test key. On mainnet both would put real USDC at risk, so it refuses.
    */
-  if (!network.testnet && facilitatorUrl) {
+  if (!network.testnet) {
     console.error(
-      `mock-api refuses live settlement on ${network.label}: its payees are placeholder ` +
-        "addresses nobody controls, so every purchase would burn real USDC. Unset " +
-        "X402_FACILITATOR_URL to run it stubbed, or buy from a real vendor.",
+      `mock-api refuses to run on ${network.label}: it is a test vendor with a test key, and every ` +
+        "purchase would be real USDC. Buy from a real vendor.",
     );
     process.exit(1);
   }
 
-  const gateway = facilitatorUrl ? new HttpFacilitatorGateway(facilitatorUrl) : undefined;
+  /*
+   * Needs a key, because the vendor sends `claim` itself, and a real facilitator, because
+   * a stubbed hold is no hold.
+   */
+  const facilitatorUrl = required("X402_FACILITATOR_URL");
+  const vault = requiredAddress("POLICY_VAULT_ADDRESS");
   const config = { ...DEFAULT_CONFIG, network: network.x402Network, asset: usdcAddress };
+  const gateway = new ChainEscrowGateway({
+    facilitator: new HttpFacilitatorGateway(facilitatorUrl),
+    rpcUrl,
+    chainId: network.chainId,
+    vault,
+    vendorKey: requiredHexKey("VENDOR_PRIVATE_KEY"),
+  });
+  const escrow: EscrowVendorOptions = {
+    vault,
+    vendor: gateway.vendor,
+    network: `eip155:${network.chainId}`,
+    asset: usdcAddress,
+    maxTimeoutSeconds: config.maxTimeoutSeconds,
+    gateway,
+  };
 
-  const started = await startMockApi(port, gateway ? { gateway, config } : { config });
-  console.log(`mock-api (x402 v1) listening on ${started.url}  [${network.label}]`);
-  console.log(
-    facilitatorUrl
-      ? `  settlement: LIVE via ${facilitatorUrl}`
-      : "  settlement: STUB (X402_FACILITATOR_URL unset — no money moves)",
-  );
+  const started = await startMockApi(port, { config, escrow });
+  console.log(`mock-api (x402 v2 auth-capture) listening on ${started.url}  [${network.label}]`);
+  console.log(`  settlement: ESCROW via ${facilitatorUrl}, vendor ${escrow.vendor}, vault ${escrow.vault}`);
   console.log(`  GET ${started.url}/resource/honest`);
   console.log(`  GET ${started.url}/resource/malicious`);
 }

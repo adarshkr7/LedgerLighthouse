@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@ntux402/shared": "workspace:*",
+    "@x402/evm": "2.30.0",
     "viem": "^2.55.11"
   },
   "devDependencies": {

@@ -1,13 +1,10 @@
 /**
- * `RoflKeyStore` against a fake `rofl-appd`.
+ * The derived key store, against a fake `rofl-appd` and against the local seed.
  *
- * The point of the `RoflAppd` seam is that these run on a laptop with no
- * enclave. What is asserted here is everything the store is responsible for —
- * derivation determinism, that no key material is persisted, and that a wrong
- * key is rejected loudly rather than silently deriving the wrong address.
- *
- * What is *not* asserted, because a test cannot: that the real appd only answers
- * inside an attested enclave. That property comes from Oasis, not from us.
+ * What is asserted: every key is a function of its id alone, a payer id names the
+ * chain, vault, owner and enrollment id, nothing is written but a seed file, and a
+ * wrong key from appd is refused loudly. What a test cannot assert: that the real
+ * appd only answers inside an admitted enclave. That comes from Oasis.
  */
 
 import { mkdtempSync, readFileSync, existsSync, writeFileSync } from "node:fs";
@@ -15,29 +12,38 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
-import { privateKeyToAccount } from "viem/accounts";
 import type { Address, Hex } from "viem";
 
-import { RoflKeyStore, normalizePrivateKey, type RoflAppd } from "./keystore.js";
+import {
+  DerivedKeyStore,
+  SeedKeySource,
+  enrollmentIdFrom,
+  enrollmentKeyId,
+  fileKeyStore,
+  inMemoryKeyStore,
+  normalizePrivateKey,
+  openKeyStore,
+  payerKeyId,
+  type RoflAppd,
+} from "./keystore.js";
 
-/** Deterministic on keyId, exactly as the real appd is. */
+const NS = { chainId: 84532, vault: "0x00000000000000000000000000000000000AB0B1" as Address };
+const OWNER: Address = "0x000000000000000000000000000000000000A11C";
+const OTHER_OWNER: Address = "0x0000000000000000000000000000000000000B0B";
+const ID = enrollmentIdFrom("one");
+
+/** Deterministic on keyId, exactly as the real appd is. Records what it was asked. */
 class FakeAppd implements RoflAppd {
   readonly calls: string[] = [];
-  #next = 1;
-  readonly #issued = new Map<string, Hex>();
+  readonly #inner = new SeedKeySource(`0x${"07".repeat(32)}`);
 
   async generateKey(keyId: string): Promise<Hex> {
     this.calls.push(keyId);
-    const existing = this.#issued.get(keyId);
-    if (existing) return existing;
-    // Unprefixed, like the real daemon's `{"key": "a54027bf…"}`.
-    const key = `0x${String(this.#next++).padStart(64, "0")}` as Hex;
-    this.#issued.set(keyId, key);
-    return key;
+    return this.#inner.generateKey(keyId);
   }
 }
 
-const tempIndex = (): string => join(mkdtempSync(join(tmpdir(), "rofl-ks-")), "index.json");
+const tempDir = (): string => mkdtempSync(join(tmpdir(), "signer-ks-"));
 
 describe("normalizePrivateKey", () => {
   const bare = "a54027bff15a8726b6d9f65383bff20db51c6f3ac5497143a8412a7f16dfdda9";
@@ -46,12 +52,6 @@ describe("normalizePrivateKey", () => {
     expect(normalizePrivateKey(bare)).toBe(`0x${bare}`);
   });
 
-  it("accepts an already-prefixed key unchanged", () => {
-    expect(normalizePrivateKey(`0x${bare}`)).toBe(`0x${bare}`);
-  });
-
-  // A truncated key would otherwise derive a valid-looking but wrong address,
-  // and the first symptom would be a settlement against an unfunded payer.
   it("rejects a short key rather than deriving the wrong address", () => {
     expect(() => normalizePrivateKey("dead")).toThrow(/expected 64 hex chars/);
   });
@@ -61,240 +61,95 @@ describe("normalizePrivateKey", () => {
   });
 });
 
-describe("RoflKeyStore", () => {
-  it("mints an address and can sign for it", async () => {
+describe("key ids", () => {
+  it("name the chain, vault, owner and enrollment id, lowercased", () => {
+    expect(payerKeyId(NS, OWNER, ID)).toBe(
+      `payer/84532/${NS.vault.toLowerCase()}/${OWNER.toLowerCase()}/${ID.toLowerCase()}`,
+    );
+  });
+
+  it("refuse an enrollment id that is not 32 bytes", () => {
+    expect(() => payerKeyId(NS, OWNER, "0x1234")).toThrow(/32 bytes/);
+  });
+
+  it("give the enrollment key no vault, so it can be read before the vault exists", () => {
+    expect(enrollmentKeyId(84532)).toBe("enrollment/84532");
+  });
+});
+
+describe("DerivedKeyStore over appd", () => {
+  it("derives the payer from its id, so a restart needs no index", async () => {
     const appd = new FakeAppd();
-    const store = new RoflKeyStore(appd);
-
-    const address = await store.mint();
-    expect(address).toMatch(/^0x[0-9a-fA-F]{40}$/);
-
-    const account = await store.signerFor(address);
-    expect(account?.address).toBe(address);
+    const first = await new DerivedKeyStore(appd, NS, "rofl").payer(OWNER, ID);
+    const again = await new DerivedKeyStore(appd, NS, "rofl").payer(OWNER, ID);
+    expect(again.address).toBe(first.address);
+    expect(appd.calls).toEqual([payerKeyId(NS, OWNER, ID), payerKeyId(NS, OWNER, ID)]);
   });
 
-  it("re-derives the same key rather than minting a new one", async () => {
+  it("gives another owner, id or vault another payer", async () => {
     const appd = new FakeAppd();
-    const store = new RoflKeyStore(appd);
-
-    const address = await store.mint();
-    const first = await store.signerFor(address);
-    const second = await store.signerFor(address);
-
-    expect(first?.address).toBe(second?.address);
-    // One mint plus two derivations, all naming the same key_id.
-    expect(appd.calls).toHaveLength(3);
-    expect(new Set(appd.calls).size).toBe(1);
+    const store = new DerivedKeyStore(appd, NS, "rofl");
+    const base = (await store.payer(OWNER, ID)).address;
+    expect((await store.payer(OTHER_OWNER, ID)).address).not.toBe(base);
+    expect((await store.payer(OWNER, enrollmentIdFrom("two"))).address).not.toBe(base);
+    const otherVault = new DerivedKeyStore(appd, { ...NS, vault: OTHER_OWNER }, "rofl");
+    expect((await otherVault.payer(OWNER, ID)).address).not.toBe(base);
   });
 
-  it("returns undefined for an address it never minted", async () => {
-    const store = new RoflKeyStore(new FakeAppd());
-    const stranger = privateKeyToAccount(`0x${"7".repeat(64)}`).address;
-    expect(await store.signerFor(stranger)).toBeUndefined();
-  });
-
-  it("gives each mint a distinct key_id", async () => {
+  it("keeps the enrollment key the same across vaults on one chain", async () => {
     const appd = new FakeAppd();
-    const store = new RoflKeyStore(appd);
-
-    const a = await store.mint();
-    const b = await store.mint();
-
-    expect(a).not.toBe(b);
-    expect(new Set(appd.calls).size).toBe(2);
-  });
-
-  // The whole reason this store is an upgrade on FileKeyStore.
-  it("persists no key material — only address -> key_id", async () => {
-    const path = tempIndex();
-    const appd = new FakeAppd();
-    const store = new RoflKeyStore(appd, path);
-
-    const address = await store.mint();
-    const account = await store.signerFor(address);
-    const written = readFileSync(path, "utf8");
-
-    expect(written).toContain(address.toLowerCase());
-    expect(written).toContain("payer/");
-    // The derived private key must appear nowhere in the file.
-    const key = `0x${"0".repeat(63)}1`;
-    expect(written).not.toContain(key);
-    expect(written).not.toContain(key.slice(2));
-    expect(account).toBeDefined();
-  });
-
-  it("recovers keys across a restart from the non-secret index", async () => {
-    const path = tempIndex();
-    const appd = new FakeAppd();
-
-    const address = await new RoflKeyStore(appd, path).mint();
-
-    // Fresh store, same appd and index — as after a container restart.
-    const revived = new RoflKeyStore(appd, path);
-    const account = await revived.signerFor(address);
-
-    expect(account?.address).toBe(address);
-    expect(await revived.addresses()).toContain(address.toLowerCase());
-  });
-
-  it("keeps nothing on disk when no index path is configured", async () => {
-    const path = tempIndex();
-    const store = new RoflKeyStore(new FakeAppd());
-    await store.mint();
-    expect(existsSync(path)).toBe(false);
+    const a = await new DerivedKeyStore(appd, NS, "rofl").enrollment();
+    const b = await new DerivedKeyStore(appd, { ...NS, vault: OTHER_OWNER }, "rofl").enrollment();
+    expect(b.address).toBe(a.address);
   });
 
   it("surfaces an appd failure instead of falling back to a local key", async () => {
     const broken: RoflAppd = {
-      generateKey: () => Promise.reject(new Error("rofl-appd unreachable at /run/rofl-appd.sock")),
+      generateKey: async () => {
+        throw new Error("rofl-appd returned 500");
+      },
     };
-    await expect(new RoflKeyStore(broken).mint()).rejects.toThrow(/unreachable/);
+    await expect(new DerivedKeyStore(broken, NS, "rofl").payer(OWNER, ID)).rejects.toThrow(/500/);
   });
 });
 
-describe("RoflKeyStore key ids", () => {
-  const NS = "84532/0xvault";
-
-  it("counts key ids under the chain and vault", async () => {
-    const appd = new FakeAppd();
-    const store = new RoflKeyStore(appd, undefined, NS);
-
-    await store.mint();
-    await store.mint();
-
-    expect(appd.calls).toEqual([`payer/${NS}/0`, `payer/${NS}/1`]);
+describe("local seed stores", () => {
+  it("writes only a seed, and reads it back to the same keys", async () => {
+    const path = join(tempDir(), "seed.json");
+    const first = fileKeyStore(path, NS);
+    const a = await first.payer(OWNER, ID);
+    expect(existsSync(path)).toBe(true);
+    const written = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
+    expect(Object.keys(written)).toEqual(["seed"]);
+    const b = await fileKeyStore(path, NS).payer(OWNER, ID);
+    expect(b.address).toBe(a.address);
+    expect(first.kind).toBe("file");
   });
 
-  it("carries the counter across a restart", async () => {
-    const path = tempIndex();
-    const appd = new FakeAppd();
-    await new RoflKeyStore(appd, path, NS).mint();
-
-    await new RoflKeyStore(appd, path, NS).mint();
-
-    expect(appd.calls).toEqual([`payer/${NS}/0`, `payer/${NS}/1`]);
+  it("refuses the old address-to-key file instead of overwriting it", () => {
+    const path = join(tempDir(), "payers.json");
+    writeFileSync(path, JSON.stringify({ "0xabc": `0x${"11".repeat(32)}` }));
+    expect(() => fileKeyStore(path, NS)).toThrow(/not a seed file/);
   });
 
-  /*
-   * What the machine expiry did to the random-id store: the disk went, and with
-   * it the only record of which key id belonged to which payer.
-   */
-  it("rebuilds a lost index from the chain", async () => {
-    const appd = new FakeAppd();
-    const before = new RoflKeyStore(appd, tempIndex(), NS);
-    const a = await before.mint();
-    const b = await before.mint();
-    const c = await before.mint();
-    // a and c were bound to goals; b was minted and never used.
-    const bound = new Set([a, c].map((x) => x.toLowerCase()));
+  it("gives an in-memory store a fresh seed each time", async () => {
+    const a = await inMemoryKeyStore(NS).payer(OWNER, ID);
+    const b = await inMemoryKeyStore(NS).payer(OWNER, ID);
+    expect(a.address).not.toBe(b.address);
+  });
+});
 
-    const after = new RoflKeyStore(appd, tempIndex(), NS); // a fresh, empty disk
-    const rebuilt = await after.recover(async (x: Address) => bound.has(x.toLowerCase()), 3);
-
-    expect(rebuilt).toEqual({ scanned: 6, found: 2 });
-    expect((await after.signerFor(a))?.address).toBe(a);
-    expect((await after.signerFor(c))?.address).toBe(c);
-    expect(await after.signerFor(b)).toBeUndefined();
+describe("openKeyStore", () => {
+  it("chooses ROFL when a socket is named", () => {
+    expect(openKeyStore({ ns: NS, roflSocket: "/run/rofl-appd.sock" }).kind).toBe("rofl");
   });
 
-  it("resumes right after the highest bound id", async () => {
-    const appd = new FakeAppd();
-    const before = new RoflKeyStore(appd, tempIndex(), NS);
-    const a = await before.mint(); // id 0, bound
-    await before.mint(); // id 1, never used
-    const bound = new Set([a.toLowerCase()]);
-
-    const after = new RoflKeyStore(appd, tempIndex(), NS);
-    await after.recover(async (x: Address) => bound.has(x.toLowerCase()), 3);
-    appd.calls.length = 0;
-    await after.mint();
-
-    // id 1 again: harmless, since the vault binds one payer to one goal only.
-    expect(appd.calls).toEqual([`payer/${NS}/1`]);
+  it("refuses to fall back when ROFL is required", () => {
+    expect(() => openKeyStore({ ns: NS, requireRofl: true })).toThrow(/Refusing to start/);
   });
 
-  /*
-   * The wipe test on 9 October 2026, as it happened. First boot on a vault with
-   * no enclave payers yet, then five payers minted and bound, then the disk
-   * wiped. The first version of recover() resumed at the end of its scanned
-   * window, left a 25-id hole, and the second rebuild found nothing.
-   */
-  it("finds every payer after a first boot, mints and a wipe", async () => {
-    const appd = new FakeAppd();
-    const first = new RoflKeyStore(appd, tempIndex(), NS);
-    await first.recover(async () => false); // empty vault at first boot
-    const minted: Address[] = [];
-    for (let i = 0; i < 5; i++) minted.push(await first.mint());
-    const bound = new Set(minted.map((x) => x.toLowerCase()));
-
-    const wiped = new RoflKeyStore(appd, tempIndex(), NS);
-    const rebuilt = await wiped.recover(async (x: Address) => bound.has(x.toLowerCase()));
-
-    expect(rebuilt?.found).toBe(5);
-    for (const payer of minted) expect((await wiped.signerFor(payer))?.address).toBe(payer);
-  });
-
-  it("crosses the 25-id hole the first version left", async () => {
-    const appd = new FakeAppd();
-    const bound = new Set<string>();
-    for (let n = 25; n < 30; n++) {
-      bound.add(privateKeyToAccount(await appd.generateKey(`payer/${NS}/${n}`)).address.toLowerCase());
-    }
-
-    const store = new RoflKeyStore(appd, tempIndex(), NS);
-    const rebuilt = await store.recover(async (x: Address) => bound.has(x.toLowerCase()));
-
-    expect(rebuilt?.found).toBe(5);
-    expect(store.nextId).toBe(30);
-  });
-
-  it("does not rescan a namespace the index already knows", async () => {
-    const path = tempIndex();
-    const appd = new FakeAppd();
-    await new RoflKeyStore(appd, path, NS).mint();
-
-    const asked: Address[] = [];
-    const rebuilt = await new RoflKeyStore(appd, path, NS).recover(async (x) => {
-      asked.push(x);
-      return false;
-    });
-
-    expect(rebuilt).toBeUndefined();
-    expect(asked).toHaveLength(0);
-  });
-
-  it("refuses to guess when the chain cannot say which payers are bound", async () => {
-    const store = new RoflKeyStore(new FakeAppd(), tempIndex(), NS);
-    await expect(
-      store.recover(() => Promise.reject(new Error("payerGoal reverted"))),
-    ).rejects.toThrow(/payerGoal/);
-  });
-
-  it("skips an id after a crash between the counter and the derivation", async () => {
-    const path = tempIndex();
-    const real = new FakeAppd();
-    let fail = true;
-    const flaky: RoflAppd = {
-      generateKey: (keyId) => (fail ? Promise.reject(new Error("appd went away")) : real.generateKey(keyId)),
-    };
-
-    await expect(new RoflKeyStore(flaky, path, NS).mint()).rejects.toThrow(/went away/);
-    fail = false;
-    await new RoflKeyStore(flaky, path, NS).mint();
-
-    // Never payer/…/0 twice: the counter was written before the derivation failed.
-    expect(real.calls).toEqual([`payer/${NS}/1`]);
-  });
-
-  it("still reads an index in the original random-id format", async () => {
-    const path = tempIndex();
-    const appd = new FakeAppd();
-    const legacyId = "payer/0b6c8c2e-4a7f-4f43-9d3e-2a1d6b0c9f11";
-    const address = privateKeyToAccount(await appd.generateKey(legacyId)).address;
-    writeFileSync(path, JSON.stringify({ [address.toLowerCase()]: legacyId }));
-
-    const store = new RoflKeyStore(appd, path, NS);
-
-    expect((await store.signerFor(address))?.address).toBe(address);
+  it("falls back to a seed file, then to memory", () => {
+    expect(openKeyStore({ ns: NS, seedPath: join(tempDir(), "s.json") }).kind).toBe("file");
+    expect(openKeyStore({ ns: NS }).kind).toBe("memory");
   });
 });

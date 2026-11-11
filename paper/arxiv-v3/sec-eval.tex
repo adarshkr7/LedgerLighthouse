@@ -1,0 +1,292 @@
+\section{Implementation}
+\label{sec:impl}
+
+The vault is 993 lines of Solidity 0.8.29 (614 in \code{PolicyVault}, 379 in the \code{EscrowPolicyVault} that extends it). The comparators
+of Section~\ref{sec:compare} add 468 lines and the dispute predicate of Section~\ref{sec:delivery} 67. The orchestrator, signer, facilitator
+and a mock seller are TypeScript services using viem. The model returns only a justification and a boolean. The signer is packaged for an
+Oasis ROFL TDX machine. There are 627 automated tests: 119 Solidity tests that run offline, four suites that need a fork of Base Sepolia, and 508
+TypeScript tests (117 for the signer, 158 for the orchestrator, 132 for x402 parsing and shared code, 101 for the facilitator, trace library and
+mock seller). Two failures found in deployment shaped the design: the signer behaved correctly while the system was unsafe, until the payer binding
+existed, and reclaim, added so that unpaid approvals would not lock the budget, made probing free.
+
+\section{Evaluation}
+\label{sec:eval}
+
+\subsection{What each result rests on}
+
+Table~\ref{tab:matrix} maps each property to the evidence for it, the version of the system it was obtained on, which dependencies were real, and
+what kind of evidence it is. Three distinctions matter in reading the rest of this section. The current design's signer ran in an Intel TDX enclave for the
+round trip, the campaign, the standard benchmark and the storage-wipe test of 11 November; the matched baselines and the earlier benchmarks used a local
+signer with its keys in a file, and say nothing about the enclave. Version~1's results are kept in Section~\ref{sec:v1} and are not evidence for the
+current design. Inco's real evaluation appears only in the live runs. The Foundry suites
+use its test double, which establishes the contract's logic given I1 to I4. And ``held'' in the adversary campaign is a coverage result, not a measured
+probability: each strategy is one attempt, and its evidence may be a transaction, a refusal in gas simulation, a signer response, a contract read or a
+code observation.
+
+\begin{table*}[t]
+\centering\small
+\begin{tabularx}{\linewidth}{@{}L{0.19\linewidth}L{0.27\linewidth}L{0.09\linewidth}XL{0.08\linewidth}@{}}
+\toprule
+Property & Evidence & Version & Real / stand-in & Kind \\
+\midrule
+J1--J4, Theorem~\ref{prop:loss} & Stateful invariants, 262{,}144 calls; 14 mutants & current & escrow, collector, USDC code at a pinned block; Inco test double & test \\
+Theorem~\ref{prop:loss}, live & C1 to exact ceilings; C3, C13 & current & everything real; signer in the enclave & tx \\
+Property~\ref{prop:text} & C15--C25, C7; unit tests & current & real chain and Inco; signer in the enclave & tx, sim, code \\
+Enrollment & 12 unit tests; C26--C29 & current & real chain; key derived in the enclave & test, sim \\
+Property~\ref{prop:hold} & Boundary tests at every deadline; C6 & current & pinned fork; real chain & test, tx \\
+Property~\ref{prop:reclaim} & Invariants; C6; payer-reclaim tests & current & pinned fork; real chain & test, tx \\
+Theorem~\ref{prop:leakproof} & Proof; C14; probing regression test & current & real Inco (C14); test double & proof, tx \\
+Leakage in practice & Exact computation on three priors & model & none & computed \\
+Latency, gas, fees & 3 benchmark runs, 2 matched baseline runs & current & real chain and Inco; one benchmark run in the enclave & tx \\
+Enclave custody, recovery & Storage wipe, then sweep & current & ROFL TDX enclave & tx \\
+Delivery predicate & 5 tests, gas at 4 KiB & current & none & test \\
+\bottomrule
+\end{tabularx}
+\caption{Evidence for each property. ``Current'' is the vault's source and its two deployments, \code{0x466A\ldots{}DFd5} (enrollment key in the
+enclave) and \code{0xdd45\ldots{}5014} (local seed); ``tx'', submitted transactions;
+``sim'', a refusal in gas simulation, never broadcast; ``test'', an automated test; ``code'', an observation about the code.}
+\label{tab:matrix}
+\end{table*}
+
+\subsection{Accounting under every interleaving}
+\label{sec:invariants}
+
+A handler drives every transition of Table~\ref{tab:transitions} in any order the fuzzer chooses, including hostile ones: a second request while one is
+pending, a false plaintext at finalization, funding a rejected, pending, expired or reclaimed request, capture after the deadline, crediting back a
+live approval, and a sweep of an open goal. The handler keeps the model's state for every request and checks after every call that J1 to J4 hold, that
+$D \le B_0$, that no payment exceeds $C$, that every token of the payer's funding is in the payer, the escrow, the vendor or the owner, and that the
+vault and the escrow agree with the model about every request. Each hostile call that the contract accepted, or each legitimate one it refused, is
+recorded as a violation.
+
+The escrow, collector and USDC are not mocks. We recorded the code of every account they touch at Base Sepolia block 56{,}480{,}000, and every storage slot
+they read in a run through all transitions, and the suite installs that state into a local EVM, so it runs offline and gives the same result each time.
+On 9 November 2026, 1{,}024 runs of 256 calls each (262{,}144 calls, fixed seed) found no violation. Across them the handler made 9{,}944 requests, of
+which 5{,}360 were approved, funded 2{,}775, captured 1{,}552, credited back 2{,}404 (492 of them while a newer request was pending), saw the payer reclaim
+directly 438 times, closed 2{,}110 goals and swept 1{,}207; about 98{,}000 hostile calls were refused.
+
+To check that the suite can fail, we removed one check at a time from the contract and ran it again. Of 14 mutants, 13 failed the suite, each at the
+invariant the removed check protects: crediting a captured payment broke J4, a double credit J1, a call not restored J2, an attempt not spent J3, and
+dropping the cap from the comparison let a payment exceed $C$. The survivor removes \code{authorize}'s check that the request was not already
+reclaimed. It is equivalent in this model: a credit happens only after the window has closed or the funds were already taken, and the escrow itself
+refuses to fund in both cases, so the check is defence in depth. Separately, boundary tests check every deadline at its last valid second and its
+first invalid one; funding and credit meet at \textit{validBefore}, and capture and credit at the capture deadline, without overlapping.
+
+\subsection{The current vault on Base Sepolia}
+\label{sec:liveeval}
+
+\code{EscrowPolicyVault} with authenticated enrollment is deployed twice from the same source on Base Sepolia. At \code{0x466AB18595d2E71A87928c8d4A45F57a5D5ADFd5}
+it pins an enrollment key derived inside the signer's enclave (Section~\ref{sec:enclaveeval}); at \code{0xdd450306ca3905612a96Ff92aDbee23B48385014} it pins
+the key of a local seed file. Their deployed code differs only in three immutables: the enrollment address, the vault's own address and the EIP-712 domain
+separator derived from it. All runs used Inco's real evaluation and attestations. On 9 November 2026 we ran the round trip, the campaign and both
+benchmarks against the second, with the signer on a local machine. On 11 November 2026 we ran the round trip, the campaign, the standard benchmark and a
+storage-wipe test against the first, with the signer in the enclave.
+
+\paragraph{Round trip.} On each vault a goal opened with an enrollment statement. A request inside the encrypted budget was approved and one past it
+rejected, and for each, claiming the opposite plaintext was refused by on-chain verification.
+
+\paragraph{Adversary campaign.} With the signer in the enclave, all 32 results held and none was inconclusive (Table~\ref{tab:adv}): 29 strategies, C1 on
+two goals, and the two controls that show C22 and C23 are refused for the right reason. The same 32 results held with the local signer on 9 November. In the
+enclave run every signer refusal and every signature came from the enclave through Oasis's proxy, and the sweep of C25 was signed there. C1 now extracts to the predicted ceiling exactly: knowing both limits, it asked
+$\min(C, B)$ every call, obtaining 0.25 USDC on the budget-bound goal (0.20, then the remaining 0.05) and 0.20 on the cap-bound goal, and one further unit
+was refused on each. C12 reads the binding after closing the goal. C26 to C29 try the setup attacks of Section~\ref{sec:enrollment}: the orchestrator's own
+payer with a statement it signed, a genuine statement enrolled to another owner, the user's statement with the payer swapped, and the user's statement sent
+by the orchestrator. Each was refused with \code{InvalidEnrollment} before anything was funded.
+
+\begin{table*}[t]
+\centering\small
+\input{tables/adversary}
+\caption{The A2 campaign on vault \code{0x466A\ldots{}DFd5} with the signer in the enclave, 11 November 2026. Evidence: tx, submitted transaction; sim, refusal in gas simulation; signer, signer
+response; read, contract read; code, code observation. Generated from the run log.}
+\label{tab:adv}
+\end{table*}
+
+\subsection{The signer in the enclave}
+\label{sec:enclaveeval}
+
+The signer's image is pinned by digest in the deployment manifest (\code{sha256:f8d12e03\ldots{}b267c}) and built from this paper's source; the build
+log is part of the artifact. It runs as the Oasis ROFL application \code{rofl1qr0fv0\ldots{}duhp} on Sapphire testnet, whose on-chain policy admits two
+enclave measurements and requires a TDX quote with a current TCB. The runs of 11 November used one instance on a rented Intel TDX machine (offer
+\code{playground\_short}, 4\,GiB, 2 vCPUs) with a registered replica. Its \code{/health} reported keys from ROFL's key manager and the enrollment address
+\code{0x5Ddd\ldots{}193a}, which vault \code{0x466A\ldots{}DFd5} pins. That key is derived from the application's identity and the identifier
+\code{enrollment/84532} and released only to admitted instances, so every statement the vault accepted came from such an instance, unless the key manager
+or the application's administrator is compromised (Section~\ref{sec:enrollment}). Base cannot check an Oasis attestation; the link between the two chains
+is that pinned address.
+
+\paragraph{Recovery without state.} The signer keeps nothing about payers, so losing the machine's storage should lose no key. After the benchmark its goal
+was still open with 0.07 USDC in the payer. We restarted the machine with its storage wiped; it reported the same enrollment address two minutes later, and
+the owner closed the goal and asked for the sweep. The enclave re-derived the payer's key from the goal's owner and enrollment identifier, read from the
+chain, and signed the return of the 0.07 USDC to the owner, which the vault's \code{charge} paid. Version~1's signer needed a rebuild step after the same test
+and failed it once (Section~\ref{sec:v1}); this one has nothing to rebuild.
+
+\subsection{Cost, latency and the matched baselines}
+\label{sec:compare}
+
+\paragraph{Matched baselines.} We ran one paid call of 0.001 USDC through three designs, interleaved in rotating order, on the same RPC endpoint, relay,
+vendor and token: plain x402 (a payer signs \code{transferWithAuthorization} to the vendor and one transaction settles it), the escrow path with the limits
+in plaintext on chain (\code{PlaintextEscrowVault}, which decides a request in the transaction that makes it), and the confidential vault. Two runs of ten
+rounds gave \basePlainCalls{} calls per design, and every one paid (Table~\ref{tab:baselines}). The plain call took a median of \basePlainMedian\,s, the
+plaintext vault \basePlaintextMedian\,s and the confidential vault \baseConfidentialMedian\,s. So the escrow path with an on-chain policy costs about
+4.7\,s and two transactions over plain x402, and confidentiality another 15\,s and one transaction: the wait for Inco's decision and the finalization that
+records it. Total gas per paid call is measured from the receipts, not summed from stage medians. Fees are what Base Sepolia charged on that day and
+would differ on mainnet; the relay pays for the request, finalization and funding, the vendor for capture, and the user's wallet once per goal for opening,
+plus two Inco fees of $10^{-6}$ ETH each. Two things in this comparison are not matched: the plain and plaintext arms signed in the benchmark's process with
+keys derived from the same seed, while the confidential arm asked the signer service over local HTTP, which adds milliseconds.
+
+\begin{table*}[t]
+\centering\small
+\resizebox{\linewidth}{!}{\input{tables/baselines}}
+\caption{Matched baselines on Base Sepolia, 9 November 2026. \baselinesCaption{} Medians and percentiles of end-to-end time over paid
+calls; failed and stalled calls are counted, not dropped. Gas and fee (in units of $10^{-9}$ ETH) are per paid call, from receipts, in the run that
+recorded every receipt.}
+\label{tab:baselines}
+\end{table*}
+
+\paragraph{The full path.} The standard benchmark drives 50 calls through the orchestrator, x402 client, signer service, facilitator and vendor, with a
+scripted agent: 30 approved and 20 rejected by the encrypted comparison. Table~\ref{tab:bench} pools its runs by signer, every call reported. \benchCaption{}
+With the signer in the enclave every stage took about what it took with the local signer, and signing was faster (a median of 1.9\,s against 3.4\,s);
+that stage includes the signer's own reads from its RPC endpoint, over a different network path on a different day, so we do not attribute the difference
+to the enclave. One call of that run failed. Its decision was revealed in 5.7\,s, but the relay's finalization was included 201\,s after the request,
+past the vendor's 60-second hold, and the signer refused to sign for a closed window. No money moved and the approval can be reclaimed: the recorded
+deadline did what Property~\ref{prop:hold} says, and the honest buyer bore the cost of a slow relay.
+The time from a request to funding the escrow, which is what has to fit inside a vendor's hold, had a median of \fundingmedian\,s and a maximum of
+\fundingmax\,s over \fundingn{} calls; the orchestrator's minimum-hold check is now \fundingcheck\,s, set from that maximum with a margin, and is a heuristic.
+An earlier attempt on the previous vault, on 6 November, stalled when Inco did not return the 35th decision within 180\,s and kept failing to for longer;
+the goal stayed blocked by the pending request, with no money at risk. It is one event in four runs of this length, not a measured rate.
+Another failure was ours. A first run on the current vault stopped after 19 paid calls when the benchmark process itself crashed (Windows status
+\code{0xC0000409}, with no message); the 19 calls had all paid, but the process held its records in memory and they were lost, so the run is not in
+Table~\ref{tab:bench}. Its log is kept, and the benchmark now writes each record as it is made.
+
+\begin{table*}[t]
+\centering\small
+\input{tables/bench}
+\caption{The full x402 path on the current vault, with real Inco decisions: the signer on a local machine (vault \code{0xdd45\ldots{}5014}, 9 November)
+and in the enclave (vault \code{0x466A\ldots{}DFd5}, 11 November). Statistics are over calls with the expected outcome; the failed call is described in
+the text. Stage times from the previous stage;
+percentiles interpolate between samples. Gas per paid call is the sum of the four receipts of each call.}
+\label{tab:bench}
+\end{table*}
+
+\paragraph{An enclave-held policy.} The closest alternative keeps the limits in the signer's enclave instead of on chain, and we built it as a
+comparator: \code{EnclavePolicyVault} keeps the same escrow path, enrollment and public counts, and no limits. The signer's enclave holds the budget and cap,
+decides each request and signs the decision together with the root of its state before and after it and the public total of reclaimed amounts. The vault
+accepts a decision only from the current root and the current total, so an enclave restored from an old state, cloned, or lied to about reclaims has its
+decisions refused; Foundry tests show each. On the pinned fork a request with its decision used 80{,}000 to 106{,}000 gas, against 93{,}000 to 99{,}000 for the
+plaintext vault and about 353{,}000 plus 107{,}000 for finalization for the confidential one, and it needs no wait for Inco. We have not run it live or in an
+enclave, so we report only its gas.
+
+\paragraph{What the designs buy.} Table~\ref{tab:designs} sets the measured costs beside what each design defends against. The decisive row is a compromised
+signer. In every design here the payer is an ordinary key held by the signer, so a compromised signer signs a plain transfer and takes the funded balance,
+whatever enforces the limits. Under that compromise none of the on-chain policies helps. Where they differ is in the cases short of it. The plaintext vault
+gives the same loss bound as ours under A2 at a third of the latency, and publishes the limits. The enclave-held policy hides them, needs one trusted
+system instead of two and is the cheapest of the three; it puts the limits' integrity in the same enclave as the keys, while ours keeps them on a chain
+whose request order its operator cannot roll back and whose attested decisions outsiders can check. Section~\ref{sec:leakeval} shows how little the hiding
+is worth against a probing vendor. We read the comparison as follows: for the loss bound the escrow path and an on-chain or enclave-anchored policy are
+what matter, and confidentiality of the limits is a modest addition whose value depends on how few questions the owner allows.
+
+\begin{table*}[t]
+\centering\small
+\begin{tabular}{@{}lccccc@{}}
+\toprule
+Design & Bound, A1 & Bound, A2 & Limits hidden & Signer compromised & Paid call (s) \\
+\midrule
+Model holds the wallet & no & no & n/a & n/a & -- \\
+Limits in the agent's code & yes & no & until A2 & n/a & -- \\
+Plain x402 with no policy & no & no & n/a & funded balance & \basePlainMedian \\
+Plaintext vault, escrow path & yes & yes & no & funded balance & \basePlaintextMedian \\
+Enclave-held policy, escrow path & yes & yes & up to $m$ bits & funded balance & not run live \\
+This work & yes & yes & up to $m$ bits & funded balance & \baseConfidentialMedian \\
+\bottomrule
+\end{tabular}
+\caption{What each design defends against and what it costs. ``Bound'' means the loss is limited by something the attacker cannot change. Latencies are
+the matched medians of Table~\ref{tab:baselines}. A smart-account payer that only the policy can authorize would change the ``signer compromised'' column
+for the on-chain designs; none here has one.}
+\label{tab:designs}
+\end{table*}
+
+\subsection{What the decision channel leaves in practice}
+\label{sec:leakeval}
+
+Theorem~\ref{prop:leakproof} bounds leakage by $m$ bits, and the console's default allows $m = 10$ for five calls. We computed what that leaves, exactly,
+for caps between 0.01 and 10.00 USDC in cents under three priors: uniform; log-uniform, which puts more weight on small caps; and one where 70\% of owners
+pick one of thirteen round values such as 0.10, 0.25 or 1.00. For each $m$ we report the bits leaked, the adversary's chance of naming the cap exactly
+($V_m$, the sum of the $2^m$ largest prior probabilities, which is optimal for threshold questions), and the revenue per sale of a vendor that spends its
+probes optimally and then prices at the highest value it knows to be under the cap, as a fraction of what a plaintext cap would let it charge. Against
+those we put the honest side: the chance that an agent completes five purchases within $m$ attempts when each honest request is approved with
+probability $q$.
+
+\begin{table*}[t]
+\centering\small
+\input{tables/leakage}
+\caption{The decision channel on three priors. Bits: min-entropy leakage. $V_m$: probability of naming the cap exactly. Vendor: revenue per sale after
+$m$ optimal probes, relative to a plaintext cap (computed on a 5-cent grid). Honest completion: probability of five purchases within $m$ attempts. The
+last row is a vendor with no probes, posting one price.}
+\label{tab:leakage}
+\end{table*}
+
+Table~\ref{tab:leakage} is not encouraging. At $m = 10$ every prior is identified exactly. At $m = 5$, which leaves no attempt to spare for five calls and
+completes them with probability 0.33 at $q = 0.8$, a vendor already prices at 96 to 99\% of what it would charge if the cap were public, because each answer
+halves the range and revenue depends on relative error. The round-number prior loses most of its secrecy in four answers. Without any probes a vendor posting
+one price gets 37 to 50\%, so the protection is real only for the first two or three questions. The attempt budget therefore does what the theorem says
+and little more: it turns unlimited free probing into a small, owner-chosen number of answers, and the owner who wants the cap to stay meaningful must
+allow almost no attempts beyond the calls, at a cost in honest completion that the table quantifies.
+
+\subsection{Prompt injection with one interface}
+\label{sec:injection}
+
+Version~1's study gave its two arms different interfaces: only the baseline chose payee, amount and repetitions, and only the firewall arm saw the
+allowlist. We redesigned it. Every arm now gives the model the same pay tool and the same policy text, allowlist included, and differs only in where, or
+whether, the policy is enforced. The ten offers of version~1 (two honest, eight hostile) come in one trajectory per sample, in a shuffled order, on one goal:
+the budget and call count carry over, and the agent sees what happened to each of its payments. Each model gets five samples per arm at temperature 0.7. A missing
+answer is recorded as missing and excluded from loss. We also record whether each honest offer was bought, once, at its price.
+
+Under A1 the enforced arms are the same experiment. The predicate is identical whether it runs in the agent's process, in a plaintext contract or in ours,
+so they see the same proposals and the same outcomes, and one enforced trajectory stands for all three. They differ in two things the trajectories do not
+show, and we measure both separately: under A2 an attacker with code execution takes the funded balance (5.00 USDC in the console) where the key or the check
+lives in the agent's process, and at most the policy's ceiling (0.20 here) where it does not; and a vendor can read plaintext limits. For the latter an
+allowlisted vendor re-quotes one resource five times, reading the cap and remaining budget when they are plaintext, and halving its price after every
+round without a sale when they are confidential.
+
+\begin{table*}[t]
+\centering\small
+\resizebox{\linewidth}{!}{\input{tables/injection}}
+\medskip
+
+\input{tables/adaptive}
+\caption{Injection study, version 2. Top: trajectories of the ten offers; loss in USDC per trajectory. Bottom: the adaptive vendor's revenue in USDC over
+five rounds. Models through OpenRouter's free tier; runs are shown against the planned five per arm. ``Complete'' counts runs with all responses valid;
+only those enter mean and maximum loss or revenue. Answer counts and purchase fractions also show observations from incomplete runs.
+``Enforced'' uses the same predicate for local, plaintext and confidential enforcement.}
+\label{tab:injres}
+\end{table*}
+
+\paragraph{What the trajectories show.} One model ran, Nemotron 3 Ultra, in five trajectories without enforcement and five with it, and all 100 answers
+were valid. It never paid the attacker's address, whether the redirect was in the description (I2) or in the terms (I3), and never accepted the 5.00 override
+(I1), the overcharge (O1) or the gift card (I7). When it took I2, I4 or I5 it paid the listed payee the listed price, which costs nothing beyond the fair
+price; ``hostile yes'' in Table~\ref{tab:injres} counts these too. Every loss came from inside the policy. The fake-failure notice (I6) drew 0.10 to an
+allowlisted payee in two trajectories of each arm, and in one enforced trajectory the model bought the snapshot (I4) twice. All of these payments satisfy
+the predicate: of the 35 payments the model proposed under enforcement, the predicate refused none. This model's proposals already kept to the policy it
+was shown, and what got through is what the policy allows. Each time I6 succeeded, the payment left too little budget for the honest archive (H2), so the
+injection also cost an honest purchase. In one trajectory without enforcement the model then paid 0.10 for the 0.12 archive, trimming the price to what it
+believed was left, and stopped buying; the exact scheme would refuse that payment, so its 0.10 bought nothing, which the loss column does not count. Under A1,
+then, enforcement did not lower this model's loss. The designs differ under A2: 5.00 USDC where the key or the check lives in the agent's process, against
+at most 0.20 where it does not.
+
+\paragraph{The adaptive vendor.} With plaintext limits the vendor read them and sold at 0.15, then 0.05, taking the whole budget in two rounds in all five
+runs. Without them it started at 1.00, was declined at 1.00, 0.50 and 0.25, and sold once at 0.13, for 65\% of the plaintext revenue; the five runs were
+identical. Every refusal it learned from came from the agent, not the vault: the model knows the cap from its policy text and declines above it. An agent told its limits publishes
+them through what it declines, which is assumption~(iv) of Section~\ref{sec:leakthm} failing in practice, and a vendor that searched instead of halving
+would do better still (Table~\ref{tab:leakage}).
+
+The study is a descriptive simulation of payment proposals and policy outcomes, not a measurement of on-chain losses or a causal comparison
+between enforcement locations. Missing responses and unrun samples provide no evidence of zero loss. Runs available at the snapshot used for
+Table~\ref{tab:injres} are reported even when the planned sample count was not reached.
+
+\subsection{Results from version 1}
+\label{sec:v1}
+
+Version~1 used a signer that signed plain transfers, on vaults \code{0x518B\ldots{}3522c} to \code{0x7F58\ldots{}a4966}, with the signer in a ROFL TDX
+enclave. Its results are not evidence for the current design. Its signer kept an index of random key identifiers on the machine's disk, and the first
+storage-wipe test failed: the rebuilt index stopped one identifier short of the first funded payer. After a fix, the signer rebuilt all five payer keys of a
+funded goal and returned its balance to the owner. On the last vault of version~1 a paid call took a median of 14.5\,s with the enclave signing in 1.5\,s;
+its path differs from the current one in the collection stage, so the totals are not comparable. Its campaign of 14 strategies held, and C14 there recovered the cap only to within
+$[0.125, 0.1875)$ in four answers before \code{NoAttemptsLeft}, as Theorem~\ref{prop:leakproof} predicts.

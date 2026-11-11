@@ -6,9 +6,11 @@
  *  - §6.1 — no string coercion, no defaulted missing fields. A field that is
  *    absent, null, or of the wrong type is a *rejection*, never a fallback.
  *  - §6.2 — parsed terms are **values, not instructions**. The resource server
- *    is the source of attacker-controlled input; nothing it sends may reach an
- *    LLM context as free text before the policy check runs. See
- *    `toModelSafeSummary`.
+ *    is the source of attacker-controlled input. Its description does reach the
+ *    model, separately and marked as untrusted text, because the model has to judge
+ *    the offer. What protects the money is that the model only decides whether to
+ *    proceed: amount, payee and asset come from the parser, and the vault decides.
+ *    See `toModelSafeSummary`.
  *
  * The wire field is `maxAmountRequired`; our internal field is `amount`, derived
  * from it. The two names stay distinct so a parser bug cannot silently
@@ -32,7 +34,8 @@ const MAX_TIMEOUT_SECONDS = 86_400;
  * attacker-controlled *content* — validated as data, never trusted as meaning.
  */
 export interface Terms {
-  readonly scheme: typeof SCHEME_EXACT;
+  /** `exact` comes from this file's parser, `auth-capture` from `auth-capture.ts`. */
+  readonly scheme: typeof SCHEME_EXACT | "auth-capture";
   readonly network: string;
   readonly asset: Address;
   readonly payTo: Address;
@@ -41,8 +44,8 @@ export interface Terms {
   readonly resource: string;
   /**
    * Free text chosen by the resource server. Preserved verbatim so the trace
-   * can show exactly what was sent — including an injection attempt. Never
-   * interpolate this into a prompt; see `toModelSafeSummary`.
+   * can show exactly what was sent — including an injection attempt. Goes to the
+   * model only as untrusted text, apart from the typed fields of `toModelSafeSummary`.
    */
   readonly description: string;
   readonly maxTimeoutSeconds: number;
@@ -270,13 +273,15 @@ export function selectTerms(
 }
 
 /**
- * The typed, non-free-text projection of terms — the **only** form that may
- * reach an LLM context (ARCHITECTURE.md).
+ * The typed, non-free-text projection of terms, which the model is given as the
+ * offer's facts.
  *
- * `description` and `extra` are omitted precisely because they are where an
- * injection arrives. Dropping them here is what makes "the component that
- * decides never reads the attacker's text" true in code rather than in prose.
- * The full text is still preserved on `Terms` for the trace and the UI.
+ * `description` and `extra` are omitted because they are where an injection arrives.
+ * The model still sees the description, passed beside this and marked as untrusted, so
+ * this does not stop an injection reaching it. It keeps the attacker's text out of the
+ * facts. "The component that decides never reads the attacker's text" holds because the
+ * component that decides is the vault, not the model, which only chooses to proceed or stop.
+ * The full text is preserved on `Terms` for the trace and the UI.
  */
 export interface ModelSafeTerms {
   readonly scheme: string;

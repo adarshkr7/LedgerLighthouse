@@ -3,15 +3,24 @@
  *
  * Non-negotiable #3 (ARCHITECTURE.md) — "the signer reads the chain, never
  * the caller." This module is that sentence in code. Every field the signer
- * later puts inside an EIP-3009 signature comes from here.
+ * later puts inside a signature comes from here.
  *
  * It is an interface with a viem implementation behind it so the service can be
  * tested against a fake chain. That is a testing seam, not a trust seam: the
  * production path reads a real contract over a real RPC.
  */
 
-import { createPublicClient, http, type Address, type Hex, type PublicClient } from "viem";
-import { policyVaultAbi, usdcAbi } from "@ntux402/shared";
+import {
+  BaseError,
+  ContractFunctionRevertedError,
+  ContractFunctionZeroDataError,
+  createPublicClient,
+  http,
+  type Address,
+  type Hex,
+  type PublicClient,
+} from "viem";
+import { escrowPolicyVaultAbi, policyVaultAbi, usdcAbi, type PaymentInfo } from "@ntux402/shared";
 import { rpcTransport, viemChainForId } from "@ntux402/shared/viem";
 
 /** The goal record, as stored on chain. */
@@ -46,10 +55,25 @@ export interface VaultReader {
   spend(goalId: bigint, seq: bigint): Promise<SpendRecord | undefined>;
   /** The token's own EIP-712 domain separator — the authoritative one. */
   tokenDomainSeparator(token: Address): Promise<Hex>;
-  /** True once the token has consumed this authorization. */
-  authorizationUsed(token: Address, authorizer: Address, nonce: Hex): Promise<boolean>;
   /** ERC-20 balance, for sweeping a payer back to its owner. */
   tokenBalance(token: Address, holder: Address): Promise<bigint>;
+  /*
+   * The rest is not trusted for safety: a false answer yields a signature the vault
+   * refuses. These reads exist so a mistake fails here, with a reason, and not later
+   * at the vault.
+   */
+  /** The vault's `escrow()` and `collector()`, or undefined if it has neither. */
+  escrowBinding(): Promise<{ readonly escrow: Address; readonly collector: Address } | undefined>;
+  /** When the vendor must claim by. */
+  captureDeadline(goalId: bigint, seq: bigint): Promise<number>;
+  /** The vault's own derivation of the payment, to compare with ours. */
+  escrowPayment(goalId: bigint, seq: bigint): Promise<PaymentInfo>;
+  /** True once this spend's amount has gone back to the budget. */
+  isReclaimed(goalId: bigint, seq: bigint): Promise<boolean>;
+  /** The enrollment id the goal was opened under. With the owner, it names the payer key. */
+  goalEnrollment(goalId: bigint): Promise<Hex>;
+  /** The vault's `enrollmentSigner()`, or undefined if it has none. */
+  enrollmentSigner(): Promise<Address | undefined>;
 }
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
@@ -133,9 +157,9 @@ export class OnChainVaultReader implements VaultReader {
   }
 
   /**
-   * The goal this payer is bound to, or 0n. Used to rebuild the ROFL key index
-   * after its disk is lost; see `RoflKeyStore.recover`. A vault deployed before
-   * the payer binding has no such function, and this throws on one.
+   * The goal this payer is bound to, or 0n. For diagnostics: the signer no longer
+   * needs it, since keys are derived from the goal's owner and enrollment id. A
+   * vault deployed before the payer binding has no such function, and this throws.
    */
   async payerGoal(payer: Address): Promise<bigint> {
     return (await this.#client.readContract({
@@ -144,6 +168,79 @@ export class OnChainVaultReader implements VaultReader {
       functionName: "payerGoal",
       args: [payer],
     })) as bigint;
+  }
+
+  async escrowBinding(): Promise<{ escrow: Address; collector: Address } | undefined> {
+    const base = { address: this.#vault, abi: escrowPolicyVaultAbi } as const;
+    try {
+      const [escrow, collector] = await Promise.all([
+        this.#client.readContract({ ...base, functionName: "escrow" }) as Promise<Address>,
+        this.#client.readContract({ ...base, functionName: "collector" }) as Promise<Address>,
+      ]);
+      return { escrow, collector };
+    } catch (e) {
+      // A vault without these functions says so by reverting or returning nothing.
+      // Anything else, such as the RPC being down, is not an answer and must not be
+      // read as one.
+      const noSuchFunction =
+        e instanceof BaseError &&
+        e.walk((c) => c instanceof ContractFunctionRevertedError || c instanceof ContractFunctionZeroDataError);
+      if (noSuchFunction) return undefined;
+      throw e;
+    }
+  }
+
+  async captureDeadline(goalId: bigint, seq: bigint): Promise<number> {
+    const order = (await this.#client.readContract({
+      address: this.#vault,
+      abi: escrowPolicyVaultAbi,
+      functionName: "order",
+      args: [goalId, seq],
+    })) as { readonly captureDeadline: number };
+    return order.captureDeadline;
+  }
+
+  async escrowPayment(goalId: bigint, seq: bigint): Promise<PaymentInfo> {
+    return (await this.#client.readContract({
+      address: this.#vault,
+      abi: escrowPolicyVaultAbi,
+      functionName: "escrowPayment",
+      args: [goalId, seq],
+    })) as PaymentInfo;
+  }
+
+  async isReclaimed(goalId: bigint, seq: bigint): Promise<boolean> {
+    return (await this.#client.readContract({
+      address: this.#vault,
+      abi: escrowPolicyVaultAbi,
+      functionName: "isReclaimed",
+      args: [goalId, seq],
+    })) as boolean;
+  }
+
+  async goalEnrollment(goalId: bigint): Promise<Hex> {
+    return (await this.#client.readContract({
+      address: this.#vault,
+      abi: escrowPolicyVaultAbi,
+      functionName: "goalEnrollment",
+      args: [goalId],
+    })) as Hex;
+  }
+
+  async enrollmentSigner(): Promise<Address | undefined> {
+    try {
+      return (await this.#client.readContract({
+        address: this.#vault,
+        abi: escrowPolicyVaultAbi,
+        functionName: "enrollmentSigner",
+      })) as Address;
+    } catch (e) {
+      const noSuchFunction =
+        e instanceof BaseError &&
+        e.walk((c) => c instanceof ContractFunctionRevertedError || c instanceof ContractFunctionZeroDataError);
+      if (noSuchFunction) return undefined;
+      throw e;
+    }
   }
 
   async tokenBalance(token: Address, holder: Address): Promise<bigint> {
@@ -163,12 +260,4 @@ export class OnChainVaultReader implements VaultReader {
     }) as Promise<Hex>;
   }
 
-  async authorizationUsed(token: Address, authorizer: Address, nonce: Hex): Promise<boolean> {
-    return this.#client.readContract({
-      address: token,
-      abi: usdcAbi,
-      functionName: "authorizationState",
-      args: [authorizer, nonce],
-    }) as Promise<boolean>;
-  }
 }

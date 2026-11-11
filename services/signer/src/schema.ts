@@ -177,3 +177,32 @@ export function parseSweepRequest(raw: unknown): SchemaResult<{ goalId: bigint }
   }
   return { ok: true, value: { goalId: BigInt(goalId) } };
 }
+
+/**
+ * The enrollment body: `{ owner, enrollmentId }` and nothing else. The owner is
+ * the wallet that will open the goal; the id is 32 bytes the console chose.
+ */
+export function parseEnrollRequest(
+  raw: unknown,
+): SchemaResult<{ owner: `0x${string}`; enrollmentId: `0x${string}` }> {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    return { ok: false, error: `body: expected an object, got ${raw === null ? "null" : typeof raw}` };
+  }
+  const body = raw as Record<string, unknown>;
+  const extra = Object.keys(body).filter((k) => k !== "owner" && k !== "enrollmentId");
+  if (extra.length > 0) {
+    return {
+      ok: false,
+      error: `refused: unknown field(s) ${extra.join(", ")}. An enrollment accepts (owner, enrollmentId) only.`,
+    };
+  }
+  const owner = body["owner"];
+  if (typeof owner !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(owner) || /^0x0{40}$/.test(owner)) {
+    return { ok: false, error: "owner: expected a non-zero 20-byte hex address" };
+  }
+  const id = body["enrollmentId"];
+  if (typeof id !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(id)) {
+    return { ok: false, error: "enrollmentId: expected 32 bytes of hex" };
+  }
+  return { ok: true, value: { owner: owner as `0x${string}`, enrollmentId: id.toLowerCase() as `0x${string}` } };
+}

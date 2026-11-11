@@ -143,9 +143,10 @@ export async function* streamRun(
    * Atomic USDC the vendor should ask for, overriding its catalog price.
    *
    * A demo control, and only honoured by the mock vendor for its overcharge
-   * resource — whose entire job is to sit just above a budget the viewer now
-   * chooses at run time. Nothing in the trust boundary reads it: the price the
-   * policy acts on is still whatever comes back in the 402.
+   * resource, whose job is to ask for more than any budget the viewer can
+   * choose. The orchestrator and the vendor both see it, so it must not depend
+   * on the budget. The price the policy acts on is still whatever comes back in
+   * the 402.
    */
   priceAtomic?: string,
   signal?: AbortSignal,

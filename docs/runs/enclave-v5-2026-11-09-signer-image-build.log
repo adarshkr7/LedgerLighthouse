@@ -1,0 +1,148 @@
+#0 building with "desktop-linux" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 7.03kB done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/node:22-alpine
+#2 DONE 0.2s
+
+#3 [internal] load .dockerignore
+#3 transferring context: 2.35kB done
+#3 DONE 0.0s
+
+#4 [base 1/3] FROM docker.io/library/node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32
+#4 resolve docker.io/library/node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32 0.0s done
+#4 DONE 0.0s
+
+#5 [internal] load build context
+#5 transferring context: 507.96kB 0.0s done
+#5 DONE 0.0s
+
+#6 [base 2/3] RUN corepack enable
+#6 CACHED
+
+#7 [base 3/3] WORKDIR /repo
+#7 CACHED
+
+#8 [deps 1/4] COPY pnpm-lock.yaml pnpm-workspace.yaml package.json tsconfig.base.json ./
+#8 DONE 0.1s
+
+#9 [deps 2/4] COPY packages/shared/package.json packages/shared/
+#9 DONE 0.0s
+
+#10 [deps 3/4] COPY services/signer/package.json services/signer/
+#10 DONE 0.0s
+
+#11 [deps 4/4] RUN apk add --no-cache --virtual .fetch-deps git  && git config --global core.compression 0  && git config --global http.lowSpeedLimit 0  && git config --global http.lowSpeedTime 999999  && git config --global http.postBuffer 524288000  && pnpm install --ignore-scripts --frozen-lockfile --trust-lockfile --filter @ntux402/signer...  && apk del .fetch-deps
+#11 2.286 ( 1/13) Installing brotli-libs (1.2.1-r0)
+#11 2.464 ( 2/13) Installing c-ares (1.34.9-r0)
+#11 2.560 ( 3/13) Installing libunistring (1.4.2-r0)
+#11 2.814 ( 4/13) Installing libidn2 (2.3.8-r0)
+#11 2.934 ( 5/13) Installing nghttp2-libs (1.70.0-r0)
+#11 3.020 ( 6/13) Installing libpsl (0.21.5-r3)
+#11 3.105 ( 7/13) Installing zstd-libs (1.5.7-r2)
+#11 3.285 ( 8/13) Installing libcurl (8.23.0-r0)
+#11 3.551 ( 9/13) Installing libexpat (2.10.0-r0)
+#11 3.667 (10/13) Installing pcre2 (10.49-r0)
+#11 3.822 (11/13) Installing git (2.54.0-r0)
+#11 4.685 (12/13) Installing git-init-template (2.54.0-r0)
+#11 4.763 (13/13) Installing .fetch-deps (20261109.143315)
+#11 4.763 Executing busybox-1.37.0-r31.trigger
+#11 4.767 OK: 23.3 MiB in 31 packages
+#11 4.908 ! Corepack is about to download https://registry.npmjs.org/pnpm/-/pnpm-11.20.0.tgz
+#11 8.999 Scope: 2 of 3 workspace projects
+#11 9.058 Lockfile is up to date, resolution step is skipped
+#11 9.088 Progress: resolved 1, reused 0, downloaded 0, added 0
+#11 9.117 .                                        |  +80 ++++++++
+#11 9.865 Packages are hard linked from the content-addressable store to the virtual store.
+#11 9.865   Content-addressable store is at: /root/.local/share/pnpm/store/v11
+#11 9.865   Virtual store is at:             node_modules/.pnpm
+#11 10.09 Progress: resolved 80, reused 0, downloaded 13, added 13
+#11 10.92 [WARN] The git-hosted package fetched from "https://codeload.github.com/dapphub/ds-test/tar.gz/e282159d5170298eb2455a6c05280ab5a73a4ef0" has to be built but the build scripts were ignored.
+#11 11.09 Progress: resolved 80, reused 0, downloaded 34, added 34
+#11 11.63 [WARN] Tarball download average speed 17 KiB/s (size 28 KiB) is below 50 KiB/s: https://registry.npmjs.org/undici-types/-/undici-types-8.3.0.tgz (GET)
+#11 11.88 [WARN] Tarball download average speed 38 KiB/s (size 50 KiB) is below 50 KiB/s: https://registry.npmjs.org/postcss/-/postcss-8.5.26.tgz (GET)
+#11 11.92 [WARN] Tarball download average speed 12 KiB/s (size 17 KiB) is below 50 KiB/s: https://registry.npmjs.org/@jridgewell/sourcemap-codec/-/sourcemap-codec-1.5.5.tgz (GET)
+#11 11.97 [WARN] Tarball download average speed 27 KiB/s (size 54 KiB) is below 50 KiB/s: https://registry.npmjs.org/@vitest/mocker/-/mocker-4.1.10.tgz (GET)
+#11 12.09 Progress: resolved 80, reused 0, downloaded 56, added 56
+#11 12.29 [WARN] Tarball download average speed 14 KiB/s (size 24 KiB) is below 50 KiB/s: https://registry.npmjs.org/@vitest/expect/-/expect-4.1.10.tgz (GET)
+#11 13.09 Progress: resolved 80, reused 0, downloaded 62, added 62
+#11 13.90 [WARN] Tarball download average speed 8 KiB/s (size 33 KiB) is below 50 KiB/s: https://registry.npmjs.org/esbuild/-/esbuild-0.28.1.tgz (GET)
+#11 14.05 [WARN] The git-hosted package fetched from "https://codeload.github.com/foundry-rs/forge-std/tar.gz/2f05b3001ed9d74b171d17eac80b3765ce186a76" has to be built but the build scripts were ignored.
+#11 14.07 
+#11 14.07    ╭───────────────────────────────────────────────╮
+#11 14.07    │                                               │
+#11 14.07    │     Update available! 11.20.0 → 12.18.0.      │
+#11 14.07    │     Changelog: https://pnpm.io/v/12.18.0      │
+#11 14.07    │   To update, run: corepack use pnpm@12.18.0   │
+#11 14.07    │                                               │
+#11 14.07    ╰───────────────────────────────────────────────╯
+#11 14.07 
+#11 14.09 Progress: resolved 80, reused 0, downloaded 69, added 69
+#11 14.81 [WARN] Tarball download average speed 38 KiB/s (size 159 KiB) is below 50 KiB/s: https://registry.npmjs.org/bufferutil/-/bufferutil-4.1.0.tgz (GET)
+#11 15.09 Progress: resolved 80, reused 0, downloaded 71, added 71
+#11 16.09 Progress: resolved 80, reused 0, downloaded 72, added 72
+#11 17.09 Progress: resolved 80, reused 0, downloaded 73, added 73
+#11 18.09 Progress: resolved 80, reused 0, downloaded 74, added 74
+#11 19.92 Progress: resolved 80, reused 0, downloaded 75, added 74
+#11 20.92 Progress: resolved 80, reused 0, downloaded 77, added 77
+#11 22.04 Progress: resolved 80, reused 0, downloaded 78, added 77
+#11 23.04 Progress: resolved 80, reused 0, downloaded 78, added 78
+#11 24.46 Progress: resolved 80, reused 0, downloaded 79, added 78
+#11 25.46 Progress: resolved 80, reused 0, downloaded 79, added 79
+#11 29.19 [WARN] The git-hosted package fetched from "https://github.com/safe-global/safe-smart-account.git" has to be built but the build scripts were ignored.
+#11 29.25 Progress: resolved 80, reused 0, downloaded 80, added 79
+#11 29.25 Progress: resolved 80, reused 0, downloaded 80, added 80, done
+#11 29.33 Done in 20.7s using pnpm v11.20.0
+#11 29.36 ( 1/13) Purging .fetch-deps (20261109.143315)
+#11 29.36 ( 2/13) Purging git-init-template (2.54.0-r0)
+#11 29.36 WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/APKINDEX.tar.gz: No such file or directory
+#11 29.36 WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.24/community/x86_64/APKINDEX.tar.gz: No such file or directory
+#11 29.36 ( 3/13) Purging git (2.54.0-r0)
+#11 29.36 ( 4/13) Purging libcurl (8.23.0-r0)
+#11 29.36 ( 5/13) Purging libexpat (2.10.0-r0)
+#11 29.36 ( 6/13) Purging libpsl (0.21.5-r3)
+#11 29.36 ( 7/13) Purging nghttp2-libs (1.70.0-r0)
+#11 29.36 ( 8/13) Purging pcre2 (10.49-r0)
+#11 29.36 ( 9/13) Purging zstd-libs (1.5.7-r2)
+#11 29.36 (10/13) Purging brotli-libs (1.2.1-r0)
+#11 29.36 (11/13) Purging c-ares (1.34.9-r0)
+#11 29.36 (12/13) Purging libidn2 (2.3.8-r0)
+#11 29.36 (13/13) Purging libunistring (1.4.2-r0)
+#11 29.36 Executing busybox-1.37.0-r31.trigger
+#11 29.36 OK: 10.8 MiB in 18 packages
+#11 DONE 29.6s
+
+#12 [runtime 1/6] COPY packages/shared packages/shared
+#12 DONE 0.1s
+
+#13 [runtime 2/6] COPY services/signer services/signer
+#13 DONE 0.0s
+
+#14 [runtime 3/6] RUN pnpm --filter @ntux402/shared run build
+#14 0.484 $ tsc -p tsconfig.build.json
+#14 DONE 2.5s
+
+#15 [runtime 4/6] RUN apk add --no-cache su-exec
+#15 2.419 (1/1) Installing su-exec (0.3-r0)
+#15 2.477 Executing busybox-1.37.0-r31.trigger
+#15 2.481 OK: 10.9 MiB in 19 packages
+#15 DONE 2.5s
+
+#16 [runtime 5/6] COPY services/signer/entrypoint.sh /usr/local/bin/entrypoint.sh
+#16 DONE 0.0s
+
+#17 [runtime 6/6] RUN chmod +x /usr/local/bin/entrypoint.sh  && mkdir -p /home/node  && chown -R node:node /opt/corepack /home/node
+#17 DONE 1.5s
+
+#18 exporting to image
+#18 exporting layers
+#18 exporting layers 4.6s done
+#18 exporting manifest sha256:f8d12e03a682b62d2b9740d0bab49d35d92b2a1274633005686e320b8bbb267c done
+#18 exporting config sha256:42e8c24011e9aba0f0219a7f3913ba106f5180a30370bf67519063362e262dc1 done
+#18 naming to docker.io/schwarzite/totem-signer:v5-local done
+#18 unpacking to docker.io/schwarzite/totem-signer:v5-local
+#18 unpacking to docker.io/schwarzite/totem-signer:v5-local 2.5s done
+#18 DONE 7.1s
+exit 0

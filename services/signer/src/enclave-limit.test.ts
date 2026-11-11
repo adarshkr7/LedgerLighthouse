@@ -25,25 +25,22 @@ const ACCOUNT = privateKeyToAccount(KEY);
 
 /** Counts what the enclave would have been asked to do. */
 class CountingKeyStore implements KeyStore {
+  readonly kind = "memory" as const;
   mints = 0;
   derives = 0;
-  listings = 0;
 
-  async mint(): Promise<Address> {
+  async enrollment(): Promise<LocalAccount> {
     this.mints += 1;
-    return ACCOUNT.address;
-  }
-
-  async signerFor(_address: Address): Promise<LocalAccount | undefined> {
-    this.derives += 1;
     return ACCOUNT;
   }
 
-  async addresses(): Promise<readonly Address[]> {
-    this.listings += 1;
-    return [ACCOUNT.address];
+  async payer(_owner: Address, _id: Hex): Promise<LocalAccount> {
+    this.derives += 1;
+    return ACCOUNT;
   }
 }
+
+const ID: Hex = `0x${"ab".repeat(32)}`;
 
 /** Drains a limiter's whole allowance, asserting every call got through. */
 async function exhaust(fn: () => Promise<unknown>, times: number): Promise<void> {
@@ -66,8 +63,8 @@ describe("RateLimitedKeyStore", () => {
   it("passes calls through while under the limit", async () => {
     const store = new RateLimitedKeyStore(inner, { mintPerMinute: 3, derivePerMinute: 3 });
 
-    expect(await store.mint()).toBe(ACCOUNT.address);
-    expect(await store.signerFor(ACCOUNT.address)).toBe(ACCOUNT);
+    expect(await store.enrollment()).toBe(ACCOUNT);
+    expect(await store.payer(ACCOUNT.address, ID)).toBe(ACCOUNT);
 
     expect(inner.mints).toBe(1);
     expect(inner.derives).toBe(1);
@@ -76,8 +73,8 @@ describe("RateLimitedKeyStore", () => {
   it("stops minting at the cap, and does not reach the store to do it", async () => {
     const store = new RateLimitedKeyStore(inner, { mintPerMinute: 2, derivePerMinute: 100 });
 
-    await exhaust(() => store.mint(), 2);
-    await expect(store.mint()).rejects.toThrow(EnclaveRateLimitError);
+    await exhaust(() => store.enrollment(), 2);
+    await expect(store.enrollment()).rejects.toThrow(EnclaveRateLimitError);
 
     // The third call must not have generated a key. This is the whole point:
     // a refusal that still derives is not a limit on the enclave.
@@ -87,8 +84,8 @@ describe("RateLimitedKeyStore", () => {
   it("stops deriving at the cap", async () => {
     const store = new RateLimitedKeyStore(inner, { mintPerMinute: 100, derivePerMinute: 2 });
 
-    await exhaust(() => store.signerFor(ACCOUNT.address), 2);
-    await expect(store.signerFor(ACCOUNT.address)).rejects.toThrow(EnclaveRateLimitError);
+    await exhaust(() => store.payer(ACCOUNT.address, ID), 2);
+    await expect(store.payer(ACCOUNT.address, ID)).rejects.toThrow(EnclaveRateLimitError);
 
     expect(inner.derives).toBe(2);
   });
@@ -96,12 +93,12 @@ describe("RateLimitedKeyStore", () => {
   it("meters mint and derive independently", async () => {
     const store = new RateLimitedKeyStore(inner, { mintPerMinute: 1, derivePerMinute: 5 });
 
-    await store.mint();
-    await expect(store.mint()).rejects.toThrow(EnclaveRateLimitError);
+    await store.enrollment();
+    await expect(store.enrollment()).rejects.toThrow(EnclaveRateLimitError);
 
     // Signing is the path a debited spend depends on. Exhausting mints must
     // not take it down with them.
-    await exhaust(() => store.signerFor(ACCOUNT.address), 5);
+    await exhaust(() => store.payer(ACCOUNT.address, ID), 5);
     expect(inner.derives).toBe(5);
   });
 
@@ -109,32 +106,32 @@ describe("RateLimitedKeyStore", () => {
     const store = new RateLimitedKeyStore(inner, { mintPerMinute: 100, derivePerMinute: 2 });
     const other: Address = "0x2222222222222222222222222222222222222222";
 
-    await exhaust(() => store.signerFor(ACCOUNT.address), 2);
+    await exhaust(() => store.payer(ACCOUNT.address, ID), 2);
 
     // Deliberate: the resource being protected is the one key daemon, and it
     // does not care which address the derivation names.
-    await expect(store.signerFor(other)).rejects.toThrow(EnclaveRateLimitError);
+    await expect(store.payer(other, ID)).rejects.toThrow(EnclaveRateLimitError);
   });
 
   it("recovers when the window rolls over", async () => {
     const store = new RateLimitedKeyStore(inner, { mintPerMinute: 1, derivePerMinute: 1 });
 
-    await store.mint();
-    await expect(store.mint()).rejects.toThrow(EnclaveRateLimitError);
+    await store.enrollment();
+    await expect(store.enrollment()).rejects.toThrow(EnclaveRateLimitError);
 
     vi.advanceTimersByTime(60_001);
 
-    await expect(store.mint()).resolves.toBe(ACCOUNT.address);
+    await expect(store.enrollment()).resolves.toBe(ACCOUNT);
     expect(inner.mints).toBe(2);
   });
 
   it("reports a usable retry-after and the operation that tripped", async () => {
     const store = new RateLimitedKeyStore(inner, { mintPerMinute: 1, derivePerMinute: 1 });
 
-    await store.mint();
+    await store.enrollment();
     vi.advanceTimersByTime(20_000);
 
-    const error = await store.mint().catch((e: unknown) => e);
+    const error = await store.enrollment().catch((e: unknown) => e);
     expect(error).toBeInstanceOf(EnclaveRateLimitError);
     const limit = error as EnclaveRateLimitError;
 
@@ -146,19 +143,13 @@ describe("RateLimitedKeyStore", () => {
 
   it("leaves the message free of anything a caller should not learn", async () => {
     const store = new RateLimitedKeyStore(inner, { mintPerMinute: 1, derivePerMinute: 1 });
-    await store.mint();
+    await store.enrollment();
 
-    const error = (await store.mint().catch((e: unknown) => e)) as Error;
+    const error = (await store.enrollment().catch((e: unknown) => e)) as Error;
     expect(error.message).not.toContain(KEY);
     expect(error.message).not.toContain(ACCOUNT.address);
   });
 
-  it("does not limit addresses(), which never touches the enclave", async () => {
-    const store = new RateLimitedKeyStore(inner, { mintPerMinute: 1, derivePerMinute: 1 });
-
-    await exhaust(() => store.addresses(), 50);
-    expect(inner.listings).toBe(50);
-  });
 });
 
 describe("enclaveLimitsFromEnv", () => {

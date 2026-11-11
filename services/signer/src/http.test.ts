@@ -2,12 +2,12 @@ import type { AddressInfo } from "node:net";
 import { describe, expect, it } from "vitest";
 
 import { createBootFailureServer, createSignerServer, type SignerServerOptions } from "./http.js";
-import type { AuthorizationSigner } from "./service.js";
+import type { EscrowAuthorizationSigner } from "./escrow-service.js";
 
 async function health(binding?: SignerServerOptions["binding"]): Promise<Record<string, unknown>> {
   // /health never reaches the signer, so an empty stand-in is enough here.
   const server = createSignerServer({
-    signer: {} as AuthorizationSigner,
+    signer: {} as EscrowAuthorizationSigner,
     ...(binding ? { binding } : {}),
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));

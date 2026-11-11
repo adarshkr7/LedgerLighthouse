@@ -17,11 +17,14 @@
  * ## What it trusts
  *
  * Nothing it decides. The vault says what qualifies (`isReclaimable`): approved,
- * not yet reclaimed, past its window, and never consumed by the token. Anyone
- * may call `reclaimExpired`, so DEPLOYER_PRIVATE_KEY pays the gas, and the call
- * can only write the vault's own budget and call count. No money moves.
+ * not yet reclaimed, and either never collected and past its window, or held by
+ * the escrow and past the vendor's capture deadline. Anyone may call
+ * `reclaimExpired`, so DEPLOYER_PRIVATE_KEY pays the gas. A held payment goes back
+ * to the payer, and nothing else moves money.
  *
- * It looks at open goals among the last 200, and at each one's last 50 spends.
+ * It reads every spend of each goal it looks at: the last 200 goals, or the ones named
+ * with --goal, and says if older goals went unread. On a closed goal it lists only held payments: a budget restored there buys nothing, but the
+ * money is still in the escrow. Sweep that goal again afterwards.
  */
 
 import { createPublicClient, type Address } from "viem";
@@ -29,12 +32,12 @@ import { rpcTransport, viemChain } from "@ntux402/shared/viem";
 import { formatUsdc } from "@ntux402/shared";
 import { VaultRelay } from "@ntux402/orchestrator";
 
-import { loadDotEnv, networkFromEnv, policyVaultAbi, requiredAddress, requiredHexKey } from "./config.js";
+import { loadDotEnv, networkFromEnv, requiredAddress, requiredHexKey, vaultAbi } from "./config.js";
+import { assertEscrowVault, paymentState } from "./escrow.js";
 
 loadDotEnv();
 
 const GOALS_SCANNED = 200n;
-const SPENDS_SCANNED = 50n;
 
 // --------------------------------------------------------------- arguments
 
@@ -54,7 +57,7 @@ const goalArgs = args.flatMap((a, i) => {
 
 const { network, rpcUrl } = networkFromEnv();
 const vault = requiredAddress("POLICY_VAULT_ADDRESS");
-const abi = policyVaultAbi();
+const abi = vaultAbi();
 const publicClient = createPublicClient({ chain: viemChain(network), transport: rpcTransport(rpcUrl) });
 const relay = new VaultRelay({
   rpcUrl,
@@ -72,6 +75,7 @@ const chainId = await publicClient.getChainId();
 if (chainId !== network.chainId) {
   throw new Error(`RPC is on chain ${chainId}, but NETWORK is ${network.label} (${network.chainId})`);
 }
+await assertEscrowVault(publicClient, vault);
 
 // --------------------------------------------------------------- the plan
 
@@ -79,6 +83,8 @@ interface Candidate {
   readonly goalId: bigint;
   readonly seq: bigint;
   readonly amount: bigint;
+  /** In the escrow now, and going back to the payer. */
+  readonly held: bigint;
 }
 
 const read = <T>(functionName: string, callArgs: readonly unknown[]): Promise<T> =>
@@ -91,56 +97,72 @@ const first = goalCount > GOALS_SCANNED ? goalCount - GOALS_SCANNED + 1n : 1n;
 const ids =
   goalArgs.length > 0 ? goalArgs : Array.from({ length: Number(goalCount - first + 1n) }, (_, i) => first + BigInt(i));
 
+if (goalArgs.length === 0 && first > 1n) {
+  console.log(`  reading goals ${first} to ${goalCount}. Goals before ${first} are not read: name one with --goal.\n`);
+}
+
 const candidates: Candidate[] = [];
 for (const goalId of ids) {
   const goal = await read<readonly [Address, Address, Address, Address, number, bigint, bigint, boolean]>("goals", [
     goalId,
   ]);
   const [, , , , , , lastSeq, open] = goal;
-  // A closed goal takes no more spends, so a budget restored there buys nothing.
-  if (!open && goalArgs.length === 0) continue;
-  const from = lastSeq > SPENDS_SCANNED ? lastSeq - SPENDS_SCANNED + 1n : 1n;
-  for (let seq = from; seq <= lastSeq; seq++) {
+  for (let seq = 1n; seq <= lastSeq; seq++) {
     if (!(await read<boolean>("isReclaimable", [goalId, seq]))) continue;
+    const { held } = await paymentState(publicClient, vault, goalId, seq);
+    // A closed goal takes no more spends, so only money in the escrow is worth the gas.
+    if (!open && held === 0n && goalArgs.length === 0) continue;
     const [, amount] = await read<readonly [Address, bigint, Address, Address, string]>("authorization", [goalId, seq]);
-    candidates.push({ goalId, seq, amount });
+    candidates.push({ goalId, seq, amount, held });
   }
 }
 
-if (candidates.length === 0) {
-  console.log("  nothing to reclaim: every approved spend was paid, or its window is still open\n");
-  process.exit(0);
-}
-
-for (const c of candidates) {
-  console.log(`  goal ${String(c.goalId).padStart(4)}  seq ${String(c.seq).padStart(3)}  ${formatUsdc(c.amount)} USDC`);
-}
-console.log();
-
-if (!execute) {
-  console.log(`  ${candidates.length} reclaimable. Run again with --execute to give them back.\n`);
-  process.exit(0);
-}
-
-// ------------------------------------------------------------------ execute
-
-let failed = 0;
-for (const c of candidates) {
-  try {
-    const outcome = await relay.reclaimExpired(c.goalId, c.seq);
-    const detail =
-      outcome.kind === "reclaimed"
-        ? `${network.explorer}/tx/${outcome.txHash}`
-        : outcome.kind === "already"
-          ? "someone reclaimed it first"
-          : outcome.kind === "collected"
-            ? "the token consumed it after all: it was paid"
-            : "the vault still reads its window as open";
-    console.log(`  goal ${c.goalId} seq ${c.seq}  ${outcome.kind}  ${detail}`);
-  } catch (error) {
-    failed++;
-    console.log(`  goal ${c.goalId} seq ${c.seq}  FAILED  ${error instanceof Error ? error.message.split("\n")[0] : error}`);
+/**
+ * Lists what qualifies and, with --execute, gives it back. Returns the exit status.
+ *
+ * The status is set and the process left to end by itself, because calling process.exit
+ * straight after these reads made Node on Windows abort (0xC0000409, a libuv assertion on
+ * a closing handle). The work was done by then, but the status said it had crashed.
+ */
+async function act(): Promise<number> {
+  if (candidates.length === 0) {
+    console.log("  nothing to reclaim: every approved spend was paid, or its window is still open\n");
+    return 0;
   }
+
+  for (const c of candidates) {
+    console.log(
+      `  goal ${String(c.goalId).padStart(4)}  seq ${String(c.seq).padStart(3)}  ${formatUsdc(c.amount)} USDC` +
+        (c.held > 0n ? "  held by the escrow, returns to the payer" : ""),
+    );
+  }
+  console.log();
+
+  if (!execute) {
+    console.log(`  ${candidates.length} reclaimable. Run again with --execute to give them back.\n`);
+    return 0;
+  }
+
+  let failed = 0;
+  for (const c of candidates) {
+    try {
+      const outcome = await relay.reclaimExpired(c.goalId, c.seq);
+      const detail =
+        outcome.kind === "reclaimed"
+          ? `${network.explorer}/tx/${outcome.txHash}`
+          : outcome.kind === "already"
+            ? "someone reclaimed it first"
+            : outcome.kind === "collected"
+              ? "the vendor claimed it after all: it was paid"
+              : "the vault still reads its window as open";
+      console.log(`  goal ${c.goalId} seq ${c.seq}  ${outcome.kind}  ${detail}`);
+    } catch (error) {
+      failed++;
+      console.log(`  goal ${c.goalId} seq ${c.seq}  FAILED  ${error instanceof Error ? error.message.split("\n")[0] : error}`);
+    }
+  }
+  console.log();
+  return failed > 0 ? 1 : 0;
 }
-console.log();
-process.exit(failed > 0 ? 1 : 0);
+
+process.exitCode = await act();

@@ -6,9 +6,8 @@
 // Four processes, colour-coded, shut down together on Ctrl-C. Written because
 // a five-minute demo should not begin with four terminal tabs and a prayer.
 //
-// The facilitator is started only when X402_FACILITATOR_URL is set. Without it
-// the mock API runs in stub mode and says so — which is the honest default when
-// there is no test USDC to move.
+// The facilitator is started only when X402_FACILITATOR_URL is set. Without it the
+// mock API refuses to start and says so, because a stubbed hold is no hold.
 
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
@@ -74,7 +73,7 @@ const children = [];
 console.log(`\n${DIM}Starting ${services.length} services. Ctrl-C stops all of them.${OFF}`);
 if (!config.X402_FACILITATOR_URL) {
   console.log(
-    `${DIM}X402_FACILITATOR_URL is unset — stub settlement, no USDC moves. ` +
+    `${DIM}X402_FACILITATOR_URL is unset, so the mock API will not start. ` +
       `Set it to start the facilitator.${OFF}`,
   );
 }

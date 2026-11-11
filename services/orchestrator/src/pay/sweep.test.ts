@@ -10,12 +10,26 @@
 
 import { describe, expect, it } from "vitest";
 
-import { SignerClient } from "./signer-client.js";
+import { SignerClient, type EscrowPaymentTerms } from "./signer-client.js";
 import { askSignerToSweep, sweepGoal } from "./sweep.js";
 
 const USDC = `0x${"33".repeat(20)}` as const;
 const OWNER = `0x${"44".repeat(20)}` as const;
 const PAYER = `0x${"55".repeat(20)}` as const;
+const VAULT = `0x${"66".repeat(20)}` as const;
+const TX = `0x${"ef".repeat(32)}` as const;
+
+const PAYMENT: EscrowPaymentTerms = {
+  operator: VAULT,
+  payer: PAYER,
+  receiver: OWNER,
+  token: USDC,
+  maxAmount: "250000",
+  preApprovalExpiry: 3700,
+  authorizationExpiry: 3700,
+  refundExpiry: 3700,
+  salt: "129127208515966861312",
+};
 
 const SIGNED = {
   goalId: "7",
@@ -32,6 +46,7 @@ const SIGNED = {
   },
   signature: `0x${"cd".repeat(65)}`,
   termsHash: `0x${"00".repeat(32)}`,
+  payment: PAYMENT,
 };
 
 /** A signer that answers `/sweeps` with `body`, and records what it was sent. */
@@ -48,33 +63,23 @@ function signerReturning(status: number, body: unknown) {
 }
 
 describe("sweepGoal", () => {
-  it("refuses without a facilitator rather than signing something nobody submits", async () => {
-    const { calls, client } = signerReturning(200, SIGNED);
-
-    const outcome = await sweepGoal("7", {
-      signer: client,
-      facilitatorUrl: undefined,
-      usdcAddress: USDC,
-    });
-
-    expect(outcome.kind).toBe("refused");
-    // And it did not ask the signer to sign anything on the way to saying so.
-    expect(calls).toHaveLength(0);
-  });
+  const relayed = () => {
+    const sent: unknown[][] = [];
+    return {
+      sent,
+      relay: {
+        sweep: async (payment: EscrowPaymentTerms, signature: `0x${string}`) => {
+          sent.push([payment, signature]);
+          return { txHash: TX };
+        },
+      },
+    };
+  };
 
   it("reaches the signer with the bearer the client carries", async () => {
     const { calls, client } = signerReturning(200, SIGNED);
 
-    await sweepGoal("7", {
-      signer: client,
-      facilitatorUrl: "http://facilitator.local",
-      usdcAddress: USDC,
-      fetchImpl: (async () =>
-        new Response(JSON.stringify({ success: true, transaction: "0xdead" }), {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        })) as unknown as typeof fetch,
-    });
+    await sweepGoal("7", { signer: client, relay: relayed().relay });
 
     expect(calls[0]?.url).toBe("http://signer.local/sweeps");
     expect(calls[0]?.headers.get("authorization")).toBe("Bearer s3cret");
@@ -86,101 +91,75 @@ describe("sweepGoal", () => {
     // leave the console unable to say what to do next.
     const reason = `refused: payer ${PAYER} holds no ${USDC}.`;
     const { client } = signerReturning(409, { error: reason });
+    const { relay, sent } = relayed();
 
-    const outcome = await sweepGoal("7", {
-      signer: client,
-      facilitatorUrl: "http://facilitator.local",
-      usdcAddress: USDC,
-    });
+    const outcome = await sweepGoal("7", { signer: client, relay });
 
     expect(outcome).toEqual({ kind: "refused", status: 409, reason });
+    expect(sent).toHaveLength(0);
   });
 
-  it("forwards the signed authorization to the facilitator unchanged", async () => {
-    const { client } = signerReturning(200, SIGNED);
-    let envelope: unknown;
-
-    const outcome = await sweepGoal("7", {
-      signer: client,
-      facilitatorUrl: "http://facilitator.local",
-      usdcAddress: USDC,
-      fetchImpl: (async (_url: string, init?: RequestInit) => {
-        envelope = JSON.parse(String(init?.body));
-        return new Response(JSON.stringify({ success: true, transaction: "0xdead" }), {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        });
-      }) as unknown as typeof fetch,
-    });
-
+  it("submits exactly what the signer signed", async () => {
     // Nothing this process constructs may widen what the signer signed.
-    const { paymentPayload } = envelope as { paymentPayload: { payload: unknown } };
-    expect(paymentPayload.payload).toEqual({
-      signature: SIGNED.signature,
-      authorization: SIGNED.authorization,
+    const { client } = signerReturning(200, SIGNED);
+    const { relay, sent } = relayed();
+
+    const outcome = await sweepGoal("7", { signer: client, relay });
+
+    expect(sent).toEqual([[PAYMENT, SIGNED.signature]]);
+    expect(outcome).toMatchObject({
+      kind: "settled",
+      amount: "250000",
+      to: OWNER,
+      settlement: { success: true, transaction: TX, network: "base-sepolia", payer: PAYER },
     });
-    expect(outcome).toMatchObject({ kind: "settled", amount: "250000", to: OWNER });
   });
 
-  it("reports a failed settlement rather than claiming the money moved", async () => {
+  it("reports the vault's refusal as a failure, not a settlement", async () => {
     const { client } = signerReturning(200, SIGNED);
 
     const outcome = await sweepGoal("7", {
       signer: client,
-      facilitatorUrl: "http://facilitator.local",
-      usdcAddress: USDC,
-      fetchImpl: (async () =>
-        new Response(JSON.stringify({ success: false, errorReason: "payer balance 0" }), {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        })) as unknown as typeof fetch,
+      relay: {
+        sweep: async () => {
+          throw new Error("execution reverted: PaymentMismatch\nmore detail");
+        },
+      },
     });
 
-    expect(outcome).toEqual({ kind: "failed", reason: "payer balance 0" });
+    expect(outcome).toEqual({
+      kind: "failed",
+      reason: "the vault refused the sweep: execution reverted: PaymentMismatch",
+    });
   });
 
   it("names the network the signer signed for", async () => {
-    // A sweep signed on Base must not reach the facilitator labelled base-sepolia.
     const { client } = signerReturning(200, { ...SIGNED, chainId: 8453 });
-    let envelope: unknown;
 
-    await sweepGoal("7", {
-      signer: client,
-      facilitatorUrl: "http://facilitator.local",
-      usdcAddress: USDC,
-      fetchImpl: (async (_url: string, init?: RequestInit) => {
-        envelope = JSON.parse(String(init?.body));
-        return new Response(JSON.stringify({ success: true, transaction: "0xdead" }), {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        });
-      }) as unknown as typeof fetch,
-    });
+    const outcome = await sweepGoal("7", { signer: client, relay: relayed().relay });
 
-    const sent = envelope as {
-      paymentPayload: { network: string };
-      paymentRequirements: { network: string };
-    };
-    expect(sent.paymentPayload.network).toBe("base");
-    expect(sent.paymentRequirements.network).toBe("base");
+    expect(outcome).toMatchObject({ settlement: { network: "base" } });
   });
 
-  it("refuses to forward a signature for a chain it does not know", async () => {
+  it("submits nothing for a chain it does not know", async () => {
     const { client } = signerReturning(200, { ...SIGNED, chainId: 1 });
-    let forwarded = false;
+    const { relay, sent } = relayed();
 
-    const outcome = await sweepGoal("7", {
-      signer: client,
-      facilitatorUrl: "http://facilitator.local",
-      usdcAddress: USDC,
-      fetchImpl: (async () => {
-        forwarded = true;
-        return new Response("{}", { status: 200 });
-      }) as unknown as typeof fetch,
-    });
+    const outcome = await sweepGoal("7", { signer: client, relay });
 
     expect(outcome.kind).toBe("failed");
-    expect(forwarded).toBe(false);
+    expect(sent).toHaveLength(0);
+  });
+
+  it("submits nothing when the signer gives no escrow payment", async () => {
+    const { payment: _none, ...plain } = SIGNED;
+    const { client } = signerReturning(200, plain);
+    const { relay, sent } = relayed();
+
+    const outcome = await sweepGoal("7", { signer: client, relay });
+
+    expect(outcome.kind).toBe("failed");
+    expect(sent).toHaveLength(0);
   });
 });
 

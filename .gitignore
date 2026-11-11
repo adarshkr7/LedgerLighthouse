@@ -37,13 +37,19 @@ services/signer/.keys/
 # has to exist BEFORE those files are created rather than after.
 submission/
 
-# The paper and its print artifacts. The venue is not picked and anonymization
-# is still open, and this repository is public: committing the manuscript
-# decides that question by accident. Covers paper/tools/ too, so the renderer
-# stays local until the decision is made.
-# Note this is ignored, not merely untracked, so `git clean -fd` leaves it
-# alone. Nothing else backs it up.
-paper/
+# The paper. Its working material (drafts, earlier versions, notes, reviews) stays
+# local. What the published paper rests on is the artifact and is tracked: the v3
+# manuscript with its figures and table generator, and the evaluation code and data.
+# Ignored, not merely untracked, so `git clean -fd` leaves the local material alone.
+paper/*
+!paper/arxiv-v3/
+!paper/eval/
+paper/arxiv-v3/*
+!paper/arxiv-v3/*.tex
+!paper/arxiv-v3/build.sh
+!paper/arxiv-v3/main.pdf
+!paper/arxiv-v3/tables/
+paper/arxiv-v3/preamble.tex
 
 
 # Execution traces are run records: prompts, vendor relationships, amounts. They
@@ -81,5 +87,10 @@ LedgerLighthouse_Submission.pdf
 # is tens of megabytes, so a local copy must never reach the repository.
 recordings/
 
-# Local working notes; not published with the code. Files already tracked here stay tracked.
-docs/
+# Local working notes stay out; the run records are the artifact's evidence and are tracked.
+docs/*
+!docs/ARCHITECTURE.md
+!docs/lighthouse.webp
+!docs/runs/
+docs/runs/*.partial.jsonl
+contracts/invariant-out/

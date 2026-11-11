@@ -13,7 +13,7 @@
  *
  * There is no agent here and no model. That is the point: under A2 there is
  * nothing to manipulate, because the adversary skips the agent and calls
- * `requestSpend` itself with whatever arguments it likes. Every LLM injection
+ * `requestEscrowSpend` itself with whatever arguments it likes. Every LLM injection
  * study tests A1. None of them test this.
  *
  * ## Why it reports rather than asserts
@@ -22,7 +22,8 @@
  * on the first one would hide every later strategy behind it, and the campaign's
  * value is the full picture — including which controls held while another
  * failed. So each strategy records a verdict and the run continues. The exit
- * code is non-zero if anything deviated, so CI can still gate on it.
+ * code is non-zero unless every strategy held: an inconclusive one tested nothing, so
+ * it cannot count as a pass.
  *
  * ## Every finding names its transactions
  *
@@ -49,10 +50,10 @@
  * Two goals are opened to separate them — one where the budget binds first, one
  * where the cap does — and extraction is measured against each.
  *
- * Extraction is counted as **authorized**, not settled: a released EIP-3009
- * signature *is* the spending authority, and counting settlements instead would
- * make the measurement depend on a funded payer and a live facilitator, neither
- * of which the adversary needs.
+ * Extraction is counted as **authorized**, not settled. That is conservative here: a
+ * released signature still has to pass the vault's checks when it is collected, and
+ * counting settlements would make the measurement depend on a funded payer and a live
+ * facilitator. C15 to C25 test what the signature is good for.
  *
  * ## One strategy that is not about extraction
  *
@@ -71,6 +72,16 @@
  * October 2026 the cap was public and that refusal happened in plaintext. It is
  * now a comparison inside Inco, and Foundry only checks it against Inco's test
  * double. This is the live check that it binds.
+ *
+ * ## The escrow
+ *
+ * C15 to C25 are why the vault operates an escrow: a signature the adversary holds, and
+ * does not need to steal, should still move no money except through the vault. Each
+ * tries a way around it. Most are refused in simulation against live state, because a
+ * mined revert would only cost gas to say the same thing. Where a refusal could come from
+ * some other missing precondition there is a control beside it: the same call from the
+ * right party, or at the right time, must pass. C22 holds a real payment and C25 is a real
+ * sweep, so this goal is funded, and the hold is left for `reclaim` to return.
  */
 
 import {
@@ -78,19 +89,24 @@ import {
   ContractFunctionRevertedError,
   createPublicClient,
   createWalletClient,
+  keccak256,
+  parseAbi,
   parseEventLogs,
+  type Abi,
   type Address,
   type Hex,
+  toHex,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { handleTypes } from "@inco/lightning-js";
 import { rpcTransport, sendingAccount, viemChain } from "@ntux402/shared/viem";
 import { DEMO_PAYEES, usdcAbi } from "@ntux402/shared";
 import {
-  IncoDecisionReader,
   SignerClient,
   VaultRelay,
+  askSignerToSweep,
   connectLightning,
+  paymentInfoFromTerms,
   pollForDecision,
   type AttestedDecision,
   type AuthorizeOutcome,
@@ -102,11 +118,13 @@ import {
   formatUsdc,
   loadDotEnv,
   optional,
-  policyVaultAbi,
   requiredAddress,
   requiredHexKey,
   networkFromEnv,
+  vaultAbi,
 } from "./config.js";
+import { enroll } from "./enroll.js";
+import { CAPTURE_WINDOW_SECONDS, NO_KEY_HASH, assertEscrowSigner, assertEscrowVault, decisionSource } from "./escrow.js";
 
 loadDotEnv();
 
@@ -190,6 +208,19 @@ const GOAL_PROBE = {
 const PROBE_RANGE = 1_000_000n;
 
 /**
+ * Goal F, for C15 to C25: one approved spend whose signature the adversary tries to use
+ * every way but the intended one, and one that is really held for C22. Funded with
+ * `ESCROW_FUNDING` for C25 to sweep back, plus `SMALL_ASK` for the hold.
+ */
+const GOAL_ESCROW = {
+  label: "escrow",
+  budget: 100_000n,
+  perCallCap: 100_000n,
+  calls: 2,
+} as const;
+const ESCROW_FUNDING = 2_000n;
+
+/**
  * Every goal's attempt budget. Generous on purpose: the strategies above make
  * several requests per goal, rejections included, and must be refused by the
  * policy they test, not by running out of attempts. The attempt budget itself
@@ -214,6 +245,22 @@ const C6_HOLD_SECONDS = 60;
 
 /** Not on any allowlist. Used to prove the structural refusal, never funded. */
 const UNALLOWLISTED = "0x000000000000000000000000000000000000dEaD" as Address;
+
+/**
+ * The placeholder payee every strategy names. Nobody can collect for it, and that is
+ * fine: this campaign measures what is authorized, and no strategy needs a vendor's key.
+ */
+const PAYEE = DEMO_PAYEES[0]!;
+
+/** The parts of the token, collector and escrow an adversary would try to call directly. */
+const directAbi = parseAbi([
+  "function receiveWithAuthorization(address from, address to, uint256 value, uint256 validAfter, uint256 validBefore, bytes32 nonce, bytes signature)",
+  "function authorize((address operator, address payer, address receiver, address token, uint120 maxAmount, uint48 preApprovalExpiry, uint48 authorizationExpiry, uint48 refundExpiry, uint16 minFeeBps, uint16 maxFeeBps, address feeReceiver, uint256 salt) info, uint256 amount, address collector, bytes collectorData)",
+  "function collectTokens((address operator, address payer, address receiver, address token, uint120 maxAmount, uint48 preApprovalExpiry, uint48 authorizationExpiry, uint48 refundExpiry, uint16 minFeeBps, uint16 maxFeeBps, address feeReceiver, uint256 salt) info, address tokenStore, uint256 amount, bytes collectorData)",
+  "error InvalidSender(address sender, address expected)",
+  "error OnlyAuthCaptureEscrow()",
+  "error AfterPreApprovalExpiry(uint48 timestamp, uint48 expiry)",
+]);
 
 // ------------------------------------------------------------------ verdicts
 
@@ -299,7 +346,7 @@ function hashOf(result: unknown): Hex | undefined {
  * the ones that do not.
  */
 async function probeRevertReason(
-  functionName: "requestSpend" | "finalizeDecision",
+  functionName: "requestEscrowSpend" | "finalizeDecision",
   args: readonly unknown[],
 ): Promise<string | undefined> {
   try {
@@ -329,7 +376,7 @@ async function expectRefusal(
   match: string,
   attempt: () => Promise<unknown>,
   /** Replayed via `eth_call` only when the primary attempt's error does not match. */
-  probe?: { functionName: "requestSpend" | "finalizeDecision"; args: readonly unknown[] },
+  probe?: { functionName: "requestEscrowSpend" | "finalizeDecision"; args: readonly unknown[] },
   /** The transactions that set up the state under attack, reported with the verdict. */
   context: readonly Tx[] = [],
 ): Promise<void> {
@@ -348,7 +395,7 @@ async function expectRefusal(
   } catch (error) {
     const text = error instanceof Error ? error.message : String(error);
     // A revert that was mined carries its hash in the relay's error, as
-    // "requestSpend reverted (0x…)". One caught at gas estimation was never
+    // "requestEscrowSpend reverted (0x…)". One caught at gas estimation was never
     // broadcast and has none. The pattern is that exact shape: viem's own
     // messages quote calldata, which is full of 64-digit hex runs.
     const mined = text.match(/reverted \((0x[0-9a-fA-F]{64})\)/)?.[1] as Hex | undefined;
@@ -398,9 +445,18 @@ const userWallet = createWalletClient({
   chain: viemChain(network),
   transport: rpcTransport(rpcUrl),
 });
-const abi = policyVaultAbi();
+const abi = vaultAbi();
+/** Decodes what the escrow and its collector revert with, seen through the vault. */
+const chainAbi = [...abi, ...directAbi] as Abi;
 
 const relay = new VaultRelay({ rpcUrl, vaultAddress, relayKey, chainId: network.chainId });
+
+/** The arguments of `requestEscrowSpend`: this script has no vendor's deadline to pass on. */
+const spendArgs = (goalId: bigint, amount: bigint, payTo: Address, resource: string, by: bigint) =>
+  [goalId, amount, payTo, resource, by, Number(by) + CAPTURE_WINDOW_SECONDS, NO_KEY_HASH] as const;
+const request = (goalId: bigint, amount: bigint, payTo: Address, resource: string, by: bigint) =>
+  relay.requestEscrowSpend(...spendArgs(goalId, amount, payTo, resource, by));
+
 const signer = new SignerClient(
   signerUrl,
   undefined,
@@ -408,7 +464,7 @@ const signer = new SignerClient(
 );
 
 const zap = await connectLightning(network, rpcUrl);
-const decisions = new IncoDecisionReader(zap);
+const decisions = await decisionSource(zap, publicClient, vaultAddress);
 
 const rule = (label = "") =>
   console.log(`\n${label ? `--- ${label} ` : ""}${"-".repeat(Math.max(0, 66 - label.length))}\n`);
@@ -422,7 +478,10 @@ interface OpenedGoal {
   readonly perCallCap: bigint;
   readonly calls: number;
   readonly payer: Address;
-  /** The `openGoal` transaction, which binds the payer and sets every limit. */
+  /** The enrollment the goal was opened under, kept so C11 can replay it. */
+  readonly enrollmentId: Hex;
+  readonly enrollmentSignature: Hex;
+  /** The `openEnrolledGoal` transaction, which binds the payer and sets every limit. */
   readonly openTx: Hex;
 }
 
@@ -435,7 +494,14 @@ async function openGoal(spec: {
 }): Promise<OpenedGoal> {
   // Before openGoal — the payer address is a field of the goal record
   // (ARCHITECTURE.md §3.4), so the key must exist first.
-  const payer = await signer.mintPayer();
+  const enrolled = await enroll({
+    signer,
+    reader: publicClient,
+    vault: vaultAddress,
+    owner: user.address,
+    chainId: network.chainId,
+  });
+  const payer = enrolled.payer;
 
   const budgetCiphertext = (await zap.encrypt(spec.budget, {
     accountAddress: user.address,
@@ -457,7 +523,7 @@ async function openGoal(spec: {
   const hash = await userWallet.writeContract({
     address: vaultAddress,
     abi,
-    functionName: "openGoal",
+    functionName: "openEnrolledGoal",
     args: [
       {
         budgetCiphertext,
@@ -470,6 +536,8 @@ async function openGoal(spec: {
         expiry: BigInt(Math.floor(Date.now() / 1000) + 24 * 3600),
         allowlist: [...DEMO_PAYEES],
       },
+      enrolled.enrollmentId,
+      enrolled.signature,
     ],
     // One Inco fee per encrypted input: the budget and the cap.
     value: 2n * incoFee,
@@ -478,6 +546,8 @@ async function openGoal(spec: {
   const opened = parseEventLogs({ abi, eventName: "GoalOpened", logs: receipt.logs })[0];
   if (!opened) throw new Error("GoalOpened not emitted");
   const { goalId } = opened.args as { goalId: bigint };
+
+  decisions.limits(goalId, spec.budget, spec.perCallCap);
 
   console.log(`  goal ${goalId} (${spec.label})`);
   console.log(`    budget      ${formatUsdc(spec.budget)} USDC  (encrypted)`);
@@ -489,7 +559,14 @@ async function openGoal(spec: {
   console.log(`    payer       ${payer}`);
   console.log(`    opened      ${network.explorer}/tx/${hash}`);
 
-  return { goalId, payer, openTx: hash, ...spec };
+  return {
+    goalId,
+    payer,
+    enrollmentId: enrolled.enrollmentId,
+    enrollmentSignature: enrolled.signature,
+    openTx: hash,
+    ...spec,
+  };
 }
 
 /**
@@ -549,13 +626,13 @@ async function c11PayerCapture(victim: OpenedGoal): Promise<void> {
   await expectRefusal(
     "C11",
     "second goal opened for somebody else's payer",
-    "PolicyVault.openGoal — the payer binding",
+    "EscrowPolicyVault.openEnrolledGoal — the payer binding",
     "PayerAlreadyBound",
     () =>
       userWallet.writeContract({
         address: vaultAddress,
         abi,
-        functionName: "openGoal",
+        functionName: "openEnrolledGoal",
         args: [
           {
             budgetCiphertext: ownCiphertext,
@@ -568,12 +645,28 @@ async function c11PayerCapture(victim: OpenedGoal): Promise<void> {
             expiry: BigInt(Math.floor(Date.now() / 1000) + 24 * 3600),
             allowlist: [UNALLOWLISTED],
           },
+          // The victim's own statement: the same owner, so only the binding can refuse.
+          victim.enrollmentId,
+          victim.enrollmentSignature,
         ],
         value: 2n * incoFee,
       }),
     undefined,
     [{ label: `open goal ${victim.goalId} (binds payer)`, hash: victim.openTx }],
   );
+
+  /*
+   * Closed first, for real: the binding has to outlive the goal, because a payer
+   * with a leftover balance belongs to a closed goal. Earlier campaigns read it on
+   * an open goal.
+   */
+  const closeHash = await userWallet.writeContract({
+    address: vaultAddress,
+    abi,
+    functionName: "closeGoal",
+    args: [victim.goalId],
+  });
+  await publicClient.waitForTransactionReceipt({ hash: closeHash });
 
   /*
    * And the positive half: the payer is still bound to the goal that minted
@@ -589,13 +682,127 @@ async function c11PayerCapture(victim: OpenedGoal): Promise<void> {
 
   record({
     id: "C12",
-    name: "the payer is still bound to the goal that minted it",
+    name: "the payer is still bound to its goal after the goal is closed",
     targets: "PolicyVault.payerGoal",
     expected: `payerGoal(${victim.payer.slice(0, 10)}…) == ${victim.goalId}`,
     observed: `payerGoal returned ${bound}`,
     verdict: bound === victim.goalId ? "held" : "deviated",
-    txs: [{ label: `open goal ${victim.goalId} (binds payer)`, hash: victim.openTx }],
+    txs: [
+      { label: `open goal ${victim.goalId} (binds payer)`, hash: victim.openTx },
+      { label: `close goal ${victim.goalId}`, hash: closeHash },
+    ],
   });
+}
+
+/**
+ * C26 to C29: authenticated setup.
+ *
+ * Under A2 the orchestrator relays the enrollment statement from the signer to the
+ * console, and would like the user to fund an address whose key it holds. Every
+ * attempt here is the console's own wallet opening a goal with what a hostile
+ * orchestrator could hand it, or the orchestrator itself using the user's statement.
+ * The vault must refuse each with InvalidEnrollment, before anything is funded.
+ * These are refusals at gas estimation: nothing is broadcast.
+ */
+async function enrollmentStrategies(): Promise<void> {
+  const attacker = privateKeyToAccount(relayKey);
+  const attackerWallet = createWalletClient({ account: attacker, chain: viemChain(network), transport: rpcTransport(rpcUrl) });
+  const incoFee = (await publicClient.readContract({
+    address: INCO_SINGLETON,
+    abi: INCO_FEE_ABI,
+    functionName: "getFee",
+  })) as bigint;
+  const encrypt = async (value: bigint, account: Address) =>
+    (await zap.encrypt(value, { accountAddress: account, dappAddress: vaultAddress, handleType: handleTypes.euint256 })) as Hex;
+  const params = async (payer: Address, opener: Address) => ({
+    budgetCiphertext: await encrypt(100_000n, opener),
+    perCallCapCiphertext: await encrypt(100_000n, opener),
+    callsRemaining: 1,
+    maxAttempts: 2,
+    payer,
+    relay: relayAddress,
+    asset: usdcAddress,
+    expiry: BigInt(Math.floor(Date.now() / 1000) + 3600),
+    allowlist: [...DEMO_PAYEES],
+  });
+  const domain = {
+    name: "EscrowPolicyVault",
+    version: "3",
+    chainId: network.chainId,
+    verifyingContract: vaultAddress,
+  } as const;
+  const types = {
+    Enrollment: [
+      { name: "payer", type: "address" },
+      { name: "owner", type: "address" },
+      { name: "enrollmentId", type: "bytes32" },
+    ],
+  } as const;
+  const openAs = (wallet: typeof userWallet | typeof attackerWallet, args: readonly unknown[]) => () =>
+    wallet.writeContract({
+      address: vaultAddress,
+      abi,
+      functionName: "openEnrolledGoal",
+      args: args as never,
+      value: 2n * incoFee,
+      account: wallet.account!,
+      chain: viemChain(network),
+    });
+  const id = (label: string) => keccak256(toHex(`${label}:${Date.now()}`));
+
+  // C26: the orchestrator names a payer it holds and signs the statement itself.
+  {
+    const enrollmentId = id("c26");
+    const signature = await attacker.signTypedData({
+      domain,
+      types,
+      primaryType: "Enrollment",
+      message: { payer: attacker.address, owner: user.address, enrollmentId },
+    });
+    await expectRefusal(
+      "C26",
+      "the orchestrator's own payer, with a statement it signed",
+      "EscrowPolicyVault.openEnrolledGoal",
+      "InvalidEnrollment",
+      openAs(userWallet, [await params(attacker.address, user.address), enrollmentId, signature]),
+    );
+  }
+
+  // C27: a genuine statement, for a payer the signer enrolled to the orchestrator's
+  // own address, handed to the user.
+  {
+    const enrollmentId = id("c27");
+    const theirs = (await signer.enroll(attacker.address, enrollmentId)) as { payer: Address; signature: Hex };
+    await expectRefusal(
+      "C27",
+      "a genuine statement enrolled to another owner",
+      "EscrowPolicyVault.openEnrolledGoal",
+      "InvalidEnrollment",
+      openAs(userWallet, [await params(theirs.payer, user.address), enrollmentId, theirs.signature]),
+    );
+  }
+
+  // C28: the user's genuine statement with the payer swapped for the orchestrator's.
+  {
+    const mine = await enroll({ signer, reader: publicClient, vault: vaultAddress, owner: user.address, chainId: network.chainId });
+    await expectRefusal(
+      "C28",
+      "the user's statement with another payer",
+      "EscrowPolicyVault.openEnrolledGoal",
+      "InvalidEnrollment",
+      openAs(userWallet, [await params(attacker.address, user.address), mine.enrollmentId, mine.signature]),
+    );
+
+    // C29: the orchestrator takes the user's statement and opens the goal itself,
+    // to bind the user's payer to a goal it owns.
+    await expectRefusal(
+      "C29",
+      "the user's statement, sent by the orchestrator",
+      "EscrowPolicyVault.openEnrolledGoal",
+      "InvalidEnrollment",
+      openAs(attackerWallet, [await params(mine.payer, attacker.address), mine.enrollmentId, mine.signature]),
+    );
+  }
 }
 
 /**
@@ -643,7 +850,7 @@ async function attemptSpend(
   /** Commit, then finalize when there was a decision to finalize. */
   txs: Tx[];
 }> {
-  const requested = await relay.requestSpend(goal.goalId, amount, payTo, "adversary/max-extract", payBy());
+  const requested = await request(goal.goalId, amount, payTo, "adversary/max-extract", payBy());
   const txs: Tx[] = [{ label: `commit seq ${requested.seq}`, hash: requested.commitTx }];
 
   const outcome = await pollForDecision(decisions, requested.decisionHandle, { timeoutMs: 180_000 });
@@ -696,7 +903,7 @@ async function c14Probe(goal: OpenedGoal & { attempts: number }): Promise<void> 
   let asked = 0;
   for (let i = 0; i < goal.attempts; i++) {
     const mid = (lo + hi) / 2n;
-    const requested = await relay.requestSpend(goal.goalId, mid, DEMO_PAYEES[0]!, "adversary/probe", payBy());
+    const requested = await request(goal.goalId, mid, PAYEE, "adversary/probe", payBy());
     txs.push({ label: `probe ${i + 1} commit`, hash: requested.commitTx });
     const outcome = await pollForDecision(decisions, requested.decisionHandle, { timeoutMs: 180_000 });
     if (outcome.kind === "timeout") {
@@ -730,7 +937,7 @@ async function c14Probe(goal: OpenedGoal & { attempts: number }): Promise<void> 
 
   let fifth = "accepted";
   try {
-    await relay.requestSpend(goal.goalId, (lo + hi) / 2n, DEMO_PAYEES[0]!, "adversary/probe", payBy());
+    await request(goal.goalId, (lo + hi) / 2n, PAYEE, "adversary/probe", payBy());
   } catch (e) {
     const text = e instanceof Error ? `${e.name} ${e.message}` : String(e);
     fifth = /NoAttemptsLeft/.test(text) ? "reverted NoAttemptsLeft" : `reverted: ${text.slice(0, 160)}`;
@@ -768,7 +975,7 @@ async function c13CapAlone(goal: OpenedGoal): Promise<void> {
   console.log(
     `\n  C13 on goal ${goal.goalId} (${goal.label}) — asking ${formatUsdc(ask)}, one unit over the cap`,
   );
-  const result = await attemptSpend(goal, ask, DEMO_PAYEES[0]!);
+  const result = await attemptSpend(goal, ask, PAYEE);
   const decision = result.decision;
   record({
     id: "C13",
@@ -798,33 +1005,41 @@ async function c13CapAlone(goal: OpenedGoal): Promise<void> {
  * is where `perCallCap × callsRemaining` says it is.
  */
 async function c1MaxExtraction(goal: OpenedGoal): Promise<bigint> {
-  console.log(`\n  C1 on goal ${goal.goalId} (${goal.label}) — asking perCallCap every call`);
-  const payee = DEMO_PAYEES[0]!;
+  console.log(`
+  C1 on goal ${goal.goalId} (${goal.label}) — the best ask every call`);
+  const payee = PAYEE;
   let extracted = 0n;
   const txs: Tx[] = [{ label: "open goal", hash: goal.openTx }];
-
-  // Bounded by the public call count: once it is exhausted the vault rejects
-  // regardless of budget, so there is no point iterating past it.
-  for (let i = 0; i < goal.calls; i++) {
-    const result = await attemptSpend(goal, goal.perCallCap, payee);
-    extracted += result.authorized;
-    txs.push(...result.txs);
-    if (result.authorized === 0n && result.decision?.approved === false) {
-      console.log(`    budget exhausted after ${formatUsdc(extracted)}`);
-      break;
-    }
-  }
 
   const publicBound = goal.perCallCap * BigInt(goal.calls);
   const trueBound = goal.budget < publicBound ? goal.budget : publicBound;
 
+  /*
+   * The strongest A2 adversary for this bound is one that already knows both limits:
+   * it asks min(cap, what the budget has left) every call, so it reaches the ceiling
+   * exactly, including the last 0.05 of a budget that is not a multiple of the cap.
+   * Probing could only do worse. One more request of the smallest unit follows, and
+   * must be refused, so the ceiling is shown to be reached and not passed.
+   */
+  for (let i = 0; i < goal.calls; i++) {
+    const left = goal.budget - extracted;
+    const ask = left < goal.perCallCap ? left : goal.perCallCap;
+    if (ask === 0n) break;
+    const result = await attemptSpend(goal, ask, payee);
+    extracted += result.authorized;
+    txs.push(...result.txs);
+  }
+  const past = await attemptSpend(goal, 1n, payee);
+  extracted += past.authorized;
+  txs.push(...past.txs);
+
   record({
     id: "C1",
-    name: `max extraction (${goal.label})`,
-    targets: "the §6.2 residual bound",
-    expected: `<= ${formatUsdc(trueBound)} = min(budget ${formatUsdc(goal.budget)}, cap x calls ${formatUsdc(publicBound)})`,
-    observed: `${formatUsdc(extracted)} authorized`,
-    verdict: extracted <= trueBound ? "held" : "deviated",
+    name: `max extraction to the ceiling (${goal.label})`,
+    targets: "Proposition 2's lifetime bound",
+    expected: `exactly ${formatUsdc(trueBound)} = min(budget ${formatUsdc(goal.budget)}, cap x calls ${formatUsdc(publicBound)}), then a refusal`,
+    observed: `${formatUsdc(extracted)} authorized${extracted === trueBound ? ", the ceiling reached" : ""}; one more unit ${past.authorized === 0n ? "refused" : "APPROVED"}`,
+    verdict: extracted <= trueBound && past.authorized === 0n ? "held" : "deviated",
     txs,
   });
 
@@ -836,7 +1051,7 @@ async function c1MaxExtraction(goal: OpenedGoal): Promise<bigint> {
 async function refusalStrategies(
   goal: OpenedGoal,
 ): Promise<{ seq: bigint; finalizeTx: Hex } | undefined> {
-  const payee = DEMO_PAYEES[0]!;
+  const payee = PAYEE;
 
   // C2 — a payee nobody allowlisted. Structural: reverts, never becomes a
   // decision, leaves no record. Malformed requests are not policy events.
@@ -845,28 +1060,28 @@ async function refusalStrategies(
     "settlement to a non-allowlisted payee",
     "the allowlist (structural)",
     "PayeeNotAllowlisted",
-    () => relay.requestSpend(goal.goalId, SMALL_ASK, UNALLOWLISTED, "adversary/redirect", payBy()),
+    () => request(goal.goalId, SMALL_ASK, UNALLOWLISTED, "adversary/redirect", payBy()),
     {
-      functionName: "requestSpend",
-      args: [goal.goalId, SMALL_ASK, UNALLOWLISTED, "adversary/redirect", payBy()],
+      functionName: "requestEscrowSpend",
+      args: spendArgs(goal.goalId, SMALL_ASK, UNALLOWLISTED, "adversary/redirect", payBy()),
     },
     [{ label: "open goal (allowlist set)", hash: goal.openTx }],
   );
 
   // --- seq 1: small, within budget. Carries C4, C10, and C8's ammunition. ---
 
-  const first = await relay.requestSpend(goal.goalId, SMALL_ASK, payee, "adversary/first", payBy());
+  const first = await request(goal.goalId, SMALL_ASK, payee, "adversary/first", payBy());
   const firstCommit: Tx = { label: `commit seq ${first.seq} (pending)`, hash: first.commitTx };
 
   // C4 — two spends in flight at once. Refused because the public call counter
   // only moves at finalisation, so a second would read a stale count (§3.1).
   await expectRefusal(
     "C4",
-    "two concurrent requestSpend on one goal",
+    "two concurrent requests on one goal",
     "pendingSeq sequencing",
     "SpendPending",
-    () => relay.requestSpend(goal.goalId, SMALL_ASK, payee, "adversary/second", payBy()),
-    { functionName: "requestSpend", args: [goal.goalId, SMALL_ASK, payee, "adversary/second", payBy()] },
+    () => request(goal.goalId, SMALL_ASK, payee, "adversary/second", payBy()),
+    { functionName: "requestEscrowSpend", args: spendArgs(goal.goalId, SMALL_ASK, payee, "adversary/second", payBy()) },
     [firstCommit],
   );
 
@@ -916,7 +1131,7 @@ async function refusalStrategies(
 
   // --- seq 2: over the remaining budget. Manufactures the rejection C9 needs. ---
 
-  const over = await relay.requestSpend(goal.goalId, OVER_BUDGET_ASK, payee, "adversary/over", payBy());
+  const over = await request(goal.goalId, OVER_BUDGET_ASK, payee, "adversary/over", payBy());
   const overDecision = await pollForDecision(decisions, over.decisionHandle, { timeoutMs: 180_000 });
   if (overDecision.kind === "decided") {
     const overFinal = await relay.finalizeDecision(
@@ -963,7 +1178,7 @@ async function refusalStrategies(
 
   // --- seq 3: the victim record C8 tries to finalise with seq 1's attestation. ---
 
-  const victim = await relay.requestSpend(goal.goalId, SMALL_ASK, payee, "adversary/victim", payBy());
+  const victim = await request(goal.goalId, SMALL_ASK, payee, "adversary/victim", payBy());
   await expectRefusal(
     "C8",
     "genuine attestation from another seq, replayed",
@@ -1032,7 +1247,7 @@ async function idempotency(
     record({
       id: "C5",
       name: "authorization replay returns an identical tuple",
-      targets: "EIP-3009 idempotency",
+      targets: "signature idempotency",
       expected: "two identical signed tuples",
       observed: `signer returned ${a.kind} then ${b.kind} — no approved spend to replay`,
       verdict: "inconclusive",
@@ -1045,7 +1260,7 @@ async function idempotency(
   record({
     id: "C5",
     name: "authorization replay returns an identical tuple",
-    targets: "EIP-3009 idempotency",
+    targets: "signature idempotency",
     expected: "byte-identical, including validAfter/validBefore",
     observed: same ? "identical" : "TUPLES DIFFER — a retry would be a second authorization",
     verdict: same ? "held" : "deviated",
@@ -1070,23 +1285,23 @@ async function idempotency(
  *   1. commit and finalize an approved spend whose hold ends in 60 s;
  *   2. take the signed authorization while the hold lasts, as a vendor would;
  *   3. once the hold has ended, ask the signer again, which must answer 410;
- *   4. submit the authorization taken in step 2, which the token must refuse;
+ *   4. submit the authorization taken in step 2 through the vault, which the escrow
+ *      must refuse as past its pre-approval expiry;
  *   5. reclaim, which must give the call back, then reclaim again, which must
  *      not give it twice.
  *
- * Step 4 is an `eth_call`, not a broadcast. The token refuses it in simulation
- * against live state, and a reverted transaction would only cost gas to say
- * the same thing.
+ * Step 4 is an `eth_call`, not a broadcast. It is refused in simulation against
+ * live state, and a reverted transaction would only cost gas to say the same thing.
  */
 async function c6ExpiredHold(goal: OpenedGoal): Promise<void> {
   const id = "C6";
   const name = "an authorization collected after the vendor's hold";
   const targets = "payBy ends the authorization; reclaimExpired returns the amount";
-  const expected = "410 from the signer, the token refuses, one reclaim restores the call";
-  const payee = DEMO_PAYEES[0]!;
+  const expected = "410 from the signer, the escrow refuses, one reclaim restores the call";
+  const payee = PAYEE;
 
   const holdEnds = BigInt(Math.floor(Date.now() / 1_000) + C6_HOLD_SECONDS);
-  const requested = await relay.requestSpend(goal.goalId, SMALL_ASK, payee, "adversary/expiry", holdEnds);
+  const requested = await request(goal.goalId, SMALL_ASK, payee, "adversary/expiry", holdEnds);
   const txs: Tx[] = [{ label: `commit seq ${requested.seq}`, hash: requested.commitTx }];
   console.log(`  hold ends ${new Date(Number(holdEnds) * 1_000).toISOString()}, window ends ${requested.validBefore}`);
 
@@ -1123,29 +1338,21 @@ async function c6ExpiredHold(goal: OpenedGoal): Promise<void> {
   // 4. The late vendor tries to collect anyway.
   let tokenRefused = false;
   let tokenSaid = "not tried: the signer gave no authorization inside the hold";
-  if (held.kind === "signed") {
-    const auth = held.value.authorization;
+  if (held.kind === "signed" && held.value.payment !== undefined) {
+    const info = paymentInfoFromTerms(held.value.payment);
     try {
       await publicClient.simulateContract({
-        address: usdcAddress,
-        abi: usdcAbi,
-        functionName: "transferWithAuthorization",
-        args: [
-          auth.from,
-          auth.to,
-          BigInt(auth.value),
-          BigInt(auth.validAfter),
-          BigInt(auth.validBefore),
-          auth.nonce,
-          held.value.signature,
-        ],
+        address: vaultAddress,
+        abi: chainAbi,
+        functionName: "authorize",
+        args: [info, info.maxAmount, await vaultCollector(), held.value.signature],
         account: relayAddress,
       });
-      tokenSaid = "the token ACCEPTED it";
+      tokenSaid = "the escrow ACCEPTED it";
     } catch (error) {
       const text = error instanceof Error ? error.message : String(error);
-      tokenRefused = /expired/i.test(text);
-      tokenSaid = tokenRefused ? "the token refused it as expired" : `the token refused it: ${first(text)}`;
+      tokenRefused = text.includes("AfterPreApprovalExpiry");
+      tokenSaid = tokenRefused ? "the escrow refused it as past its expiry" : `the escrow refused it: ${first(text)}`;
     }
   }
 
@@ -1180,11 +1387,276 @@ async function c6ExpiredHold(goal: OpenedGoal): Promise<void> {
   });
 }
 
+// ---------------------------------------------------------------- C15-C25
+
+const vaultCollector = () =>
+  publicClient.readContract({ address: vaultAddress, abi: chainAbi, functionName: "collector" }) as Promise<Address>;
+
+/**
+ * Every way around the vault an adversary holding a good signature could try. The
+ * signature is the real one for an approved spend, so a refusal below is about the path
+ * and not about the signature.
+ */
+async function escrowStrategies(goal: OpenedGoal): Promise<void> {
+  const THIEF = relayAddress;
+  const inconclusive = (observed: string, txs: Tx[]) =>
+    record({
+      id: "C15-C25",
+      name: "the escrow strategies",
+      targets: "the vault as the only path to the money",
+      expected: "a signature for an approved spend to work against",
+      observed,
+      verdict: "inconclusive",
+      txs,
+    });
+  const openTx: Tx = { label: "open goal", hash: goal.openTx };
+
+  await expectRefusal(
+    "C15",
+    "the direct path, on a vault that has none",
+    "EscrowPolicyVault.requestSpend",
+    "UseRequestEscrowSpend",
+    () =>
+      publicClient.simulateContract({
+        address: vaultAddress,
+        abi: chainAbi,
+        functionName: "requestSpend",
+        args: [goal.goalId, SMALL_ASK, PAYEE, "adversary/direct", payBy()],
+        account: relayAddress,
+      }),
+    undefined,
+    [openTx],
+  );
+
+  const requested = await request(goal.goalId, SMALL_ASK, PAYEE, "adversary/escrow", payBy());
+  const txs: Tx[] = [openTx, { label: `commit seq ${requested.seq}`, hash: requested.commitTx }];
+  const decision = await pollForDecision(decisions, requested.decisionHandle, { timeoutMs: 180_000 });
+  if (decision.kind === "timeout" || !decision.decision.approved) {
+    inconclusive(decision.kind === "timeout" ? "Inco gave no decision" : "the spend was rejected", txs);
+    return;
+  }
+  const finalized = await relay.finalizeDecision(goal.goalId, requested.seq, true, decision.decision.signatures);
+  txs.push({ label: `finalize seq ${requested.seq}`, hash: finalized.txHash });
+
+  const signed = await authorizeWithRetry(goal.goalId, requested.seq);
+  if (signed.kind !== "signed" || signed.value.payment === undefined) {
+    inconclusive(`the signer answered ${signed.kind}`, txs);
+    return;
+  }
+  const { signature, authorization: auth } = signed.value;
+  const info = paymentInfoFromTerms(signed.value.payment);
+  const collector = await vaultCollector();
+  const escrow = (await publicClient.readContract({
+    address: vaultAddress,
+    abi: chainAbi,
+    functionName: "escrow",
+  })) as Address;
+
+  const simulated = (address: Address, functionName: string, args: readonly unknown[]) => () =>
+    publicClient.simulateContract({
+      address,
+      abi: chainAbi,
+      functionName,
+      args,
+      account: relayAddress,
+    } as Parameters<typeof publicClient.simulateContract>[0]);
+  const refused = (id: string, name: string, targets: string, match: string, call: () => Promise<unknown>) =>
+    expectRefusal(id, name, targets, match, call, undefined, txs);
+
+  // Every field as signed, so that the only thing changed is the type of the authorization.
+  await refused(
+    "C16",
+    "the same signature, read as a plain transfer",
+    "the signature covers receiveWithAuthorization only",
+    "invalid signature",
+    () =>
+      publicClient.simulateContract({
+        address: usdcAddress,
+        abi: usdcAbi,
+        functionName: "transferWithAuthorization",
+        args: [auth.from, auth.to, BigInt(auth.value), 0n, BigInt(auth.validBefore), auth.nonce, signature],
+        account: relayAddress,
+      }),
+  );
+  await refused(
+    "C17",
+    "the signature, straight to the token",
+    "only the collector can submit it",
+    "caller must be the payee",
+    simulated(usdcAddress, "receiveWithAuthorization", [
+      auth.from,
+      auth.to,
+      BigInt(auth.value),
+      0n,
+      BigInt(auth.validBefore),
+      auth.nonce,
+      signature,
+    ]),
+  );
+  await refused(
+    "C18",
+    "the signature, straight to the escrow",
+    "only the operator can call the escrow",
+    "InvalidSender",
+    simulated(escrow, "authorize", [info, info.maxAmount, collector, signature]),
+  );
+  await refused(
+    "C19",
+    "the signature, straight to the collector",
+    "only the escrow can call the collector",
+    "OnlyAuthCaptureEscrow",
+    simulated(collector, "collectTokens", [info, auth.from, info.maxAmount, signature]),
+  );
+  await refused(
+    "C20",
+    "through the vault, naming the attacker as receiver",
+    "authorize compares the whole payment with the record",
+    "PaymentMismatch",
+    simulated(vaultAddress, "authorize", [{ ...info, receiver: THIEF }, info.maxAmount, collector, signature]),
+  );
+  await refused(
+    "C21",
+    "through the vault, with a collector the attacker chose",
+    "the vault pins the collector",
+    "WrongCollector",
+    simulated(vaultAddress, "authorize", [info, info.maxAmount, THIEF, signature]),
+  );
+  // --- a payment really held, so that claiming it could otherwise succeed ---
+  const fundHash = await userWallet.writeContract({
+    address: usdcAddress,
+    abi: usdcAbi,
+    functionName: "transfer",
+    args: [goal.payer, ESCROW_FUNDING + SMALL_ASK],
+  });
+  await publicClient.waitForTransactionReceipt({ hash: fundHash });
+  txs.push({ label: "fund the payer", hash: fundHash });
+
+  const held = await request(goal.goalId, SMALL_ASK, PAYEE, "adversary/escrow-held", payBy());
+  txs.push({ label: `commit seq ${held.seq}`, hash: held.commitTx });
+  const heldDecision = await pollForDecision(decisions, held.decisionHandle, { timeoutMs: 180_000 });
+  if (heldDecision.kind === "timeout" || !heldDecision.decision.approved) {
+    inconclusive(heldDecision.kind === "timeout" ? "Inco gave no decision" : "the second spend was rejected", txs);
+    return;
+  }
+  const heldFinal = await relay.finalizeDecision(goal.goalId, held.seq, true, heldDecision.decision.signatures);
+  txs.push({ label: `finalize seq ${held.seq}`, hash: heldFinal.txHash });
+  const heldSigned = await authorizeWithRetry(goal.goalId, held.seq);
+  if (heldSigned.kind !== "signed" || heldSigned.value.payment === undefined) {
+    inconclusive(`the signer answered ${heldSigned.kind} for the second spend`, txs);
+    return;
+  }
+  const heldInfo = paymentInfoFromTerms(heldSigned.value.payment);
+  const holdHash = await userWallet.writeContract({
+    address: vaultAddress,
+    abi: chainAbi,
+    functionName: "authorize",
+    args: [heldInfo, heldInfo.maxAmount, collector, heldSigned.value.signature],
+  } as Parameters<typeof userWallet.writeContract>[0]);
+  const holdReceipt = await publicClient.waitForTransactionReceipt({ hash: holdHash });
+  txs.push({ label: `hold seq ${held.seq}`, hash: holdHash });
+  if (holdReceipt.status !== "success") {
+    inconclusive("the payment could not be held, so there is nothing to claim", txs);
+    return;
+  }
+
+  /** The refusal beside it means nothing unless the right party, or the right time, passes. */
+  const control = async (id: string, name: string, targets: string, call: () => Promise<unknown>) => {
+    try {
+      await call();
+      record({ id, name, targets, expected: "passes in simulation", observed: "passes", verdict: "held", txs });
+    } catch (error) {
+      const text = error instanceof Error ? error.message : String(error);
+      record({ id, name, targets, expected: "passes in simulation", observed: `failed: ${first(text)}`, verdict: "inconclusive", txs });
+    }
+  };
+
+  await refused(
+    "C22",
+    "claiming a held payment without being the vendor",
+    "only the vendor can claim",
+    "NotVendor",
+    simulated(vaultAddress, "claim", [goal.goalId, held.seq, NO_KEY_HASH]),
+  );
+  await control("C22b", "control: the vendor can claim that same payment", "C22 refuses the caller, not the payment", () =>
+    publicClient.simulateContract({
+      address: vaultAddress,
+      abi: chainAbi,
+      functionName: "claim",
+      args: [goal.goalId, held.seq, NO_KEY_HASH],
+      account: PAYEE,
+    } as Parameters<typeof publicClient.simulateContract>[0]),
+  );
+
+  await control("C23b", "control: the signature could still collect before the close", "C23 refuses because of the close", simulated(vaultAddress, "authorize", [info, info.maxAmount, collector, signature]));
+
+  // --- the owner stops the goal ---
+  const closeHash = await userWallet.writeContract({
+    address: vaultAddress,
+    abi,
+    functionName: "closeGoal",
+    args: [goal.goalId],
+  });
+  await publicClient.waitForTransactionReceipt({ hash: closeHash });
+  const closed: Tx = { label: "owner closes the goal", hash: closeHash };
+  txs.push(closed);
+  await relay.waitUntilVisible(`close of goal ${goal.goalId}`, async () => !(await relay.goal(goal.goalId)).open);
+
+  await refused(
+    "C23",
+    "collecting a good signature after the owner closed the goal",
+    "closing stops collection",
+    "GoalNotOpen",
+    simulated(vaultAddress, "authorize", [info, info.maxAmount, collector, signature]),
+  );
+
+  const sweep = await askSignerToSweep(signer, goal.goalId.toString());
+  if (sweep.kind !== "signed" || sweep.value.payment === undefined) {
+    inconclusive(`the signer gave no sweep: ${sweep.kind}`, txs);
+    return;
+  }
+  const sweepInfo = paymentInfoFromTerms(sweep.value.payment);
+  await refused(
+    "C24",
+    "the owner's sweep, redirected to the attacker",
+    "charge compares the receiver with the goal's owner",
+    "PaymentMismatch",
+    simulated(vaultAddress, "charge", [
+      { ...sweepInfo, receiver: THIEF },
+      sweepInfo.maxAmount,
+      collector,
+      sweep.value.signature,
+      0n,
+      sweepInfo.feeReceiver,
+    ]),
+  );
+
+  const usdcOf = (who: Address) =>
+    publicClient.readContract({ address: usdcAddress, abi: usdcAbi, functionName: "balanceOf", args: [who] }) as Promise<bigint>;
+  const ownerBefore = await usdcOf(user.address);
+  const swept = await relay.sweep(sweep.value.payment, sweep.value.signature);
+  const sweepTx: Tx = { label: "the sweep", hash: swept.txHash };
+  const landed = await relay
+    .waitUntilVisible("the sweep's balance", async () => (await usdcOf(user.address)) === ownerBefore + ESCROW_FUNDING, 30_000)
+    .then(() => true)
+    .catch(() => false);
+  record({
+    id: "C25",
+    name: "the sweep the attacker relays still pays the owner",
+    targets: "charge pays only the goal's owner, whoever sends it",
+    expected: `${formatUsdc(ESCROW_FUNDING)} USDC to the owner, sent by the relay`,
+    observed: landed
+      ? `the owner received ${formatUsdc(ESCROW_FUNDING)} USDC; payer holds ${formatUsdc(await usdcOf(goal.payer))}`
+      : "the owner's balance did not change",
+    verdict: landed ? "held" : "deviated",
+    txs: [closed, sweepTx],
+  });
+}
+
 // -------------------------------------------------------------------- main
 
 rule("Track 2 — A2 adversary campaign");
 console.log("  Threat model: arbitrary code execution in the orchestrator.");
-console.log("  No agent, no model. The adversary calls requestSpend directly.\n");
+console.log("  No agent, no model. The adversary calls the vault directly.\n");
 
 const chainId = await publicClient.getChainId();
 if (chainId !== network.chainId) {
@@ -1192,100 +1664,118 @@ if (chainId !== network.chainId) {
 }
 const health = await fetch(`${signerUrl}/health`).catch(() => undefined);
 if (!health?.ok) throw new Error(`signer is not reachable at ${signerUrl}. Start it first.`);
+await assertEscrowVault(publicClient, vaultAddress);
+await assertEscrowSigner(signerUrl, vaultAddress);
 console.log(`  chain  ${chainId} (${network.label})\n  vault  ${vaultAddress}\n  signer ${signerUrl}`);
 
-if (process.argv.includes("--only-c14")) {
+/** C14 alone, for a quick check of the attempt budget. Returns the exit status. */
+async function onlyC14(): Promise<number> {
   rule("C14 - probing the encrypted cap");
   const probe = await openGoal(GOAL_PROBE);
   await c14Probe({ ...probe, attempts: GOAL_PROBE.attempts });
-  const bad = findings.filter((f) => f.verdict !== "held");
-  process.exit(bad.length > 0 ? 1 : 0);
+  return findings.some((f) => f.verdict !== "held") ? 1 : 0;
 }
 
-rule("opening goals");
-const budgetBound = await openGoal(GOAL_BUDGET_BOUND);
-const capBound = await openGoal(GOAL_CAP_BOUND);
-const refusals = await openGoal(GOAL_REFUSALS);
+/** The whole campaign. Returns the exit status: non-zero if anything deviated. */
+async function campaign(): Promise<number> {
+  rule("opening goals");
+  const budgetBound = await openGoal(GOAL_BUDGET_BOUND);
+  const capBound = await openGoal(GOAL_CAP_BOUND);
+  const refusals = await openGoal(GOAL_REFUSALS);
 
-rule("C13 — the encrypted cap alone");
-await c13CapAlone(capBound);
+  rule("C13 — the encrypted cap alone");
+  await c13CapAlone(capBound);
 
-rule("C1 — maximum extraction");
-const extractedA = await c1MaxExtraction(budgetBound);
-const extractedB = await c1MaxExtraction(capBound);
+  rule("C1 — maximum extraction");
+  const extractedA = await c1MaxExtraction(budgetBound);
+  const extractedB = await c1MaxExtraction(capBound);
 
-rule("C2, C3, C4, C8, C9, C10 — refusals");
-const replayable = await refusalStrategies(refusals);
+  rule("C2, C3, C4, C8, C9, C10 — refusals");
+  const replayable = await refusalStrategies(refusals);
 
-rule("C11, C12 — payer capture");
-await c11PayerCapture(budgetBound);
+  rule("C11, C12 — payer capture");
+  await c11PayerCapture(budgetBound);
 
-rule("C5 — idempotency");
-if (replayable === undefined) {
+  rule("C5 — idempotency");
+  if (replayable === undefined) {
+    record({
+      id: "C5",
+      name: "authorization replay returns an identical tuple",
+      targets: "signature idempotency",
+      expected: "byte-identical, including validAfter/validBefore",
+      observed: "no approved spend was produced to replay",
+      verdict: "inconclusive",
+    });
+  } else {
+    await idempotency(refusals, replayable);
+  }
+
+  rule("C6 — collecting after the vendor's hold");
+  await c6ExpiredHold(await openGoal(GOAL_EXPIRY));
+
+  rule("C14 - probing the encrypted cap");
+  {
+    const probe = await openGoal(GOAL_PROBE);
+    await c14Probe({ ...probe, attempts: GOAL_PROBE.attempts });
+  }
+
+  rule("C15 to C25 - around the vault");
+  await escrowStrategies(await openGoal(GOAL_ESCROW));
+
+  rule("C26 to C29 - authenticated setup");
+  await enrollmentStrategies();
+
   record({
-    id: "C5",
-    name: "authorization replay returns an identical tuple",
-    targets: "EIP-3009 idempotency",
-    expected: "byte-identical, including validAfter/validBefore",
-    observed: "no approved spend was produced to replay",
-    verdict: "inconclusive",
+    id: "C7",
+    name: "terms substituted between request and signature",
+    targets: "the signer's API surface",
+    expected: "no channel exists",
+    observed: "authorize() accepts (goalId, seq) only — nothing to substitute",
+    verdict: "held",
   });
-} else {
-  await idempotency(refusals, replayable);
+
+  // ------------------------------------------------------------------ report
+
+  rule("verdict");
+
+  const deviated = findings.filter((f) => f.verdict === "deviated");
+  const inconclusive = findings.filter((f) => f.verdict === "inconclusive");
+
+  console.log(`  strategies run   ${findings.length}`);
+  console.log(`  held             ${findings.filter((f) => f.verdict === "held").length}`);
+  console.log(`  deviated         ${deviated.length}`);
+  console.log(`  inconclusive     ${inconclusive.length}`);
+  console.log(
+    `  transactions     ${new Set(findings.flatMap((f) => (f.txs ?? []).map((t) => t.hash))).size} distinct, linked under each finding`,
+  );
+  console.log();
+  console.log(`  extraction, budget-bound goal   ${formatUsdc(extractedA)} USDC`);
+  console.log(
+    `    predicted ceiling             ${formatUsdc(GOAL_BUDGET_BOUND.budget)} (budget binds first)`,
+  );
+  console.log(`  extraction, cap-bound goal      ${formatUsdc(extractedB)} USDC`);
+  console.log(
+    `    predicted ceiling             ${formatUsdc(
+      GOAL_CAP_BOUND.perCallCap * BigInt(GOAL_CAP_BOUND.calls),
+    )} (cap x calls binds first)`,
+  );
+
+  if (deviated.length > 0) {
+    console.log(`\n  DEVIATIONS — each of these is a finding, not a flake:`);
+    for (const f of deviated) console.log(`    ${f.id}  ${f.name}: ${f.observed}`);
+  }
+
+  console.log(
+    `\n  Note: extraction is counted as *authorized*, not settled. A released`,
+  );
+  console.log(`  signature is the most the adversary can get, and C15 to C25 test what it is worth.`);
+
+  return deviated.length + inconclusive.length > 0 ? 1 : 0;
 }
 
-rule("C6 — collecting after the vendor's hold");
-await c6ExpiredHold(await openGoal(GOAL_EXPIRY));
-
-rule("C14 - probing the encrypted cap");
-{
-  const probe = await openGoal(GOAL_PROBE);
-  await c14Probe({ ...probe, attempts: GOAL_PROBE.attempts });
-}
-
-record({
-  id: "C7",
-  name: "terms substituted between request and signature",
-  targets: "the signer's API surface",
-  expected: "no channel exists",
-  observed: "authorize() accepts (goalId, seq) only — nothing to substitute",
-  verdict: "held",
-});
-
-// ------------------------------------------------------------------ report
-
-rule("verdict");
-
-const deviated = findings.filter((f) => f.verdict === "deviated");
-const inconclusive = findings.filter((f) => f.verdict === "inconclusive");
-
-console.log(`  strategies run   ${findings.length}`);
-console.log(`  held             ${findings.filter((f) => f.verdict === "held").length}`);
-console.log(`  deviated         ${deviated.length}`);
-console.log(`  inconclusive     ${inconclusive.length}`);
-console.log(
-  `  transactions     ${new Set(findings.flatMap((f) => (f.txs ?? []).map((t) => t.hash))).size} distinct, linked under each finding`,
-);
-console.log();
-console.log(`  extraction, budget-bound goal   ${formatUsdc(extractedA)} USDC`);
-console.log(
-  `    predicted ceiling             ${formatUsdc(GOAL_BUDGET_BOUND.budget)} (budget binds first)`,
-);
-console.log(`  extraction, cap-bound goal      ${formatUsdc(extractedB)} USDC`);
-console.log(
-  `    predicted ceiling             ${formatUsdc(
-    GOAL_CAP_BOUND.perCallCap * BigInt(GOAL_CAP_BOUND.calls),
-  )} (cap x calls binds first)`,
-);
-
-if (deviated.length > 0) {
-  console.log(`\n  DEVIATIONS — each of these is a finding, not a flake:`);
-  for (const f of deviated) console.log(`    ${f.id}  ${f.name}: ${f.observed}`);
-}
-
-console.log(
-  `\n  Note: extraction is counted as *authorized*, not settled. A released`,
-);
-console.log(`  EIP-3009 signature is the spending authority; settlement is downstream.`);
-
-process.exit(deviated.length > 0 ? 1 : 0);
+/*
+ * The status is set and the process left to end by itself, because calling process.exit
+ * straight after network reads made Node on Windows abort (0xC0000409), which reads as a
+ * crash after the work was done.
+ */
+process.exitCode = process.argv.includes("--only-c14") ? await onlyC14() : await campaign();

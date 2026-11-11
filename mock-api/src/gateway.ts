@@ -11,6 +11,8 @@ import type {
   PaymentGateway,
 } from "./handler.js";
 import type {
+  AuthCapturePayload,
+  AuthCaptureRequirements,
   PaymentPayload,
   PaymentRequirements,
   SettleResponse,
@@ -26,8 +28,8 @@ export class HttpFacilitatorGateway implements PaymentGateway {
   }
 
   async settle(
-    payment: PaymentPayload,
-    requirements: PaymentRequirements,
+    payment: PaymentPayload | AuthCapturePayload,
+    requirements: PaymentRequirements | AuthCaptureRequirements,
   ): Promise<SettleResponse> {
     let response: Response;
     try {

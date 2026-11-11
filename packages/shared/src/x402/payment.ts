@@ -71,6 +71,11 @@ export interface SettleResponse {
    * reports success without moving money is worse than one that fails loudly.
    */
   readonly simulated?: boolean;
+  /**
+   * For an escrowed payment, the transaction that paid the vendor out of escrow.
+   * `transaction` is then the one that placed the hold.
+   */
+  readonly claimTransaction?: `0x${string}`;
 }
 
 // --------------------------------------------------------------- encode/decode

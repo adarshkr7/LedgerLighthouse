@@ -60,7 +60,7 @@ export function ConnectGate() {
   return (
     <Modal open={status !== "connected"} title="Connect a wallet" tag={`${NETWORK.label} · ${NETWORK.testnet ? "testnet" : "mainnet, real money"}`}>
       <p className="d-caption">
-        Your wallet signs three things in this console: opening a goal, funding its budget, and
+        Your wallet signs three things in this console: opening a goal, funding its payer, and
         closing it to take the money back. It signs nothing while the agent is paying.
       </p>
 

@@ -1,0 +1,23 @@
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+& \multicolumn{2}{c}{Local signer} & \multicolumn{2}{c}{Signer in the enclave} \\
+\cmidrule(l){2-3}\cmidrule(l){4-5}
+Stage (seconds) & Median & P10--P90 & Median & P10--P90 \\
+\midrule
+\multicolumn{5}{@{}l}{\emph{Approved calls that paid ($n=60$, $n=29$)}} \\
+Commit (\code{requestEscrowSpend}) & 3.17 & 2.82--4.25 & 2.95 & 2.85--3.91 \\
+Decision available (reveal) & 4.51 & 3.44--7.04 & 4.22 & 3.10--5.64 \\
+Finalize & 2.51 & 2.23--3.86 & 2.31 & 2.13--3.32 \\
+Sign & 3.37 & 3.04--4.10 & 1.89 & 1.81--2.09 \\
+Fund, capture and receive data & 8.49 & 7.90--9.92 & 7.94 & 7.66--9.03 \\
+End to end & 22.80 & 20.75--27.45 & 20.14 & 18.72--21.99 \\
+\midrule
+\multicolumn{5}{@{}l}{\emph{Rejected calls ($n=40$, $n=20$)}} \\
+Commit (\code{requestEscrowSpend}) & 2.84 & 2.52--3.81 & 2.76 & 2.57--3.01 \\
+Decision available (reveal) & 5.52 & 3.63--8.61 & 4.94 & 3.44--6.03 \\
+Finalize & 2.48 & 2.27--3.62 & 2.36 & 2.19--3.14 \\
+End to end & 11.30 & 8.90--15.09 & 10.44 & 8.36--11.58 \\
+\midrule
+Gas per paid call (measured total) & 718{,}588 & 718{,}564--718{,}608 & 718{,}588 & 718{,}562--718{,}608 \\
+\bottomrule
+\end{tabular}

@@ -1,0 +1,72 @@
+[
+  {
+    "mutant": "authorize: no reclaimed check",
+    "result": "survived",
+    "detail": ""
+  },
+  {
+    "mutant": "authorize: no open-goal check",
+    "result": "killed",
+    "detail": "[FAIL: a transition went against the model: collected a spend that must not be collectable != ]"
+  },
+  {
+    "mutant": "authorize: no approval check",
+    "result": "killed",
+    "detail": "[FAIL: B_rem + D + R + Q != B0: 303626 != 300000]"
+  },
+  {
+    "mutant": "reclaim: credits a captured payment",
+    "result": "killed",
+    "detail": "[FAIL: B_rem + D + R + Q != B0: 399998 != 300000]"
+  },
+  {
+    "mutant": "reclaim: uncollected before the window closes",
+    "result": "killed",
+    "detail": "[FAIL: a transition went against the model: credited back something that could still be paid != ]"
+  },
+  {
+    "mutant": "reclaim: held before the capture deadline",
+    "result": "killed",
+    "detail": "[FAIL: a transition went against the model: credited back something that could still be paid != ]"
+  },
+  {
+    "mutant": "reclaim: twice",
+    "result": "killed",
+    "detail": "[FAIL: B_rem + D + R + Q != B0: 302547 != 300000]"
+  },
+  {
+    "mutant": "credit: call not restored",
+    "result": "killed",
+    "detail": "[FAIL: calls + live approvals != n0: 5 != 6]"
+  },
+  {
+    "mutant": "credit: flag not set",
+    "result": "killed",
+    "detail": "[FAIL: a transition went against the model: reclaimed flag disagrees with the model != ]"
+  },
+  {
+    "mutant": "finalize: call spent on rejection too",
+    "result": "killed",
+    "detail": "[FAIL: calls + live approvals != n0: 5 != 6]"
+  },
+  {
+    "mutant": "request: attempt not spent",
+    "result": "killed",
+    "detail": "[FAIL: attempts + seq != m0: 41 != 40]"
+  },
+  {
+    "mutant": "debit: the whole amount whatever the decision",
+    "result": "killed",
+    "detail": "[FAIL: B_rem + D + R + Q != B0: 70000 != 300000]"
+  },
+  {
+    "mutant": "decision: cap not compared",
+    "result": "killed",
+    "detail": "[FAIL: one payment passed the cap: 207260 > 200000]"
+  },
+  {
+    "mutant": "sweep: allowed on an open goal",
+    "result": "killed",
+    "detail": "[FAIL: a transition went against the model: swept an open goal != ]"
+  }
+]

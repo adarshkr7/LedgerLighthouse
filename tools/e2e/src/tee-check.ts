@@ -37,11 +37,10 @@ import {
   type Address,
   type Hex,
 } from "viem";
-import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { handleTypes } from "@inco/lightning-js";
 
 import { rpcTransport, sendingAccount, viemChain } from "@ntux402/shared/viem";
-import { IncoDecisionReader, connectLightning, pollForDecision } from "@ntux402/orchestrator";
+import { SignerClient, connectLightning, pollForDecision } from "@ntux402/orchestrator";
 
 import {
   INCO_FEE_ABI,
@@ -51,11 +50,14 @@ import {
   loadDotEnv,
   ms,
   now,
-  policyVaultAbi,
+  vaultAbi,
   requiredAddress,
   requiredHexKey,
   networkFromEnv,
+  optional,
 } from "./config.js";
+import { CAPTURE_WINDOW_SECONDS, NO_KEY_HASH, assertEscrowVault, decisionSource } from "./escrow.js";
+import { enroll } from "./enroll.js";
 
 loadDotEnv();
 
@@ -67,9 +69,9 @@ const BUDGET = 100_000n;
 const PER_CALL_CAP = 6_000_000n;
 /**
  * `--equal` sends the same amount and resource twice, 0.06 each: the first is
- * approved, the second rejected by what the budget has left. Identical calldata,
- * so any gas difference between the two `requestSpend` calls comes from the
- * outcome, not from the inputs.
+ * approved, the second rejected by what the budget has left. Only `payBy` differs,
+ * being taken from the clock at each request, so a gas difference between the two
+ * `requestEscrowSpend` calls would come from the outcome and not the amount or resource.
  */
 const EQUAL = process.argv.includes("--equal");
 const FIRST_SPEND = EQUAL ? 60_000n : 40_000n; // inside the budget
@@ -82,14 +84,24 @@ const vaultAddress = requiredAddress("POLICY_VAULT_ADDRESS");
 
 const user = sendingAccount(requiredHexKey("DEPLOYER_PRIVATE_KEY"));
 const relay = sendingAccount(requiredHexKey("ORCHESTRATOR_RELAY_KEY"));
-// The vault binds a payer to one goal for good, so reusing an address would
-// make this script pass once per vault and then revert `PayerAlreadyBound`.
-const throwawayPayer = privateKeyToAccount(generatePrivateKey()).address;
+const signerUrl = optional("SIGNER_URL") ?? `http://127.0.0.1:${process.env["SIGNER_PORT"] ?? 8402}`;
 
 const publicClient = createPublicClient({ chain: viemChain(network), transport: rpcTransport(rpcUrl) });
 const userWallet = createWalletClient({ account: user, chain: viemChain(network), transport: rpcTransport(rpcUrl) });
 const relayWallet = createWalletClient({ account: relay, chain: viemChain(network), transport: rpcTransport(rpcUrl) });
-const abi = policyVaultAbi();
+const abi = vaultAbi();
+
+// A goal opens only with the signer's enrollment statement. The payer is never
+// funded and never signs: nothing here settles. A fresh enrollment id each run,
+// because the vault binds a payer to one goal for good.
+const enrolled = await enroll({
+  signer: new SignerClient(signerUrl, undefined, optional("SIGNER_SERVICE_TOKEN") ?? optional("SERVICE_TOKEN")),
+  reader: publicClient,
+  vault: vaultAddress,
+  owner: user.address,
+  chainId: network.chainId,
+});
+const throwawayPayer = enrolled.payer;
 
 const rule = (label = "") =>
   console.log(`\n${label ? `--- ${label} ` : ""}${"-".repeat(Math.max(0, 62 - label.length))}\n`);
@@ -122,6 +134,7 @@ async function readUntil<T>(read: () => Promise<T>, want: T, timeoutMs = 30_000)
 
 // ------------------------------------------------------------------ preflight
 rule("preflight");
+await assertEscrowVault(publicClient, vaultAddress);
 
 const chainId = await publicClient.getChainId();
 if (chainId !== network.chainId) {
@@ -183,21 +196,21 @@ t = now();
 const openHash = await userWallet.writeContract({
   address: vaultAddress,
   abi,
-  functionName: "openGoal",
+  functionName: "openEnrolledGoal",
   args: [
     {
       budgetCiphertext,
       perCallCapCiphertext,
       callsRemaining: 5,
       maxAttempts: 10,
-      // Never funded and never signs: nothing here settles. It only has to be
-      // an address no goal has bound yet, so a fresh one each run.
       payer: throwawayPayer,
       relay: relay.address,
       asset: usdcAddress,
       expiry: BigInt(Math.floor(Date.now() / 1000) + 3600),
       allowlist: [relay.address],
     },
+    enrolled.enrollmentId,
+    enrolled.signature,
   ],
   // One Inco fee per encrypted input: the budget and the cap.
   value: 2n * incoFee,
@@ -211,7 +224,7 @@ const { goalId, budgetHandle } = opened.args as unknown as { goalId: bigint; bud
 
 check("goalId", true, `${goalId}`);
 
-// The relay simulates `requestSpend` before sending it, and a lagging node that
+// The relay simulates its request before sending it, and a lagging node that
 // has not seen this goal yet answers `UnknownGoal`. Wait until it is visible.
 const bound = await readUntil(
   () => publicClient.readContract({ address: vaultAddress, abi, functionName: "payerGoal", args: [throwawayPayer] }) as Promise<bigint>,
@@ -222,7 +235,8 @@ check("budget handle", budgetHandle !== `0x${"0".repeat(64)}`, budgetHandle);
 console.log(`\n  The handle above is the whole point: it is what the chain stores instead`);
 console.log(`  of ${formatUsdc(BUDGET)}. Reading it back tells you nothing.`);
 
-const reader = new IncoDecisionReader(zap);
+const reader = await decisionSource(zap, publicClient, vaultAddress);
+reader.limits(goalId, BUDGET, PER_CALL_CAP);
 
 /**
  * One spend, start to finish: commit the terms, wait for the enclave to publish
@@ -231,14 +245,15 @@ const reader = new IncoDecisionReader(zap);
  */
 async function spend(amount: bigint, resource: string, expected: boolean): Promise<void> {
   const started = now();
+  const payBy = Math.floor(Date.now() / 1_000) + 600;
   const hash = await relayWallet.writeContract({
     address: vaultAddress,
     abi,
-    functionName: "requestSpend",
-    args: [goalId, amount, relay.address, resource, BigInt(Math.floor(Date.now() / 1_000) + 600)],
+    functionName: "requestEscrowSpend",
+    args: [goalId, amount, relay.address, resource, BigInt(payBy), payBy + CAPTURE_WINDOW_SECONDS, NO_KEY_HASH],
   });
   const receipt = await publicClient.waitForTransactionReceipt({ hash });
-  check("requestSpend confirmed", receipt.status === "success", `${fmt(ms(started))}  gas ${receipt.gasUsed}`);
+  check("requestEscrowSpend confirmed", receipt.status === "success", `${fmt(ms(started))}  gas ${receipt.gasUsed}`);
 
   const requested = parseEventLogs({ abi, eventName: "SpendRequested", logs: receipt.logs })[0];
   if (!requested) throw new Error("SpendRequested not emitted");
@@ -330,8 +345,10 @@ check("closeGoal confirmed", closeReceipt.status === "success", `gas ${closeRece
 rule();
 if (failures > 0) {
   console.error(`  ${failures} check(s) FAILED — the Inco path is not working.\n`);
-  process.exit(1);
+  // Set, not process.exit: see reclaim.ts.
+  process.exitCode = 1;
+} else {
+  console.log(`  Inco TEE round trip verified: encryption in, attested decryption out,`);
+  console.log(`  both decisions checked on chain, goal ${goalId} closed.`);
+  console.log(`\n  ${network.explorer}/address/${vaultAddress}\n`);
 }
-console.log(`  Inco TEE round trip verified: encryption in, attested decryption out,`);
-console.log(`  both decisions checked on chain, goal ${goalId} closed.`);
-console.log(`\n  ${network.explorer}/address/${vaultAddress}\n`);

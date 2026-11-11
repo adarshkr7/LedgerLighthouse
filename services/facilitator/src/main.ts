@@ -14,8 +14,9 @@ import {
   networkFromEnv,
   requiredHexKey,
 } from "@ntux402/shared/node";
-import { createPublicClient, formatEther } from "viem";
+import { createPublicClient, formatEther, isAddress } from "viem";
 
+import { AuthCaptureFacilitator } from "./auth-capture.js";
 import { Facilitator } from "./facilitator.js";
 import { createFacilitatorServer } from "./http.js";
 import { rpcTransport, viemChain } from "@ntux402/shared/viem";
@@ -35,9 +36,34 @@ const facilitator = new Facilitator({
   settlerKey: requiredHexKey("FACILITATOR_PRIVATE_KEY"),
 });
 
+/**
+ * The vaults whose escrowed payments this relays, comma separated. Off when unset: an
+ * operator is a contract this facilitator spends gas calling, so none is trusted by
+ * default.
+ */
+const escrowOperators = (process.env["FACILITATOR_ESCROW_OPERATORS"] ?? "")
+  .split(",")
+  .map((entry) => entry.trim())
+  .filter((entry) => entry !== "");
+for (const operator of escrowOperators) {
+  if (!isAddress(operator)) throw new Error(`FACILITATOR_ESCROW_OPERATORS: ${operator} is not an address`);
+}
+
+const authCapture =
+  escrowOperators.length === 0
+    ? undefined
+    : new AuthCaptureFacilitator({
+        rpcUrl,
+        chainId: network.chainId,
+        asset: usdcAddress,
+        settlerKey: requiredHexKey("FACILITATOR_PRIVATE_KEY"),
+        operators: escrowOperators as `0x${string}`[],
+      });
+
 const server = createFacilitatorServer({
   facilitator,
   network: network.x402Network,
+  ...(authCapture ? { authCapture } : {}),
   log: (line) => log.info(line),
 });
 

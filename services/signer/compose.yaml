@@ -25,7 +25,11 @@ services:
     # and the vault binding in /health, and crash-looped on that socket.
     # --provenance=false makes this a single linux/amd64 manifest, so there is no
     # attestation entry in an index for a runtime to trip over.
-    image: docker.io/schwarzite/totem-signer@sha256:ad385c57942cb5419bd3440c61429b8a4ac896ee4f122db675d18946544e6af3
+    #
+    # v5: escrow-only signer with owner-bound enrollment, rebuilt 11 November 2026.
+    # Deploy only after publishing this digest and rebuilding rofl.yaml's measurements.
+    # The vault must trust the enrollment address reported by the enclave's /health.
+    image: docker.io/schwarzite/totem-signer@sha256:f8d12e03a682b62d2b9740d0bab49d35d92b2a1274633005686e320b8bbb267c
     platform: linux/amd64
     restart: on-failure
     ports:
@@ -34,13 +38,11 @@ services:
       # The enclave key daemon. Exists only inside ROFL; absent on a laptop,
       # which is why RoflKeyStore fails loudly rather than falling back.
       - /run/rofl-appd.sock:/run/rofl-appd.sock
-      # Non-secret address -> key_id index. Persistent so payers survive a
-      # restart. Safe to lose: it leaks nothing, and key ids are counted per
-      # chain and vault, so a new machine rebuilds it from the chain at boot.
-      - /storage/signer:/data
+      # No state of the signer's own: every payer key is derived from the goal's
+      # owner and enrollment id, both read from the chain, and the enrollment key
+      # from the chain id. A wiped or new machine needs nothing restored.
     environment:
       - SIGNER_ROFL_SOCKET=/run/rofl-appd.sock
-      - SIGNER_ROFL_INDEX_PATH=/data/payers.json
       - SIGNER_PORT=8402
       # Refuse to boot without an enclave.
       #

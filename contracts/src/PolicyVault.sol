@@ -235,7 +235,13 @@ contract PolicyVault {
     ///
     /// There is no plaintext check that the cap is positive, because there is
     /// no plaintext cap. A zero cap only makes every request reject.
-    function openGoal(OpenGoalParams calldata params) external payable returns (uint256 goalId) {
+    function openGoal(OpenGoalParams calldata params) external payable virtual returns (uint256 goalId) {
+        return _openGoal(params);
+    }
+
+    /// @dev The whole of `openGoal`, so a vault that adds a precondition can
+    /// check it first and then open the goal exactly as this one does.
+    function _openGoal(OpenGoalParams calldata params) internal returns (uint256 goalId) {
         require(msg.value == 2 * inco.getFee(), FeeNotPaid());
         require(params.payer != address(0), InvalidPayer());
         // Structural, so it reverts: naming a payer that is already somebody
@@ -327,7 +333,8 @@ contract PolicyVault {
     /// that names a later time gets at most `AUTHORIZATION_WINDOW`, which is
     /// what every authorization got before `payBy` existed.
     function requestSpend(uint256 goalId, uint256 amount, address payTo, string calldata resource, uint64 payBy)
-        external
+        public
+        virtual
         returns (uint64 seq)
     {
         Goal storage goal = goals[goalId];
@@ -486,7 +493,7 @@ contract PolicyVault {
     /// window from this record and the use from the token itself, so a caller
     /// has nothing to claim. A spend that was paid fails the second check,
     /// whoever paid it.
-    function reclaimExpired(uint256 goalId, uint64 seq) external {
+    function reclaimExpired(uint256 goalId, uint64 seq) external virtual {
         Goal storage goal = goals[goalId];
         require(goal.owner != address(0), UnknownGoal());
 
@@ -501,6 +508,14 @@ contract PolicyVault {
             AuthorizationUsed()
         );
 
+        _creditBack(goalId, seq);
+    }
+
+    /// @dev Puts an approved amount back in the budget and the call back in the
+    /// count, once. The caller has established that the amount cannot be paid.
+    function _creditBack(uint256 goalId, uint64 seq) internal {
+        Goal storage goal = goals[goalId];
+        SpendRecord storage record = _spends[goalId][seq];
         record.reclaimed = true;
 
         euint256 restored = _remainingBudget[goalId].add(record.amount);
@@ -577,7 +592,7 @@ contract PolicyVault {
     }
 
     /// @notice True when `reclaimExpired(goalId, seq)` would succeed now.
-    function isReclaimable(uint256 goalId, uint64 seq) external view returns (bool) {
+    function isReclaimable(uint256 goalId, uint64 seq) external view virtual returns (bool) {
         Goal storage goal = goals[goalId];
         SpendRecord storage record = _spends[goalId][seq];
         if (goal.owner == address(0) || record.amount == 0) return false;

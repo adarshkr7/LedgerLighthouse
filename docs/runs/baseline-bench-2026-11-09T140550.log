@@ -1,0 +1,84 @@
+baseline-bench: 10 rounds, run 0x1a1c09c369d
+  plain payer 0x5D726d6B6252303246B3E603a3b04DBFa13f93E4
+  plaintext goal 1 (open gas 259486)  confidential goal 8 (open gas 515908)
+  round 0 plain        paid    2.6 s
+  round 0 plaintext    paid    6.9 s
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0xa0732ba59ed71f18822427ba8057208aa371efa8ab90826e8abe7ae9d6fe0000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0xa0732ba59ed71f18822427ba8057208aa371efa8ab90826e8abe7ae9d6fe0000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0xa0732ba59ed71f18822427ba8057208aa371efa8ab90826e8abe7ae9d6fe0000 not found, it might not have been processed yet, try again later
+  round 0 confidential paid    22.4 s
+  round 1 plaintext    paid    6.6 s
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x6b0629c674b1da0a554666a5d830ff8255fdb9863723f849172589a0de7b0000 not found, it might not have been processed yet, try again later
+  round 1 confidential paid    22.6 s
+  round 1 plain        paid    2.0 s
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x7f9204a98d2af9aa70bb9b241b3e9f5a01fc81c662cb89945e053883aa030000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x7f9204a98d2af9aa70bb9b241b3e9f5a01fc81c662cb89945e053883aa030000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x7f9204a98d2af9aa70bb9b241b3e9f5a01fc81c662cb89945e053883aa030000 not found, it might not have been processed yet, try again later
+  round 2 confidential paid    21.6 s
+  round 2 plain        paid    1.9 s
+  round 2 plaintext    paid    6.3 s
+  round 3 plain        paid    1.6 s
+  round 3 plaintext    paid    6.6 s
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x3e7e62fd567566d43f4c1329ffed669e109a5b0969828bd509d9d550fb700000 not found, it might not have been processed yet, try again later
+  round 3 confidential paid    20.2 s
+  round 4 plaintext    paid    6.2 s
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0xe196ae181820afb4e5b4d53c36ff0e78ff020c9e440bae1c9dedf4840e770000 not found, it might not have been processed yet, try again later
+  round 4 confidential paid    23.4 s
+  round 4 plain        paid    2.2 s
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x37c1d0be1c58ae4a2b89f65762f9f9df44db03453edfe2e9fbc94602ec320000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x37c1d0be1c58ae4a2b89f65762f9f9df44db03453edfe2e9fbc94602ec320000 not found, it might not have been processed yet, try again later
+  round 5 confidential paid    21.6 s
+  round 5 plain        paid    1.9 s
+  round 5 plaintext    paid    6.9 s
+  round 6 plain        paid    1.7 s
+  round 6 plaintext    paid    8.1 s
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x430410b08a7b44fa21ba396c2ea23a1490d09c292c5180193a9e1ec662f40000 not found, it might not have been processed yet, try again later
+  round 6 confidential paid    20.6 s
+  round 7 plaintext    paid    7.1 s
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x403a1a5ca366a61ace654c9a73eb83ef23f4ad80463b2083f13d21c29e4f0000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0x403a1a5ca366a61ace654c9a73eb83ef23f4ad80463b2083f13d21c29e4f0000 not found, it might not have been processed yet, try again later
+  round 7 confidential paid    21.7 s
+  round 7 plain        paid    1.9 s
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0xb72db0d879d5ef6702ebdc12c1fbb130ac28487f39d1507bc46e607131190000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0xb72db0d879d5ef6702ebdc12c1fbb130ac28487f39d1507bc46e607131190000 not found, it might not have been processed yet, try again later
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0xb72db0d879d5ef6702ebdc12c1fbb130ac28487f39d1507bc46e607131190000 not found, it might not have been processed yet, try again later
+  round 8 confidential paid    21.6 s
+  round 8 plain        paid    1.9 s
+  round 8 plaintext    paid    6.0 s
+  round 9 plain        paid    3.0 s
+  round 9 plaintext    paid    8.2 s
+Retrying after transient error: [unknown] rpc error: code = NotFound desc = ciphertext for handle 0xad6e849d9906def087c70134256260f244f9350ab3e6956f432d5a19ce780000 not found, it might not have been processed yet, try again later
+  round 9 confidential paid    20.6 s
+{
+  "plain": {
+    "attempts": 10,
+    "paid": 10,
+    "failed": 0,
+    "stalled": 0,
+    "medianMsPaid": 1940.5,
+    "maxMsPaid": 2972,
+    "medianGasPerPaidCall": 86154,
+    "transactionsPerPaidCall": 1
+  },
+  "plaintext": {
+    "attempts": 10,
+    "paid": 10,
+    "failed": 0,
+    "stalled": 0,
+    "medianMsPaid": 6749,
+    "maxMsPaid": 8228,
+    "medianGasPerPaidCall": 355003,
+    "transactionsPerPaidCall": 3
+  },
+  "confidential": {
+    "attempts": 10,
+    "paid": 10,
+    "failed": 0,
+    "stalled": 0,
+    "medianMsPaid": 21593.5,
+    "maxMsPaid": 23367,
+    "medianGasPerPaidCall": 365610,
+    "transactionsPerPaidCall": 4
+  }
+}
+wrote D:\CODE\LedgerLighthouse\docs\runs\baseline-bench-2026-11-09T140550.json

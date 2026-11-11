@@ -6,4 +6,5 @@
  */
 
 export * from "./facilitator.js";
+export * from "./auth-capture.js";
 export * from "./http.js";

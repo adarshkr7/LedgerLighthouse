@@ -582,19 +582,21 @@ Recorded on Base Sepolia against the deployed vault.
 | Operation | Cost |
 |---|---|
 | Client-side encryption | 28–75 ms |
-| `openGoal` | ~532,500 gas + two `1e12` wei Inco fees |
-| `requestSpend` | ~320,600 gas |
-| `finalizeDecision` | ~101,400–106,800 gas |
+| `openGoal` | ~555,000 gas + two `1e12` wei Inco fees (593,487 on the 2 November demo goal) |
+| `requestSpend` | ~327,000 gas |
+| `finalizeDecision` | ~101,300–106,700 gas |
 | `closeGoal` | ~30,000 gas |
-| `attestedReveal` after commit | 5–12 s, 1–2 poll attempts, 2 signatures |
+| `attestedReveal` after commit | 2.4–6.3 s, 2 signatures |
 
-A rejected decision resolves consistently faster than an approved one.
+Approved and rejected decisions take about the same time. Over the 2 November bench (30 approved,
+20 rejected) the median reveal was 4.13 s and 4.22 s, with overlapping ranges.
 
-The `openGoal` and `requestSpend` figures were re-measured on 9 October 2026 against the
-encrypted-cap vault, with a four-payee allowlist. Encrypting the cap added about 103,000 gas to
-`openGoal`, for the second ciphertext and its handle, and about 24,000 to `requestSpend`, for the
-second comparison and the `and`. Each allowlisted payee is one storage write, so the `openGoal`
-figure grows with the list.
+The `openGoal`, `requestSpend`, `finalizeDecision` and reveal figures were re-measured on 2 November
+2026 against the attempt-budget vault, with a four-payee allowlist. Encrypting the cap, measured on
+9 October, added about 103,000 gas to `openGoal`, for the second ciphertext and its handle, and about
+24,000 to `requestSpend`, for the second comparison and the `and`. The attempt budget added about
+23,000 to `openGoal` and 5,600 to `requestSpend`. Each allowlisted payee is one storage write, so the
+`openGoal` figure grows with the list.
 
 ---
 

@@ -158,7 +158,7 @@ const loop = new PaymentLoop({
   signer,
   agent,
   asset: usdcAddress,
-  network: network.x402Network,
+  escrow: { vault: vaultAddress, network: `eip155:${chainId}` },
   onEvent: (event) => log.info(renderEvent(event)),
 });
 
@@ -173,7 +173,6 @@ const server = createOrchestratorServer({
   signerUrl,
   signer,
   anchors,
-  facilitatorUrl: optional("X402_FACILITATOR_URL"),
   agentSource: agentIsLive ? "llm" : "scripted",
   // Only when it is real. The scripted stand-in has no model name, and the
   // console draws the distinction rather than printing a placeholder.
@@ -217,12 +216,6 @@ server.listen(port, bindHost(), () => {
     source: agentIsLive ? "live LLM" : "scripted stand-in",
     ...(agentIsLive && model ? { model } : {}),
   });
-  log.info("settlement", {
-    mode: optional("X402_FACILITATOR_URL") ? "live" : "stub",
-  });
-  if (!optional("X402_FACILITATOR_URL")) {
-    log.warn("settlement is STUBBED — payloads are validated but no money moves");
-  }
   log.info("trace anchoring", { contract: anchorAddress ?? "not configured" });
 
   /*

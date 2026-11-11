@@ -60,14 +60,13 @@ describe("the orchestrator server", () => {
       loop: { fetchPaid: async () => ({ kind: "failed", reason: "unreached" }) } as unknown as PaymentLoop,
       relay: { relayAddress: `0x${"11".repeat(20)}` as Address } as unknown as VaultRelay,
       // Same reasoning as `loop`: the body cap rejects before any mint.
-      signer: { mintPayer: async () => `0x${"44".repeat(20)}` } as unknown as SignerClient,
+      signer: { enroll: async () => ({}) } as unknown as SignerClient,
       vaultAddress: `0x${"22".repeat(20)}`,
       usdcAddress: `0x${"33".repeat(20)}`,
       chainId: 84532,
       mockApiUrl: "http://mock.test",
       signerUrl: "http://signer.test",
       anchors: undefined,
-      facilitatorUrl: undefined,
       agentSource: "scripted",
       traceDir: mkdtempSync(join(tmpdir(), "ll-traces-")),
     });
@@ -231,7 +230,7 @@ describe("the Inco gate", () => {
         },
       } as unknown as PaymentLoop,
       relay: { relayAddress: `0x${"11".repeat(20)}` as Address } as unknown as VaultRelay,
-      signer: { mintPayer: async () => `0x${"44".repeat(20)}` } as unknown as SignerClient,
+      signer: { enroll: async () => ({}) } as unknown as SignerClient,
       vaultAddress: `0x${"22".repeat(20)}`,
       usdcAddress: `0x${"33".repeat(20)}`,
       chainId: 84532,
@@ -244,7 +243,6 @@ describe("the Inco gate", () => {
       },
       signerUrl: "http://signer.test",
       anchors: undefined,
-      facilitatorUrl: undefined,
       agentSource: "scripted",
       traceDir: mkdtempSync(join(tmpdir(), "ll-traces-")),
     });

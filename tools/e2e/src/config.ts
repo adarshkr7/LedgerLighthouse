@@ -33,12 +33,12 @@ export const INCO_FEE_ABI = [
  * Reads the ABI straight out of the Foundry artifact rather than a checked-in
  * copy, so it cannot drift from the contract that was actually compiled.
  *
- * The services use the generated `policyVaultAbi` from `@ntux402/shared`, which
+ * The services use the generated `escrowPolicyVaultAbi` from `@ntux402/shared`, which
  * `pnpm sync:abi --check` pins to this same artifact. Operator scripts read the
  * artifact directly because they always run beside a fresh `forge build`.
  */
-export function policyVaultAbi(): Abi {
-  const artifact = join(REPO_ROOT, "contracts", "out", "PolicyVault.sol", "PolicyVault.json");
+export function vaultAbi(): Abi {
+  const artifact = join(REPO_ROOT, "contracts", "out", "EscrowPolicyVault.sol", "EscrowPolicyVault.json");
   if (!existsSync(artifact)) {
     throw new Error(`No Foundry artifact at ${artifact}. Run \`forge build\` in contracts/ first.`);
   }

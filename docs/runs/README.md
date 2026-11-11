@@ -5,6 +5,61 @@ Kept because a demo that depends on a venue's wifi is a demo with a single point
 of failure — and because a transaction hash is checkable by someone who does not
 trust us, which a live walkthrough is not.
 
+## 11 November 2026: the current design with the signer in the enclave (paper v3)
+
+EscrowPolicyVault
+[`0x466A…DFd5`](https://sepolia.basescan.org/address/0x466AB18595d2E71A87928c8d4A45F57a5D5ADFd5)
+([deploy](https://sepolia.basescan.org/tx/0x4135f116e88c661e29eda14ed6750fa9c53d932edda115af670e4c9328d17065)), the
+same code as `0xdd45` below with a different enrollment key: `0x5Ddd…193a`, derived by Oasis's key manager for this
+ROFL app's admitted enclaves. The signer ran in Intel TDX on machine `0000000000000750` (`playground_short`), image
+`sha256:f8d12e03…b267c`. `SIGNER_URL` pointed at the enclave's proxy for every run; a local signer started by
+`pnpm dev` refused to boot against this vault, as it should, and served nothing.
+
+| Record | What it shows |
+| --- | --- |
+| `enclave-v5-2026-11-11-identity.txt` | The pinned image, the app's on-chain policy and measurements, the registered replica, the machine, and `/health` (`"store":"rofl"`, the enrollment key), before and after the wipe |
+| `enclave-v5-2026-11-11-first-machine.json` | An earlier one-hour rental of the same bundle (machine `074f`) that expired before any run |
+| `escrow-enclave-2026-11-11-tee-check.log` | Inco round trip on this vault: approval, rejection, flipped plaintexts refused |
+| `escrow-enclave-2026-11-11-adversary.log` | 32 of 32 results held, none inconclusive: 29 strategies, C1 on two goals, two controls. Every signer answer and signature came from the enclave. C1 extracted exactly 0.25 and 0.20 USDC |
+| `escrow-enclave-2026-11-11-bench.log`, `bench-2026-11-11T090222-0x466a.json` | 50 calls: 29 approved calls paid, 20 rejected by policy, and one failure. Approved call 26 had its decision revealed in 5.7 s, but the relay's finalization was mined 201 s after the request, past the 60 s hold, so the enclave refused to sign. Median 20.1 s per paid call; signing 1.9 s |
+| `enclave-v5-2026-11-11-after-wipe-sweep.log` | The wipe test. The machine was restarted with `--wipe-storage` (17:01 IST); after it, the enclave re-derived goal 8's payer key from the chain and signed the return of its 0.07 USDC: [close](https://sepolia.basescan.org/tx/0xdf3c8ca3927efb494f4503a295afffd722bf07f9bcd97b307770aac09512bbfb), [sweep](https://sepolia.basescan.org/tx/0x9a9ce9b62352383ff7daa3828b333ef0cbc06c5b2115e84f1fea220c754d395a) |
+
+## 9 November 2026: authenticated enrollment (paper v3)
+
+EscrowPolicyVault
+[`0xdd45…5014`](https://sepolia.basescan.org/address/0xdd450306ca3905612a96Ff92aDbee23B48385014), the escrow
+design plus enrollment: a goal opens only with the signer's EIP-712 statement that the payer was derived for the
+opening wallet. Its enrollment key `0x6EbeBED3…94DE` comes from a local seed file, and the signer ran on a local
+machine, so none of these runs says anything about the enclave. Plaintext baseline
+[`0x9c9D…D224`](https://sepolia.basescan.org/address/0x9c9D87550C556cD51591CbBDbe6B28895761D224). Every table in the
+paper is generated from these files by `paper/arxiv-v3/tables/make_tables.py`.
+
+| Record | What it shows |
+| --- | --- |
+| `escrow-v3-2026-11-09-tee-check.log` | Inco round trip on this vault: an approval and a rejection, each with the flipped plaintext refused on chain |
+| `escrow-v3-2026-11-09-adversary.log` | 32 of 32 results held, none inconclusive: 29 strategies (C1 to C29, with C1 on two goals and C26 to C29 against setup) and two controls. C1 extracted exactly 0.25 and 0.20 USDC, the predicted ceilings |
+| `escrow-v3-2026-11-09-invariants.log`, `-invariants-reached.log` | `AccountingInvariants`: 1,024 runs of 256 calls against the recorded escrow, collector and USDC state, no violation; what the handler reached |
+| `escrow-v3-2026-11-09-invariant-mutants.json` | 14 mutants of the vault, 13 killed; the survivor is equivalent (the paper says why) |
+| `baseline-bench-2026-11-09T140550.{json,log}`, `baseline-bench-2026-11-09T141612.{json,log}` | Matched baselines, 10 interleaved rounds each: plain x402, plaintext vault, confidential vault. Every attempt, its stages, gas and fee |
+| `escrow-v3-2026-11-09-bench-crashed.log` | Failed: the benchmark process crashed (Windows `0xC0000409`) after 19 paid calls and held its records in memory, so they were lost. Since then the benchmark writes each record as it is made |
+| `escrow-v3-2026-11-09-bench-run2.log`, `bench-v3-2026-11-09-run2.json` | 30 approved and 20 rejected calls, every outcome as expected |
+| `escrow-v3-2026-11-09-bench-run3.log`, `bench-2026-11-09T144203-0xdd45.json` | The same on a separate goal |
+| `enclave-v5-2026-11-09-signer-image-build.log` | Build and push of the signer image whose digest `services/signer/compose.yaml` pins |
+
+## 6 and 9 November 2026: the vault-gated escrow
+
+EscrowPolicyVault
+[`0x08AA…9C99`](https://sepolia.basescan.org/address/0x08AAb0cF0c3D2E7a8B3b52AD01B6db8Da70C9C99),
+operator of the deployed `AuthCaptureEscrow`. Real Inco decisions; the signer ran on a local machine
+with its keys in a file, so none of these runs says anything about the enclave.
+
+| Log | What it shows |
+| --- | --- |
+| `escrow-2026-11-06-demo.log` | Live model. The 0.01 call approved, held, claimed and delivered; the 0.35 call rejected by the vault, nothing moved |
+| `escrow-2026-11-06-adversary.log` | 28 of 28 results held, none inconclusive: version 1's 14 strategies in 15 runs, eleven escrow strategies and two controls |
+| `escrow-2026-11-06-bench.log` | Did not finish: Inco would not return goal 9's decision at seq 35 after 34 calls behaved. Kept as the record of that stall; its per-stage records were lost |
+| `escrow-2026-11-09-bench.log`, `bench-2026-11-09.json` | Goal 10, 30 approved and 20 rejected calls, all with the expected outcome. Median 24.8 s per paid call, 10.4 s per rejected one; `requestEscrowSpend` about 353,000 gas. `bench:stats` recomputes every figure from `records` |
+
 ## 2 November 2026: the attempt budget
 
 Every request now spends one of a goal's public attempts, approved or rejected, and reclaim never
@@ -21,9 +76,14 @@ flag; the signer refused to boot and said why on `/health`, and the second attem
 | `demo-2026-11-02-attempt-budget.log` | Exit 0. The 0.01 call approved, signed in the enclave and settled; the 0.35 call rejected on chain, nothing moved. The model's provider answered 503, so the scripted stand-in decided both, and the log says so |
 | `adversary-2026-11-02-attempt-budget.log` | C1 to C13 in 14 runs, all held, 21 transactions linked under the findings |
 | `adversary-2026-11-02-c14-probe.log` | C14: a binary search of a 0.137391 cap with 4 attempts. 0.5, 0.25 rejected, 0.125 approved, 0.1875 rejected; the fifth request reverted `NoAttemptsLeft` with the cap known only to lie in [0.125, 0.1875) |
-| `bench-2026-11-02-attempt-budget.log`, `bench-2026-11-02.json` | 30 approved and 20 rejected calls. Median 14.9 s per paid call, 10.0 s per rejected one; `requestSpend` about 327,000 gas either way |
+| `bench-2026-11-02-attempt-budget.log`, `bench-2026-11-02.json` | 30 approved and 20 rejected calls. Median 14.5 s per paid call, 10.0 s per rejected one; `requestSpend` about 327,000 gas either way. The `summary` in this JSON took the upper of the two middle values as the median (14.85 s), a bug since fixed in `bench.ts`, and its `policy.calls` says 30 although the goal opened with 31 (it is the same bug class, also fixed). `records` holds the raw times; `pnpm --filter @ntux402/e2e run bench:stats ../../docs/runs/bench-2026-11-02.json` recomputes every figure from them |
 | `bench-2026-11-02-zero-calls.log`, `.json` | Kept as a record of a flawed run: the goal had exactly 30 calls, so the 20 "rejected" calls met a call count of zero and were refused in plaintext without the encrypted comparison. That is why they looked cheaper and faster. `bench.ts` now opens one spare call |
-| `tee-check-2026-11-02-equal-calldata.log` | `tee-check --equal`: the same amount and resource twice, one approved and one rejected by the budget. Both `requestSpend` calls used exactly 326,528 gas, so gas does not reveal the outcome |
+| `tee-check-2026-11-02-equal-calldata.log` | `tee-check --equal`: the same amount and resource twice, one approved and one rejected by the budget. Despite the file name the calldata is not identical: `payBy` comes from the clock, so the two deadlines differ. Both `requestSpend` calls used exactly 326,528 gas, so gas did not separate these two requests |
+
+A note on every demo log recorded so far: they label the vendor's description "never sent to the
+model". That label was wrong, and `render.ts` now says otherwise. The agent passes the description
+to the model verbatim as untrusted text (`agent/llm.ts`), which is the point of the threat model; it
+never reaches a policy check. The model's reasoning in the logs quotes it.
 
 ## 1 November 2026: C6 live
 
@@ -66,8 +126,9 @@ first attempt left goal 1 open with no funds.
 
 ### `demo-2026-10-09-encrypted-cap-passing.log`
 
-Exit code 0, goal 3, live settlement, the live model deciding, the payer `0x2F8846E2…EfB7c`
-minted in the enclave.
+Exit code 0, goal 3, live settlement, the payer `0x2F8846E2…EfB7c` minted in the enclave. The live
+model decided run 2. Its gateway returned no message for run 1, so the scripted stand-in decided
+that one, as the log states.
 
 | | Run 1, honest | Run 2, overcharge |
 | --- | --- | --- |

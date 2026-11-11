@@ -8,7 +8,7 @@
  *                        The agent agrees to it. The money does not move.
  *
  * Prerequisites, all checked before anything is sent:
- *   - PolicyVault deployed, POLICY_VAULT_ADDRESS set
+ *   - EscrowPolicyVault deployed, POLICY_VAULT_ADDRESS set
  *   - the signer, the facilitator and the mock API running
  *   - the user key funded with Base Sepolia ETH; the payer funded with USDC
  *
@@ -33,9 +33,8 @@ import {
 import { privateKeyToAccount } from "viem/accounts";
 import { handleTypes } from "@inco/lightning-js";
 import { rpcTransport, sendingAccount, viemChain } from "@ntux402/shared/viem";
-import { DEMO_PAYEES, formatUsdc, usdcAbi } from "@ntux402/shared";
+import { formatUsdc, usdcAbi } from "@ntux402/shared";
 import {
-  IncoDecisionReader,
   PaymentLoop,
   ScriptedAgent,
   SignerClient,
@@ -59,11 +58,14 @@ import {
   ms,
   now,
   optional,
-  policyVaultAbi,
+  required,
   requiredAddress,
   requiredHexKey,
   networkFromEnv,
+  vaultAbi,
 } from "./config.js";
+import { enroll } from "./enroll.js";
+import { assertEscrowSigner, assertEscrowVault, decisionSource, mockVendor } from "./escrow.js";
 
 loadDotEnv();
 
@@ -106,7 +108,7 @@ const relayAddress = privateKeyToAccount(relayKey).address;
 
 const publicClient = createPublicClient({ chain: viemChain(network), transport: rpcTransport(rpcUrl) });
 const userWallet = createWalletClient({ account: user, chain: viemChain(network), transport: rpcTransport(rpcUrl) });
-const abi = policyVaultAbi();
+const abi = vaultAbi();
 
 const rule = (label = "") =>
   console.log(`\n${label ? `--- ${label} ` : ""}${"-".repeat(Math.max(0, 62 - label.length))}\n`);
@@ -132,20 +134,22 @@ for (const [label, url] of [
   console.log(`  ${label.padEnd(10)} up at ${url.replace("/health", "")}`);
 }
 
-const facilitatorUrl = optional("X402_FACILITATOR_URL");
-if (facilitatorUrl) {
-  const health = await fetch(`${facilitatorUrl}/health`).catch(() => undefined);
-  if (!health?.ok) throw new Error(`facilitator is not reachable at ${facilitatorUrl}`);
-  console.log(`  facilitator up at ${facilitatorUrl}  -> USDC will actually move`);
-} else {
-  console.log(`  facilitator NOT configured  -> stub settlement, no money moves`);
-}
+// A hold is a real transaction or it is no hold, so the escrow has no stub settlement.
+const facilitatorUrl = required("X402_FACILITATOR_URL");
+const facilitatorHealth = await fetch(`${facilitatorUrl}/health`).catch(() => undefined);
+if (!facilitatorHealth?.ok) throw new Error(`facilitator is not reachable at ${facilitatorUrl}`);
+console.log(`  facilitator up at ${facilitatorUrl}`);
+
+await assertEscrowVault(publicClient, vaultAddress);
+await assertEscrowSigner(signerUrl, vaultAddress);
+const vendor = await mockVendor(mockApiUrl, vaultAddress);
+console.log(`  vendor     ${vendor}  (the only allowlisted payee)`);
 
 // --------------------------------------------------------- mint the payer
 // Before openGoal, because the payer address is a field of the goal record
 // (ARCHITECTURE.md). Doing it afterwards would need a mutable payer field, and a
 // mutable payer field lets whoever can write it redirect every signature.
-rule("1. mint the ephemeral payer key");
+rule("1. enroll the ephemeral payer");
 
 // `SIGNER_SERVICE_TOKEN`, not `SERVICE_TOKEN` — the first is what this script
 // presents, the second is what a service demands of its own callers. Reading
@@ -157,10 +161,11 @@ const signer = new SignerClient(
   undefined,
   optional("SIGNER_SERVICE_TOKEN") ?? optional("SERVICE_TOKEN"),
 );
-const payer = await signer.mintPayer();
+const enrolled = await enroll({ signer, reader: publicClient, vault: vaultAddress, owner: user.address, chainId });
+const payer = enrolled.payer;
 console.log(`  payer      ${payer}`);
-console.log(`  The signer generated this key and returned only the address.`);
-console.log(`  Nothing else in the system can produce a signature for it.`);
+console.log(`  The signer derived this key for this wallet and signed a statement saying so,`);
+console.log(`  checked here against the vault's enrollment key before the goal is opened.`);
 
 // ------------------------------------------------------------- open the goal
 rule("2. open the goal — the user's own transaction");
@@ -191,7 +196,7 @@ t = now();
 const openHash = await userWallet.writeContract({
   address: vaultAddress,
   abi,
-  functionName: "openGoal",
+  functionName: "openEnrolledGoal",
   args: [
     {
       budgetCiphertext,
@@ -202,8 +207,10 @@ const openHash = await userWallet.writeContract({
       relay: relayAddress,
       asset: usdcAddress,
       expiry: BigInt(Math.floor(Date.now() / 1000) + 7 * 24 * 3600),
-      allowlist: [...DEMO_PAYEES],
+      allowlist: [vendor],
     },
+    enrolled.enrollmentId,
+    enrolled.signature,
   ],
   // One Inco fee per encrypted input: the budget and the cap.
   value: 2n * incoFee,
@@ -221,15 +228,11 @@ console.log(`  perCallCap    ${formatUsdc(PER_CALL_CAP)} USDC — encrypted too,
 console.log(`                malicious price, so the bounce comes from the budget and not the cap`);
 console.log(`\n  Basescan: ${network.explorer}/address/${vaultAddress}`);
 
-// Every mock payee is allowlisted on purpose: run 2 must fail the *confidential*
-// check, not a public precondition. A PayeeNotAllowlisted revert would prove
-// nothing about the budget — it is the vault refusing on a public rule, which is
-// the thing this demo exists to distinguish itself from.
-//
-// Taken from the catalog rather than listed here. The two addresses this file
-// used to hardcode were the payees of the two goals it happened to buy, so
-// pointing run 2 at a third goal reverted with PayeeNotAllowlisted — a config
-// gap that reads exactly like a policy decision at a glance.
+// The vendor sells every catalog entry from one address, and it is allowlisted on
+// purpose: run 2 must fail the *confidential* check, not a public precondition. A
+// PayeeNotAllowlisted revert would prove nothing about the budget — it is the vault
+// refusing on a public rule, which is the thing this demo exists to distinguish
+// itself from.
 
 // ------------------------------------------------------------- fund the payer
 rule("3. fund the ephemeral payer");
@@ -241,41 +244,29 @@ const userUsdc = (await publicClient.readContract({
   args: [user.address],
 })) as bigint;
 
-/** Drives the expected baseline below: false means the payer stays at zero. */
-let fundedPayer: boolean;
-
 if (userUsdc < PAYER_FUNDING) {
-  const shortfall =
+  throw new Error(
     `The user account holds ${formatUsdc(userUsdc)} USDC, needs ${formatUsdc(PAYER_FUNDING)}. ` +
-    (network.testnet ? "Faucet: https://faucet.circle.com (select Base Sepolia)." : `Send USDC on ${network.label} to it.`);
-  // Only fatal when settlement is live. Without a facilitator nothing submits
-  // `transferWithAuthorization`, so an unfunded payer still exercises the whole
-  // control flow — including the bounce, which never needed USDC anyway.
-  if (facilitatorUrl) throw new Error(shortfall);
-  console.log(`  SKIPPED — ${shortfall}`);
-  console.log(`  Settlement is stubbed, so the run still exercises the full control flow;`);
-  console.log(`  it just does not move real money. Fund the account to see that part.`);
-  fundedPayer = false;
-} else {
-  const fundHash = await userWallet.writeContract({
-    address: usdcAddress,
-    abi: usdcAbi,
-    functionName: "transfer",
-    args: [payer, PAYER_FUNDING],
-  });
-  await publicClient.waitForTransactionReceipt({ hash: fundHash });
-  console.log(`  sent ${formatUsdc(PAYER_FUNDING)} USDC to ${payer}`);
-  console.log(`  Deliberately more than the ${formatUsdc(BUDGET)} USDC encrypted budget. Two independent`);
-  console.log(`  bounds: even if the Inco policy were bypassed entirely, the ceiling is what was funded.`);
-  fundedPayer = true;
+      (network.testnet ? "Faucet: https://faucet.circle.com (select Base Sepolia)." : `Send USDC on ${network.label} to it.`),
+  );
 }
+const fundHash = await userWallet.writeContract({
+  address: usdcAddress,
+  abi: usdcAbi,
+  functionName: "transfer",
+  args: [payer, PAYER_FUNDING],
+});
+await publicClient.waitForTransactionReceipt({ hash: fundHash });
+console.log(`  sent ${formatUsdc(PAYER_FUNDING)} USDC to ${payer}`);
+console.log(`  Deliberately more than the ${formatUsdc(BUDGET)} USDC encrypted budget. Two independent`);
+console.log(`  bounds: even if the Inco policy were bypassed entirely, the ceiling is what was funded.`);
 
 // The payer is freshly minted, so its balance before funding is zero. Confirm
 // the transfer is actually visible before using it as a baseline — the receipt
 // alone is not enough on a load-balanced RPC, and a stale baseline is what made
 // the first version of this script misreport which run spent the money.
-const payerStartingBalance = await awaitBalance(fundedPayer ? PAYER_FUNDING : 0n);
-if (fundedPayer && payerStartingBalance !== PAYER_FUNDING) {
+const payerStartingBalance = await awaitBalance(PAYER_FUNDING);
+if (payerStartingBalance !== PAYER_FUNDING) {
   throw new Error(
     `Funded ${formatUsdc(PAYER_FUNDING)} USDC but the chain still reports ` +
       `${formatUsdc(payerStartingBalance)} after 60s. Aborting rather than reporting nonsense.`,
@@ -287,6 +278,8 @@ console.log(`  payer balance confirmed at ${formatUsdc(payerStartingBalance)} US
 rule("4. hand off to the orchestrator");
 
 const relay = new VaultRelay({ rpcUrl, vaultAddress, relayKey, chainId: network.chainId });
+const decisions = await decisionSource(zap, publicClient, vaultAddress);
+decisions.limits(goalId, BUDGET, PER_CALL_CAP);
 const agentKey = optional("LLM_API_KEY");
 const agentModel = optional("LLM_MODEL");
 const agentBaseUrl = optional("LLM_BASE_URL");
@@ -308,11 +301,11 @@ console.log(`  From here on there are no wallet prompts. That is the product.`);
 const loop = new PaymentLoop({
   client: new X402Client(),
   relay,
-  decisions: new IncoDecisionReader(zap),
+  decisions,
   signer,
   agent,
   asset: usdcAddress,
-  network: network.x402Network,
+  escrow: { vault: vaultAddress, network: `eip155:${network.chainId}` },
   onEvent: (event) => console.log(renderEvent(event)),
 });
 
@@ -420,11 +413,11 @@ if (honestWorked && injectionWorked) {
   console.log(`\n  The agent was successfully manipulated and the money still did not move —`);
   console.log(`  because the component that decides never reads the attacker's text, and the`);
   console.log(`  component that signs only reads the chain.\n`);
-  process.exit(0);
+} else {
+  console.log(`\n  NOT the expected demo outcome.`);
+  if (!honestWorked) console.log(`    run 1 should have been "paid", got "${honest.kind}"`);
+  if (!injectionWorked) console.log(`    run 2 should have been "policy-rejected", got "${malicious.kind}"`);
+  console.log();
+  // Set, not process.exit: see reclaim.ts.
+  process.exitCode = 1;
 }
-
-console.log(`\n  NOT the expected demo outcome.`);
-if (!honestWorked) console.log(`    run 1 should have been "paid", got "${honest.kind}"`);
-if (!injectionWorked) console.log(`    run 2 should have been "policy-rejected", got "${malicious.kind}"`);
-console.log();
-process.exit(1);

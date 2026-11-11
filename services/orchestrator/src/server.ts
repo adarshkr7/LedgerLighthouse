@@ -11,6 +11,7 @@
  *   GET  /health
  *   GET  /config          addresses and modes the UI needs to render honestly
  *   POST /runs            { goalId, mode } -> SSE stream of PaymentEvents
+ *   POST /enrollments     { owner, enrollmentId } -> the signer's enrollment statement
  *   POST /sweeps          { goalId } -> returns the payer balance to the owner
  *   GET  /traces/:goalId  the trace built from the last run for that goal
  *
@@ -63,7 +64,6 @@ export interface OrchestratorServerOptions {
    * is unset, which leaves traces tamper-evident but not time-stamped.
    */
   readonly anchors: TraceAnchorClient | undefined;
-  readonly facilitatorUrl: string | undefined;
   readonly agentSource: "llm" | "scripted";
   /**
    * The model behind `agentSource: "llm"`, when there is one.
@@ -213,8 +213,9 @@ export function createOrchestratorServer(options: OrchestratorServerOptions): Se
             relayAddress: options.relay.relayAddress,
             signerUrl: options.signerUrl,
             mockApiUrl: options.mockApiUrl,
-            // Rendered in the UI so a stubbed run can never be mistaken for a real one.
-            settlement: options.facilitatorUrl ? "live" : "stub",
+            // The vendor settles, through the escrow, and a hold is a real transaction. So
+            // this process's own settings say nothing about whether money moves.
+            settlement: "live",
             agent: options.agentSource,
             agentModel: options.agentModel,
           },
@@ -276,24 +277,38 @@ export function createOrchestratorServer(options: OrchestratorServerOptions): Se
       }
 
       /*
-       * Mint the per-goal payer, on the browser's behalf.
+       * Enroll the per-goal payer, on the browser's behalf.
        *
        * The console used to POST straight to `config.signerUrl`. That worked
        * only while the signer was an open port on localhost. A signer deployed
        * to ROFL requires a `SERVICE_TOKEN` bearer, and the only way for the
        * browser to satisfy that would be to ship the token into the page —
-       * handing every viewer the credential that mints payer keys.
+       * handing every viewer the credential that reaches the signer.
        *
        * So the hop moves here, where the token already lives. The browser asks
        * the orchestrator, the orchestrator asks the signer, and the secret
-       * stays on this side of the wire. `SignerClient.mintPayer` is the same
-       * call the payment loop makes, carrying the same bearer.
+       * stays on this side of the wire.
+       *
+       * This hop is the reason the statement is signed. This process is assumed
+       * compromised, so whatever it answers here is checked by the console against
+       * the enrollment key and again by the vault at openEnrolledGoal.
        */
-      if (req.method === "POST" && path === "/payer") {
+      if (req.method === "POST" && path === "/enrollments") {
         if (rejected(req, res, { limiter: RUN_LIMIT })) return;
+        let body: unknown;
         try {
-          const address = await options.signer.mintPayer();
-          send(res, 201, { address }, cors);
+          body = await readJson(req);
+        } catch (e) {
+          sendBodyError(res, e, cors);
+          return;
+        }
+        const { owner, enrollmentId } = (body ?? {}) as { owner?: unknown; enrollmentId?: unknown };
+        if (typeof owner !== "string" || typeof enrollmentId !== "string") {
+          send(res, 400, { error: "expected { owner, enrollmentId }" }, cors);
+          return;
+        }
+        try {
+          send(res, 201, await options.signer.enroll(owner, enrollmentId), cors);
         } catch (e) {
           // The signer's own status is not this endpoint's to forward: a 401
           // from a misconfigured token is an operator fault, not the caller's.
@@ -321,11 +336,7 @@ export function createOrchestratorServer(options: OrchestratorServerOptions): Se
         // the bearer. Handing this the display URL is the bug that made every
         // sweep against the ROFL signer a 401 — after the console had already
         // closed the goal on chain.
-        const outcome = await sweepGoal(goalId, {
-          signer: options.signer,
-          facilitatorUrl: options.facilitatorUrl,
-          usdcAddress: options.usdcAddress,
-        });
+        const outcome = await sweepGoal(goalId, { signer: options.signer, relay: options.relay });
         log(`POST /sweeps goal=${goalId} -> ${outcome.kind}`);
 
         if (outcome.kind === "settled") {

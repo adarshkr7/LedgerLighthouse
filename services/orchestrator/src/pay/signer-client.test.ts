@@ -15,6 +15,8 @@ import { describe, expect, it } from "vitest";
 import { SignerClient } from "./signer-client.js";
 
 const ADDRESS = "0x1111111111111111111111111111111111111111";
+const OWNER = "0x2222222222222222222222222222222222222222";
+const ID = `0x${"ab".repeat(32)}`;
 
 /** Records the headers of every request, and answers enough to get past parsing. */
 function recorder(): { calls: Array<{ url: string; headers: Headers }>; fetch: typeof fetch } {
@@ -33,16 +35,16 @@ describe("SignerClient — service token", () => {
   it("sends no authorization header when no token is configured", async () => {
     const { calls, fetch } = recorder();
 
-    await new SignerClient("http://signer.local", fetch).mintPayer();
+    await new SignerClient("http://signer.local", fetch).enroll(OWNER, ID);
 
     // An open signer must see exactly the request it saw before this existed.
     expect(calls[0]?.headers.get("authorization")).toBeNull();
   });
 
-  it("sends the bearer token on mintPayer", async () => {
+  it("sends the bearer token on enroll", async () => {
     const { calls, fetch } = recorder();
 
-    await new SignerClient("http://signer.local", fetch, "s3cret").mintPayer();
+    await new SignerClient("http://signer.local", fetch, "s3cret").enroll(OWNER, ID);
 
     expect(calls[0]?.headers.get("authorization")).toBe("Bearer s3cret");
   });
@@ -97,7 +99,7 @@ describe("SignerClient — service token", () => {
     // `optional()` yields "" for a variable that is present but blank, and an
     // `Authorization: Bearer ` header is worse than none: it is a 401 that
     // looks like a wrong secret rather than an unset one.
-    await new SignerClient("http://signer.local", fetch, "").mintPayer();
+    await new SignerClient("http://signer.local", fetch, "").enroll(OWNER, ID);
 
     expect(calls[0]?.headers.get("authorization")).toBeNull();
   });
@@ -188,5 +190,22 @@ describe("SignerClient — rate limiting", () => {
     const outcome = await new SignerClient("http://signer.local", answering(429)).sweep("42");
 
     expect(outcome).toMatchObject({ kind: "refused", status: 429, reason: "rate limit exceeded" });
+  });
+});
+
+describe("SignerClient.enroll", () => {
+  it("posts only the owner and the enrollment id", async () => {
+    const bodies: string[] = [];
+    const urls: string[] = [];
+    const fetchImpl = (async (url: string, init?: RequestInit) => {
+      urls.push(url);
+      bodies.push(String(init?.body));
+      return new Response("{}", { status: 201, headers: { "content-type": "application/json" } });
+    }) as unknown as typeof fetch;
+
+    await new SignerClient("http://signer.local", fetchImpl).enroll(OWNER, ID);
+
+    expect(urls[0]).toBe("http://signer.local/enrollments");
+    expect(JSON.parse(bodies[0]!)).toEqual({ owner: OWNER, enrollmentId: ID });
   });
 });
